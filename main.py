@@ -17,7 +17,7 @@ st.set_page_config(page_title="麻雀スコア管理", layout="wide")
 def get_gspread_client():
     # Secretsから鍵情報を読み込む
     key_dict = json.loads(st.secrets["gcp_json"])
-    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    scopes = ["https://www.googleapis.com/auth/spreadsheets","https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
     return gspread.authorize(creds)
 
