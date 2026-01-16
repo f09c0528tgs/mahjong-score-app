@@ -1,58 +1,91 @@
 import streamlit as st
 import pandas as pd
-import os
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 from datetime import datetime, date, timedelta
 
 # ==========================================
 # 【設定】テーマ強制 (ライトモード)
 # ==========================================
-if not os.path.exists(".streamlit"):
-    os.makedirs(".streamlit")
-
-with open(".streamlit/config.toml", "w") as f:
-    f.write('''
-[theme]
-base="light"
-primaryColor="#FF4B4B"
-backgroundColor="#FFFFFF"
-secondaryBackgroundColor="#F0F2F6"
-textColor="#31333F"
-font="sans serif"
-''')
-
-# ページ設定
 st.set_page_config(page_title="麻雀スコア管理", layout="wide")
 
 # ==========================================
-# 共通関数
+# スプレッドシート接続機能 (ここが新しい！)
 # ==========================================
-def load_data(filename, mode="sanma"):
-    if os.path.exists(filename):
-        df = pd.read_csv(filename).fillna("")
-        # --- データ移行処理: SetNo列がない場合、旧ルール(10回区切り)で作成 ---
-        if "SetNo" not in df.columns and not df.empty:
-            # GameNoに基づいてセット番号を計算 (1~10=>1, 11~20=>2...)
-            df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
-        elif "SetNo" not in df.columns:
-            # データが空の場合
-            df["SetNo"] = []
-        return df
-    else:
-        # 新規作成時はSetNo列を含める
+@st.cache_resource
+def get_gspread_client():
+    # Secretsから鍵情報を読み込む
+    key_dict = json.loads(st.secrets["gcp_json"])
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
+    return gspread.authorize(creds)
+
+def load_data_from_sheet(mode="sanma"):
+    """スプレッドシートからデータを読み込む"""
+    gc = get_gspread_client()
+    sh = gc.open("mahjong_db")  # 作成したスプレッドシート名
+    
+    # シート名 (sanma または yonma)
+    worksheet_name = mode
+    
+    try:
+        ws = sh.worksheet(worksheet_name)
+    except gspread.exceptions.WorksheetNotFound:
+        # シートがなければ作成する
+        ws = sh.add_worksheet(title=worksheet_name, rows=100, cols=20)
+        # ヘッダーを書き込む
         base_cols = ["GameNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         if mode == "yonma":
             base_cols += ["Dさん", "Dタイプ", "D着順"]
+        ws.append_row(base_cols)
         return pd.DataFrame(columns=base_cols)
 
-def save_data(df, filename):
-    df.to_csv(filename, index=False)
+    # データ取得
+    data = ws.get_all_values()
+    if not data:
+        return pd.DataFrame()
+        
+    headers = data.pop(0)
+    df = pd.DataFrame(data, columns=headers)
 
+    # 数値変換 (スプレッドシートは全部文字として来るため、数字に戻す)
+    numeric_cols = ["GameNo", "SetNo", "A着順", "B着順", "C着順"]
+    if mode == "yonma":
+        numeric_cols.append("D着順")
+        
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0)
+
+    # --- データ移行処理: SetNo列がない場合の救済 ---
+    if "SetNo" not in df.columns and not df.empty:
+        df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
+
+    return df
+
+def save_data_to_sheet(df, mode="sanma"):
+    """スプレッドシートにデータを保存する"""
+    gc = get_gspread_client()
+    sh = gc.open("mahjong_db")
+    ws = sh.worksheet(mode)
+    
+    # 全クリアして書き直す（一番確実な方法）
+    ws.clear()
+    
+    # ヘッダーとデータをリスト化して書き込み
+    # int64型などはJSON化できないことがあるので、標準のint/strに変換
+    headers = df.columns.tolist()
+    data = df.astype(str).values.tolist()
+    
+    ws.update([headers] + data)
+
+
+# ==========================================
+# 共通ロジック (変更なし)
+# ==========================================
 # 日付ロジック（朝9時切り替え）
 def get_logical_date(dt_str):
-    """
-    文字列の日時を受け取り、9時間引いた『麻雀上の日付』を返す
-    例: 1月10日 02:00 -> 1月9日
-    """
     try:
         dt = pd.to_datetime(dt_str)
         return (dt - timedelta(hours=9)).date()
@@ -193,23 +226,19 @@ def render_history_table(df, mode="sanma", highlight_game_id=None):
     # SetNo順、GameNo順にソート
     df_sorted = df.sort_values(["SetNo", "GameNo"])
     
-    # 存在するセット番号を取得（降順＝新しい順）
     unique_sets = sorted(df_sorted["SetNo"].unique(), reverse=True)
     
     for set_no in unique_sets:
-        # そのセットのデータを抽出
         subset = df_sorted[df_sorted["SetNo"] == set_no]
         
         if not subset.empty:
             start_game = subset["GameNo"].min()
             end_game = subset["GameNo"].max()
             
-            # 集計計算
             df_player, df_type, total_fee = calculate_summary(subset, mode)
             
             label = f"📄 第 {int(set_no)} セット (Game {start_game} ～ {end_game})　　💰 ゲーム代合計: {total_fee} 枚"
             
-            # 最新セットまたは編集中なら開く
             is_expanded = (set_no == max(unique_sets)) or (highlight_game_id is not None and highlight_game_id in subset["GameNo"].values)
             
             with st.expander(label, expanded=is_expanded):
@@ -241,7 +270,7 @@ def render_history_table(df, mode="sanma", highlight_game_id=None):
                 
                 for col in rank_cols:
                     display_df[col] = display_df[col].astype(str)
-                    display_df[col] = display_df[col].replace({"1": "①", "2": "②", "3": "③", "4": "④", "1.0": "①", "2.0": "②", "3.0": "③", "4.0": "④"})
+                    display_df[col] = display_df[col].replace({"1": "①", "2": "②", "3": "③", "4": "④", "1.0": "①", "2.0": "②", "3.0": "③", "4.0": "④", "0": "-"})
                     target_mask = special_mask & (display_df[col] == "①")
                     display_df.loc[target_mask, col] = "❶"
 
@@ -267,7 +296,7 @@ def render_history_table(df, mode="sanma", highlight_game_id=None):
 # ==========================================
 def page_home():
     st.title("🀄 麻雀スコア管理ホーム")
-    st.write("モードを選択してください")
+    st.caption("データはGoogleスプレッドシートに自動保存されます")
     
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -287,7 +316,6 @@ def page_home():
             st.rerun()
 
 def page_game_input(mode="sanma"):
-    filename = "sanma_score.csv" if mode == "sanma" else "yonma_score.csv"
     title = "🀄 3人麻雀" if mode == "sanma" else "🀄 4人麻雀"
     rank_options = [1, 2, 3] if mode == "sanma" else [1, 2, 3, 4]
     
@@ -296,16 +324,16 @@ def page_game_input(mode="sanma"):
         st.session_state["page"] = "home"
         st.rerun()
         
-    df = load_data(filename, mode)
+    # スプレッドシートから読み込み
+    with st.spinner("データを読み込み中..."):
+        df = load_data_from_sheet(mode)
     
     st.sidebar.header(f"{title} メニュー")
     op_mode = st.sidebar.radio("操作", ["📝 新規登録", "🔧 修正・削除"], horizontal=True, key=f"{mode}_op")
     
-    # --- 日付の初期値 (9時区切りロジック適用) ---
     current_dt = datetime.now()
     default_date_obj = (current_dt - timedelta(hours=9)).date()
     
-    # --- 現在のセット番号を取得 ---
     current_set_no = 1
     if not df.empty:
         current_set_no = int(df["SetNo"].max())
@@ -326,43 +354,40 @@ def page_game_input(mode="sanma"):
         if not df.empty:
             ids = df["GameNo"].sort_values(ascending=False).tolist()
             selected_game_id = st.sidebar.selectbox("修正No", ids, key=f"{mode}_sel")
-            row = df[df["GameNo"] == selected_game_id].iloc[0]
-            
-            # 日付解析 (エラー回避)
-            try:
-                d_str = str(row["日時"]).split(" ")[0]
-                d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
-            except:
-                d_obj = default_date_obj
+            # 該当行を取得
+            row_df = df[df["GameNo"] == selected_game_id]
+            if not row_df.empty:
+                row = row_df.iloc[0]
+                try:
+                    d_str = str(row["日時"]).split(" ")[0]
+                    d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
+                except:
+                    d_obj = default_date_obj
 
-            defaults.update({
-                "n1": row["Aさん"], "t1": row["Aタイプ"], "r1": int(float(row["A着順"])),
-                "n2": row["Bさん"], "t2": row["Bタイプ"], "r2": int(float(row["B着順"])),
-                "n3": row["Cさん"], "t3": row["Cタイプ"], "r3": int(float(row["C着順"])),
-                "note": row["備考"] if row["備考"] else "なし",
-                "date_obj": d_obj, 
-                "game_no": selected_game_id,
-                "set_no": int(row["SetNo"])
-            })
-            if mode == "yonma":
-                defaults.update({"n4": row["Dさん"], "t4": row["Dタイプ"], "r4": int(float(row["D着順"]))})
+                defaults.update({
+                    "n1": row["Aさん"], "t1": row["Aタイプ"], "r1": int(float(row["A着順"])),
+                    "n2": row["Bさん"], "t2": row["Bタイプ"], "r2": int(float(row["B着順"])),
+                    "n3": row["Cさん"], "t3": row["Cタイプ"], "r3": int(float(row["C着順"])),
+                    "note": row["備考"] if row["備考"] else "なし",
+                    "date_obj": d_obj, 
+                    "game_no": selected_game_id,
+                    "set_no": int(row["SetNo"])
+                })
+                if mode == "yonma":
+                    defaults.update({"n4": row["Dさん"], "t4": row["Dタイプ"], "r4": int(float(row["D着順"]))})
         else:
             st.sidebar.warning("データなし")
 
     with st.sidebar.form(f"{mode}_form"):
-        # --- セット区切り機能 ---
         if op_mode == "📝 新規登録":
             st.write(f"**Game No: {defaults['game_no']}**")
             st.info(f"現在のセット: 第 {defaults['set_no']} セット")
-            # 新しいセットを開始するチェックボックス
             start_new_set = st.checkbox("🆕 ここから新しいセットにする (清算して次へ)", key=f"{mode}_newset")
         else:
             st.write(f"**Game No: {defaults['game_no']}** (第 {defaults['set_no']} セット)")
-            start_new_set = False # 編集モードではセット番号変更は複雑になるため非表示（要望があれば追加可）
+            start_new_set = False
             
         input_date = st.date_input("日付 (朝9時切替)", value=defaults['date_obj'], key=f"{mode}_date")
-        
-        # ---------------------
         
         TYPE_OPTS = ["A客", "B客", "AS", "BS"]
         NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
@@ -410,11 +435,10 @@ def page_game_input(mode="sanma"):
                 save_note = "" if note == "なし" else note
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
 
-                # セット番号の決定
                 if op_mode == "📝 新規登録":
                     final_set_no = defaults['set_no'] + 1 if start_new_set else defaults['set_no']
                 else:
-                    final_set_no = defaults['set_no'] # 編集時は変更しない
+                    final_set_no = defaults['set_no']
 
                 new_row = {
                     "GameNo": defaults["game_no"], "SetNo": final_set_no,
@@ -426,21 +450,24 @@ def page_game_input(mode="sanma"):
                 if mode == "yonma":
                     new_row.update({"Dさん": p4_n, "Dタイプ": p4_t, "D着順": p4_r})
                 
-                if op_mode == "📝 新規登録":
-                    df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
-                    st.success(f"記録完了 (第 {final_set_no} セット)")
-                else:
-                    idx_list = df[df["GameNo"] == selected_game_id].index
-                    if len(idx_list) > 0: df.loc[idx_list[0]] = new_row
-                    st.success("更新完了")
-                save_data(df, filename)
+                with st.spinner("スプレッドシートに保存中..."):
+                    if op_mode == "📝 新規登録":
+                        df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
+                        st.success(f"記録完了 (第 {final_set_no} セット)")
+                    else:
+                        idx_list = df[df["GameNo"] == selected_game_id].index
+                        if len(idx_list) > 0: df.loc[idx_list[0]] = new_row
+                        st.success("更新完了")
+                    
+                    save_data_to_sheet(df, mode)
                 st.rerun()
         
         if delete and selected_game_id:
-            df = df[df["GameNo"] != selected_game_id]
-            save_data(df, filename)
-            st.warning("削除完了")
-            st.rerun()
+            with st.spinner("削除中..."):
+                df = df[df["GameNo"] != selected_game_id]
+                save_data_to_sheet(df, mode)
+                st.warning("削除完了")
+                st.rerun()
 
     render_history_table(df, mode, selected_game_id if op_mode == "🔧 修正・削除" else None)
 
@@ -452,33 +479,29 @@ def page_history():
         
     tab1, tab2 = st.tabs(["3人麻雀データ", "4人麻雀データ"])
     
-    # 共通フィルタリング処理 (9時区切り対応)
     def filter_by_date(df, key_suffix):
         if df.empty: return df
-        
-        # 9時間引いた「論理日付」列を作る
         df["日時Obj"] = pd.to_datetime(df["日時"])
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
-        
         unique_dates = sorted(df["論理日付"].unique(), reverse=True)
-        
         col1, col2 = st.columns([1, 3])
         with col1:
             selected_date = st.selectbox("📅 日付で絞り込み (朝9時切替)", ["(すべて)"] + list(unique_dates), key=f"date_filter_{key_suffix}")
-        
         if selected_date != "(すべて)":
             return df[df["論理日付"] == selected_date]
         return df
 
     with tab1:
-        df_sanma = load_data("sanma_score.csv", "sanma")
+        with st.spinner("データを読み込み中..."):
+            df_sanma = load_data_from_sheet("sanma")
         filtered_sanma = filter_by_date(df_sanma, "sanma")
         render_player_analysis(filtered_sanma, "sanma")
         st.divider()
         render_history_table(filtered_sanma, "sanma")
         
     with tab2:
-        df_yonma = load_data("yonma_score.csv", "yonma")
+        with st.spinner("データを読み込み中..."):
+            df_yonma = load_data_from_sheet("yonma")
         filtered_yonma = filter_by_date(df_yonma, "yonma")
         render_player_analysis(filtered_yonma, "yonma")
         st.divider()
