@@ -17,10 +17,16 @@ st.set_page_config(page_title="麻雀スコア管理", layout="wide")
 def get_gspread_client():
     # Secretsから鍵情報を読み込む
     key_dict = json.loads(st.secrets["gcp_json"])
-    scopes = ["https://www.googleapis.com/auth/spreadsheets","https://www.googleapis.com/auth/drive"]
+    
+    # 修正箇所：Driveの権限を追加しました
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    
     creds = Credentials.from_service_account_info(key_dict, scopes=scopes)
     return gspread.authorize(creds)
-
+    
 def load_data_from_sheet(mode="sanma"):
     """スプレッドシートからデータを読み込む"""
     gc = get_gspread_client()
