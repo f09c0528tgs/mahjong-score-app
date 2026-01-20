@@ -6,7 +6,7 @@ from datetime import datetime, date, timedelta
 # ==========================================
 # 1. ページ設定 & デザイン調整
 # ==========================================
-st.set_page_config(page_title="3人麻雀スコア管理", layout="wide")
+st.set_page_config(page_title="ぱいん成績管理", layout="wide")
 
 # 余計な表示を消すCSS
 hide_style = """
@@ -30,7 +30,7 @@ def check_password():
     st.title("🔒 ログイン")
     password = st.text_input("パスワード", type="password")
     if st.button("ログイン"):
-        if password == "mahjong2026":  # パスワードはここで変更可能
+        if password == "2026":  # パスワードはここで変更可能
             st.session_state["password_correct"] = True
             st.rerun()
         else:
