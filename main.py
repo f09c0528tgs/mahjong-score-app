@@ -28,7 +28,7 @@ def check_password():
         return True
     
     st.title("🔒 ログイン")
-    password = st.text_input("パスワードを入力してください", type="password")
+    password = st.text_input("パスワード（2026）を入力してください", type="password")
     if st.button("ログイン"):
         if password == "2026":  # パスワード変更
             st.session_state["password_correct"] = True
