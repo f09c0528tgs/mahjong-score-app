@@ -19,7 +19,7 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証
+# 2. パスワード認証 (2026)
 # ==========================================
 def check_password():
     if "password_correct" not in st.session_state:
@@ -28,9 +28,9 @@ def check_password():
         return True
     
     st.title("🔒 ログイン")
-    password = st.text_input("パスワード", type="password")
+    password = st.text_input("パスワードを入力してください", type="password")
     if st.button("ログイン"):
-        if password == "2026":  # パスワードはここで変更可能
+        if password == "2026":  # パスワード変更
             st.session_state["password_correct"] = True
             st.rerun()
         else:
@@ -41,20 +41,21 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. データ管理関数 (サンマ専用)
+# 3. データ管理関数
 # ==========================================
 DATA_FILE = "sanma_score.csv"
 
 def load_data():
     if os.path.exists(DATA_FILE):
         df = pd.read_csv(DATA_FILE).fillna("")
+        # セット番号の補完
         if "SetNo" not in df.columns and not df.empty:
             df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
         elif "SetNo" not in df.columns:
             df["SetNo"] = []
         return df
     else:
-        # 3人麻雀専用のカラム定義
+        # 3人麻雀専用カラム
         cols = ["GameNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
@@ -121,7 +122,7 @@ def calculate_summary(subset_df):
     return df_player, df_type, total_fee
 
 # ==========================================
-# 4. 表示コンポーネント
+# 4. 表示コンポーネント (履歴テーブル)
 # ==========================================
 def render_history_table(df, highlight_game_id=None):
     if df.empty:
@@ -157,7 +158,6 @@ def render_history_table(df, highlight_game_id=None):
             display_cols = ["GameNo", "日時", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順", "備考"]
             display_df = subset[display_cols].copy()
             
-            # 見やすく加工
             SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
             special_mask = display_df["備考"].isin(SPECIAL_NOTES)
             for col in ["A着順", "B着順", "C着順"]:
@@ -167,7 +167,6 @@ def render_history_table(df, highlight_game_id=None):
             target_cols = ["Aさん", "Aタイプ", "Bさん", "Bタイプ", "Cさん", "Cタイプ"]
             display_df[target_cols] = display_df[target_cols].mask(display_df[target_cols] == display_df[target_cols].shift(), "")
             
-            # スタイリング
             def highlight(val):
                 return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;' if val in ["①", "❶"] else ''
             
@@ -178,21 +177,41 @@ def render_history_table(df, highlight_game_id=None):
             st.dataframe(styler, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 5. ページ定義
+# 5. 各ページ画面
 # ==========================================
-def page_game_input():
-    st.title("🀄 3人麻雀スコア入力")
+
+# --- ホーム画面 ---
+def page_home():
+    st.title("🀄 ぱいん成績管理")
+    st.write("") # スペース調整
+    st.write("") 
     
-    # モード選択をサイドバーではなくメイン画面の上部に配置
-    op_mode = st.radio("操作選択", ["📝 新規登録", "🔧 修正・削除", "📊 過去データを見る"], horizontal=True)
+    col1, col2 = st.columns(2)
     
-    if op_mode == "📊 過去データを見る":
-        page_history()
-        return
+    with col1:
+        # 特大ボタン
+        if st.button("📝 成績をつける", type="primary", use_container_width=True):
+            st.session_state["page"] = "input"
+            st.rerun()
+            
+    with col2:
+        if st.button("📊 データを見る", use_container_width=True):
+            st.session_state["page"] = "history"
+            st.rerun()
+
+# --- 入力画面 ---
+def page_input():
+    st.title("📝 成績入力")
+    if st.button("🏠 ホームに戻る"):
+        st.session_state["page"] = "home"
+        st.rerun()
 
     df = load_data()
     
-    # --- 初期値設定 ---
+    # 修正・削除モードの切り替え
+    is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
+    
+    # 初期値設定
     current_dt = datetime.now()
     default_date_obj = (current_dt - timedelta(hours=9)).date()
     current_set_no = int(df["SetNo"].max()) if not df.empty else 1
@@ -208,12 +227,11 @@ def page_game_input():
     }
     
     selected_game_id = None
-    if op_mode == "🔧 修正・削除":
+    if is_edit_mode:
         if not df.empty:
             ids = df["GameNo"].sort_values(ascending=False).tolist()
-            selected_game_id = st.selectbox("修正するゲームを選択", ids)
+            selected_game_id = st.selectbox("修正するゲームNo", ids)
             row = df[df["GameNo"] == selected_game_id].iloc[0]
-            
             try:
                 d_obj = datetime.strptime(str(row["日時"]).split(" ")[0], "%Y-%m-%d").date()
             except: d_obj = default_date_obj
@@ -229,59 +247,71 @@ def page_game_input():
             st.warning("データがありません")
             return
 
-    # --- 入力フォーム (メイン画面に配置) ---
+    # 入力フォーム
     with st.form("input_form"):
-        c_info1, c_info2 = st.columns(2)
-        with c_info1:
+        # ヘッダー情報
+        c_head1, c_head2 = st.columns([1, 2])
+        with c_head1:
             st.write(f"**Game No: {defaults['game_no']}**")
-        with c_info2:
+            if not is_edit_mode:
+                st.caption(f"現在のセット: 第 {defaults['set_no']} セット")
+        with c_head2:
             input_date = st.date_input("日付 (朝9時切替)", value=defaults['date_obj'])
+        
+        # セット区切り (新規時のみ)
+        if not is_edit_mode:
+            start_new_set = st.checkbox(f"🆕 ここから新しいセットにする (第{defaults['set_no']+1}セットへ)")
 
-        if op_mode == "📝 新規登録":
-            start_new_set = st.checkbox(f"🆕 現在「第{defaults['set_no']}セット」です。ここから新しいセットにしますか？")
-        
-        st.markdown("---")
-        
+        st.divider()
+
         TYPE_OPTS = ["A客", "B客", "AS", "BS"]
         def idx(opts, val): return opts.index(val) if val in opts else 0
         
-        # 3人の入力欄を横並びではなく、スマホ用に縦に並べる（またはカード状にする）
-        # スマホで見やすいように1人ずつ区切る
-        def player_input(label, def_n, def_t, def_r):
+        # 以前の使いやすいレイアウト（名前入力 + 横並びラジオボタン）
+        def player_input_row(label, def_n, def_t, def_r):
             st.markdown(f"**▼ {label}**")
-            c1, c2, c3 = st.columns([2, 1.5, 1])
-            with c1: name = st.text_input("名前", value=def_n, key=f"n_{label}")
-            with c2: type_ = st.selectbox("タイプ", TYPE_OPTS, index=idx(TYPE_OPTS, def_t), key=f"t_{label}")
-            with c3: rank = st.selectbox("着順", [1, 2, 3], index=idx([1, 2, 3], def_r), key=f"r_{label}")
+            c1, c2 = st.columns([1, 2])
+            with c1:
+                name = st.text_input("名前", value=def_n, key=f"n_{label}")
+            with c2:
+                # ラジオボタンでワンタップ入力
+                rank = st.radio("着順", [1, 2, 3], index=idx([1, 2, 3], def_r), horizontal=True, key=f"r_{label}")
+                type_ = st.radio("タイプ", TYPE_OPTS, index=idx(TYPE_OPTS, def_t), horizontal=True, key=f"t_{label}")
+            st.markdown("---")
             return name, type_, rank
 
-        p1_n, p1_t, p1_r = player_input("A席", defaults["n1"], defaults["t1"], defaults["r1"])
-        p2_n, p2_t, p2_r = player_input("B席", defaults["n2"], defaults["t2"], defaults["r2"])
-        p3_n, p3_t, p3_r = player_input("C席", defaults["n3"], defaults["t3"], defaults["r3"])
+        p1_n, p1_t, p1_r = player_input_row("A席", defaults["n1"], defaults["t1"], defaults["r1"])
+        p2_n, p2_t, p2_r = player_input_row("B席", defaults["n2"], defaults["t2"], defaults["r2"])
+        p3_n, p3_t, p3_r = player_input_row("C席", defaults["n3"], defaults["t3"], defaults["r3"])
 
-        st.markdown("---")
-        
+        # 備考
+        st.markdown("**▼ 備考**")
         NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
         cur_note = defaults["note"]
         opts = NOTE_OPTS if cur_note in NOTE_OPTS else NOTE_OPTS + [cur_note]
-        note = st.radio("備考", opts, index=idx(opts, cur_note), horizontal=True)
+        note = st.radio("内容を選択", opts, index=idx(opts, cur_note), horizontal=True)
         
-        st.markdown("---")
-        
-        if op_mode == "📝 新規登録":
+        st.divider()
+
+        # ボタンエリア
+        if not is_edit_mode:
             submitted = st.form_submit_button("📝 記録する", type="primary", use_container_width=True)
             delete = False
         else:
-            c1, c2 = st.columns(2)
-            with c1: submitted = st.form_submit_button("🔄 更新する", type="primary", use_container_width=True)
-            with c2: delete = st.form_submit_button("🗑 削除する", type="secondary", use_container_width=True)
+            c_btn1, c_btn2 = st.columns(2)
+            with c_btn1: submitted = st.form_submit_button("🔄 更新する", type="primary", use_container_width=True)
+            with c_btn2: delete = st.form_submit_button("🗑 削除する", type="secondary", use_container_width=True)
 
         if submitted:
             if sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
                 st.error("⚠️ 着順が重複しています！")
             else:
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
-                final_set_no = defaults['set_no'] + 1 if (op_mode == "📝 新規登録" and start_new_set) else defaults['set_no']
+                
+                # セット番号計算
+                final_set_no = defaults['set_no']
+                if not is_edit_mode and start_new_set:
+                    final_set_no += 1
                 
                 new_row = {
                     "GameNo": defaults["game_no"], "SetNo": final_set_no,
@@ -291,13 +321,14 @@ def page_game_input():
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
                 
-                if op_mode == "📝 新規登録":
+                if not is_edit_mode:
                     df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
                     st.success("記録しました")
                 else:
                     idx_list = df[df["GameNo"] == selected_game_id].index
                     if len(idx_list) > 0: df.loc[idx_list[0]] = new_row
                     st.success("更新しました")
+                
                 save_data(df)
                 st.rerun()
         
@@ -307,12 +338,13 @@ def page_game_input():
             st.warning("削除しました")
             st.rerun()
 
-    # 下部に最新履歴を表示
-    st.markdown("### 直近の成績")
-    render_history_table(df, selected_game_id if op_mode == "🔧 修正・削除" else None)
-
+# --- 履歴画面 ---
 def page_history():
-    st.markdown("### 📊 過去データ詳細")
+    st.title("📊 過去データ参照")
+    if st.button("🏠 ホームに戻る"):
+        st.session_state["page"] = "home"
+        st.rerun()
+        
     df = load_data()
     
     # 日付フィルタ
@@ -321,12 +353,12 @@ def page_history():
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
         unique_dates = sorted(df["論理日付"].unique(), reverse=True)
         
-        sel_date = st.selectbox("日付で絞り込み", ["(すべて)"] + list(unique_dates))
+        sel_date = st.selectbox("📅 日付で絞り込み (朝9時切替)", ["(すべて)"] + list(unique_dates))
         if sel_date != "(すべて)":
             df = df[df["論理日付"] == sel_date]
     
     # 個人分析
-    st.caption("プレイヤー分析")
+    st.markdown("### 🔍 個人成績分析")
     all_players = pd.concat([df["Aさん"], df["Bさん"], df["Cさん"]]).unique()
     all_players = [p for p in all_players if p != ""]
     all_players.sort()
@@ -342,14 +374,27 @@ def page_history():
         if ranks:
             games = len(ranks)
             avg = sum(ranks)/games
-            c1, c2 = st.columns(2)
+            counts = {1: ranks.count(1), 2: ranks.count(2), 3: ranks.count(3)}
+            
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("回数", f"{games}回")
             c2.metric("平均着順", f"{avg:.2f}")
+            c3.metric("1着", f"{counts[1]}回")
+            c4.metric("3着", f"{counts[3]}回")
     
     st.divider()
     render_history_table(df)
 
+
 # ==========================================
-# メイン実行
+# 6. メインルーティング
 # ==========================================
-page_game_input()
+if "page" not in st.session_state:
+    st.session_state["page"] = "home"
+
+if st.session_state["page"] == "home":
+    page_home()
+elif st.session_state["page"] == "input":
+    page_input()
+elif st.session_state["page"] == "history":
+    page_history()
