@@ -9,9 +9,19 @@ from datetime import datetime, date, timedelta
 # 【設定】テーマ強制 (ライトモード)
 # ==========================================
 st.set_page_config(page_title="麻雀スコア管理", layout="wide")
-
+# --- 画面の余計な表示を消すスタイル設定 ---
+hide_streamlit_style = """
+            <style>
+            /* 右上のメニューボタンとヘッダーを隠す */
+            #MainMenu {visibility: hidden;}
+            header {visibility: hidden;}
+            /* 下の 'Made with Streamlit' を隠す */
+            footer {visibility: hidden;}
+            </style>
+            """
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 # ==========================================
-# スプレッドシート接続機能 (ここが新しい！)
+# スプレッドシート接続機能
 # ==========================================
 @st.cache_resource
 def get_gspread_client():
@@ -301,8 +311,7 @@ def render_history_table(df, mode="sanma", highlight_game_id=None):
 # ページ遷移と機能
 # ==========================================
 def page_home():
-    st.title("🀄 麻雀スコア管理ホーム")
-    st.caption("データはGoogleスプレッドシートに自動保存されます")
+    st.title("ぱいん成績管理")
     
     c1, c2, c3 = st.columns(3)
     with c1:
@@ -345,10 +354,10 @@ def page_game_input(mode="sanma"):
         current_set_no = int(df["SetNo"].max())
     
     defaults = {
-        "n1": "内山", "t1": "A客", "r1": 2,
-        "n2": "野田", "t2": "B客", "r2": 1,
-        "n3": "豊村", "t3": "AS", "r3": 3,
-        "n4": "ゲスト", "t4": "BS", "r4": 4,
+        "n1": "", "t1": "A客", "r1": 2,
+        "n2": "", "t2": "B客", "r2": 1,
+        "n3": "", "t3": "AS", "r3": 3,
+        "n4": "", "t4": "BS", "r4": 4,
         "note": "なし",
         "game_no": df["GameNo"].max() + 1 if not df.empty else 1,
         "date_obj": default_date_obj,
