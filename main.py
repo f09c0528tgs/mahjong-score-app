@@ -27,7 +27,7 @@ def check_password():
         return True
     
     st.title("🔒 ログイン")
-    password = st.text_input("パスワード（2026）を入力してください", type="password")
+    password = st.text_input("パスワードを入力してください", type="password")
     if st.button("ログイン"):
         if password == "2026":
             st.session_state["password_correct"] = True
@@ -40,13 +40,15 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. データ管理関数
+# 3. データ管理関数 (成績 & メンバー)
 # ==========================================
-DATA_FILE = "sanma_score.csv"
+SCORE_FILE = "sanma_score.csv"
+MEMBER_FILE = "members.csv"
 
-def load_data():
-    if os.path.exists(DATA_FILE):
-        df = pd.read_csv(DATA_FILE).fillna("")
+# --- 成績データの読み書き ---
+def load_score_data():
+    if os.path.exists(SCORE_FILE):
+        df = pd.read_csv(SCORE_FILE).fillna("")
         if "SetNo" not in df.columns and not df.empty:
             df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
         elif "SetNo" not in df.columns:
@@ -56,10 +58,39 @@ def load_data():
         cols = ["GameNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
-def save_data(df):
-    df.to_csv(DATA_FILE, index=False)
+def save_score_data(df):
+    df.to_csv(SCORE_FILE, index=False)
 
-# 集計ロジック
+# --- メンバーデータの読み書き ---
+def load_member_data():
+    if os.path.exists(MEMBER_FILE):
+        return pd.read_csv(MEMBER_FILE)
+    else:
+        # 初期メンバー（例）
+        return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
+
+def save_member_data(df):
+    df.to_csv(MEMBER_FILE, index=False)
+
+# --- 選択肢用メンバーリスト生成 ---
+def get_all_member_names():
+    # 登録済みメンバー
+    df_mem = load_member_data()
+    registered = df_mem["名前"].tolist() if not df_mem.empty else []
+    
+    # 過去の履歴にしかない人（登録漏れ防止）
+    df_score = load_score_data()
+    history = []
+    if not df_score.empty:
+        history = pd.concat([df_score["Aさん"], df_score["Bさん"], df_score["Cさん"]]).unique().tolist()
+    
+    # マージして重複削除・ソート
+    all_names = sorted(list(set(registered + [x for x in history if x != ""])))
+    return all_names
+
+# ==========================================
+# 4. 集計 & 表示ロジック
+# ==========================================
 def calculate_summary(subset_df):
     player_cols = ["Aさん", "Bさん", "Cさん"]
     rank_cols = ["A着順", "B着順", "C着順"]
@@ -118,9 +149,6 @@ def calculate_summary(subset_df):
     df_type = pd.DataFrame(list(type_stats.items()), columns=["タイプ", "1着回数"]).set_index("タイプ").T
     return df_player, df_type, total_fee
 
-# ==========================================
-# 4. 表示コンポーネント
-# ==========================================
 def render_history_table(df, highlight_game_id=None):
     if df.empty:
         st.info("データがありません")
@@ -137,7 +165,6 @@ def render_history_table(df, highlight_game_id=None):
         end_game = subset["GameNo"].max()
         df_player, df_type, total_fee = calculate_summary(subset)
         
-        # タイトルにゲーム代合計を表示
         label = f"📄 第 {int(set_no)} セット (Game {start_game} ～ {end_game})　　💰 合計: {total_fee} 枚"
         is_expanded = (set_no == max(unique_sets)) or (highlight_game_id is not None and highlight_game_id in subset["GameNo"].values)
         
@@ -150,7 +177,6 @@ def render_history_table(df, highlight_game_id=None):
             with c2:
                 st.caption("🏆 タイプ別トップ")
                 st.table(df_type)
-            
             st.divider()
             
             display_cols = ["GameNo", "日時", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順", "備考"]
@@ -182,9 +208,8 @@ def render_history_table(df, highlight_game_id=None):
 def page_home():
     st.title("🀄 ぱいん成績管理")
     st.write("")
-    st.write("") 
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("📝 成績をつける", type="primary", use_container_width=True):
             st.session_state["page"] = "input"
@@ -193,31 +218,83 @@ def page_home():
         if st.button("📊 データを見る", use_container_width=True):
             st.session_state["page"] = "history"
             st.rerun()
+    with col3:
+        if st.button("👥 メンバー管理", use_container_width=True):
+            st.session_state["page"] = "members"
+            st.rerun()
+
+# --- メンバー管理画面 (新機能) ---
+def page_members():
+    st.title("👥 メンバー管理")
+    if st.button("🏠 ホームに戻る"):
+        st.session_state["page"] = "home"
+        st.rerun()
+    
+    st.info("同姓同名の場合は「田中（A）」「田中（B）」のように区別して登録してください。")
+    
+    df_mem = load_member_data()
+    
+    # 新規登録フォーム
+    with st.form("add_member_form"):
+        new_name = st.text_input("新しいメンバーの名前を入力")
+        submitted = st.form_submit_button("追加する")
+        
+        if submitted and new_name:
+            if new_name in df_mem["名前"].values:
+                st.error(f"「{new_name}」は既に登録されています")
+            else:
+                new_row = {"名前": new_name, "登録日": date.today()}
+                df_mem = pd.concat([df_mem, pd.DataFrame([new_row])], ignore_index=True)
+                save_member_data(df_mem)
+                st.success(f"「{new_name}」を追加しました")
+                st.rerun()
+
+    st.divider()
+    
+    # メンバーリスト表示と削除
+    st.markdown("### 登録済みメンバー一覧")
+    if not df_mem.empty:
+        for i, row in df_mem.iterrows():
+            c1, c2 = st.columns([4, 1])
+            c1.write(f"👤 **{row['名前']}**")
+            if c2.button("削除", key=f"del_{i}"):
+                df_mem = df_mem.drop(i)
+                save_member_data(df_mem)
+                st.warning(f"「{row['名前']}」を削除しました")
+                st.rerun()
+    else:
+        st.write("登録メンバーはいません")
+
 
 # --- 入力画面 ---
 def page_input():
     st.title("📝 成績入力")
     
-    # ★ 成功メッセージの表示ロジック（リロード後も表示）★
     if "success_msg" in st.session_state and st.session_state["success_msg"]:
         st.success(st.session_state["success_msg"])
-        st.session_state["success_msg"] = None # 一度表示したら消す
+        st.session_state["success_msg"] = None 
     
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
 
-    df = load_data()
+    df = load_score_data()
+    member_list = get_all_member_names() # 選択肢リスト取得
+
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
     
     current_dt = datetime.now()
     default_date_obj = (current_dt - timedelta(hours=9)).date()
     current_set_no = int(df["SetNo"].max()) if not df.empty else 1
     
+    # 初期値（選択肢にない名前が来るとエラーになるため安全策をとる）
+    def safe_default(name):
+        return name if name in member_list else (member_list[0] if member_list else "")
+
     defaults = {
-        "n1": "name1", "t1": "A客", "r1": 2,
-        "n2": "name2", "t2": "B客", "r2": 1,
-        "n3": "name3", "t3": "AS", "r3": 3,
+        "n1": safe_default("内山"), "t1": "A客", "r1": 2,
+        "n2": safe_default("野田"), "t2": "B客", "r2": 1,
+        "n3": safe_default("豊村"), "t3": "AS", "r3": 3,
         "note": "なし",
         "game_no": df["GameNo"].max() + 1 if not df.empty else 1,
         "date_obj": default_date_obj,
@@ -243,7 +320,6 @@ def page_input():
             st.warning("データがありません")
             return
 
-    # 入力フォーム
     with st.form("input_form"):
         c_head1, c_head2 = st.columns([1, 2])
         with c_head1:
@@ -260,11 +336,15 @@ def page_input():
 
         TYPE_OPTS = ["A客", "B客", "AS", "BS"]
         def idx(opts, val): return opts.index(val) if val in opts else 0
+        def get_idx_in_list(lst, val): return lst.index(val) if val in lst else 0
         
+        # 名前入力をセレクトボックスに変更
         def player_input_row(label, def_n, def_t, def_r):
             st.markdown(f"**▼ {label}**")
             c1, c2 = st.columns([1, 2])
-            with c1: name = st.text_input("名前", value=def_n, key=f"n_{label}")
+            with c1:
+                # ここが変更点：selectbox
+                name = st.selectbox("名前", member_list, index=get_idx_in_list(member_list, def_n), key=f"n_{label}")
             with c2:
                 rank = st.radio("着順", [1, 2, 3], index=idx([1, 2, 3], def_r), horizontal=True, key=f"r_{label}")
                 type_ = st.radio("タイプ", TYPE_OPTS, index=idx(TYPE_OPTS, def_t), horizontal=True, key=f"t_{label}")
@@ -310,82 +390,61 @@ def page_input():
                 
                 if not is_edit_mode:
                     df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
-                    st.session_state["success_msg"] = "✅ 記録しました！" # ★メッセージを保存
+                    st.session_state["success_msg"] = "✅ 記録しました！"
                 else:
                     idx_list = df[df["GameNo"] == selected_game_id].index
                     if len(idx_list) > 0: df.loc[idx_list[0]] = new_row
                     st.session_state["success_msg"] = "✅ 更新しました！"
                 
-                save_data(df)
-                st.rerun() # リロードして画面上部にメッセージを表示させる
+                save_score_data(df)
+                st.rerun()
         
         if delete and selected_game_id:
             df = df[df["GameNo"] != selected_game_id]
-            save_data(df)
+            save_score_data(df)
             st.session_state["success_msg"] = "🗑 削除しました"
             st.rerun()
 
-    # ★ ここに追加: 入力フォームの下に、最新のセット情報を表示 ★
     st.markdown("### 📋 直近の対局結果")
-    # 編集モードの時はそのゲームをハイライト表示、そうでなければ最新を表示
     render_history_table(df, selected_game_id if is_edit_mode else None)
 
-# --- 履歴画面 (修正版) ---
+# --- 履歴画面 ---
 def page_history():
     st.title("📊 過去データ参照")
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
         
-    df = load_data()
+    df = load_score_data()
     
-    # データがない場合
     if df.empty:
         st.info("データがありません")
         return
 
-    # 1. フィルタリング用のリスト作成
-    # 日付リスト (朝9時切り替え)
+    # フィルタ用リスト
     df["日時Obj"] = pd.to_datetime(df["日時"])
     df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
     unique_dates = sorted(df["論理日付"].unique(), reverse=True)
-    
-    # プレイヤーリスト
-    all_players = pd.concat([df["Aさん"], df["Bさん"], df["Cさん"]]).unique()
-    all_players = [p for p in all_players if p != ""]
-    all_players.sort()
+    all_players = get_all_member_names() # メンバーリストを使用
 
-    # 2. 検索メニューの表示
     st.markdown("### 🔍 データの絞り込み")
     c1, c2 = st.columns(2)
-    
-    with c1:
-        sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
-    with c2:
-        sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
+    with c1: sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
+    with c2: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
 
-    # 3. 絞り込み実行ロジック
-    is_filtered = False # 絞り込みが行われたかどうかのフラグ
+    is_filtered = False
     
-    # 日付フィルタ
     if sel_date != "(指定なし)":
         df = df[df["論理日付"] == sel_date]
         is_filtered = True
         
-    # プレイヤーフィルタ (A, B, C いずれかに名前があれば抽出)
     if sel_player != "(指定なし)":
-        df = df[
-            (df["Aさん"] == sel_player) | 
-            (df["Bさん"] == sel_player) | 
-            (df["Cさん"] == sel_player)
-        ]
+        df = df[(df["Aさん"] == sel_player) | (df["Bさん"] == sel_player) | (df["Cさん"] == sel_player)]
         is_filtered = True
 
     st.divider()
 
-    # 4. 結果表示 (絞り込みされている場合のみ表示)
     if is_filtered:
-        # --- 個人成績サマリー (プレイヤーが選択されている場合のみ) ---
         if sel_player != "(指定なし)":
             st.markdown(f"#### 👤 {sel_player} さんの成績 (表示範囲内)")
             ranks = []
@@ -398,24 +457,19 @@ def page_history():
                 games = len(ranks)
                 avg = sum(ranks)/games
                 counts = {1: ranks.count(1), 2: ranks.count(2), 3: ranks.count(3)}
-                
                 m1, m2, m3, m4 = st.columns(4)
                 m1.metric("回数", f"{games}回")
                 m2.metric("平均着順", f"{avg:.2f}")
                 m3.metric("1着", f"{counts[1]}回")
                 m4.metric("3着", f"{counts[3]}回")
-            st.write("") # スペース
-
-        # --- 履歴テーブル表示 ---
+            st.write("")
+        
         if not df.empty:
             render_history_table(df)
         else:
             st.warning("条件に一致するデータが見つかりませんでした")
-            
     else:
-        # 何も選択されていない時の表示
         st.info("☝️ 上のボックスから「日付」または「プレイヤー」を選択してデータを表示してください")
-
 
 # ==========================================
 # 6. メインルーティング
@@ -425,6 +479,8 @@ if "page" not in st.session_state:
 
 if st.session_state["page"] == "home":
     page_home()
+elif st.session_state["page"] == "members":
+    page_members()
 elif st.session_state["page"] == "input":
     page_input()
 elif st.session_state["page"] == "history":
