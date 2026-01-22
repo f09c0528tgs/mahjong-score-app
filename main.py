@@ -330,7 +330,7 @@ def page_input():
     # 編集モードの時はそのゲームをハイライト表示、そうでなければ最新を表示
     render_history_table(df, selected_game_id if is_edit_mode else None)
 
-# --- 履歴画面 ---
+# --- 履歴画面 (修正版) ---
 def page_history():
     st.title("📊 過去データ参照")
     if st.button("🏠 ホームに戻る"):
@@ -339,39 +339,83 @@ def page_history():
         
     df = load_data()
     
-    if not df.empty:
-        df["日時Obj"] = pd.to_datetime(df["日時"])
-        df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
-        unique_dates = sorted(df["論理日付"].unique(), reverse=True)
-        sel_date = st.selectbox("📅 日付で絞り込み (朝9時切替)", ["(すべて)"] + list(unique_dates))
-        if sel_date != "(すべて)":
-            df = df[df["論理日付"] == sel_date]
+    # データがない場合
+    if df.empty:
+        st.info("データがありません")
+        return
+
+    # 1. フィルタリング用のリスト作成
+    # 日付リスト (朝9時切り替え)
+    df["日時Obj"] = pd.to_datetime(df["日時"])
+    df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+    unique_dates = sorted(df["論理日付"].unique(), reverse=True)
     
-    st.markdown("### 🔍 個人成績分析")
+    # プレイヤーリスト
     all_players = pd.concat([df["Aさん"], df["Bさん"], df["Cさん"]]).unique()
     all_players = [p for p in all_players if p != ""]
     all_players.sort()
-    sel_player = st.selectbox("プレイヤーを選択", ["(選択してください)"] + list(all_players))
+
+    # 2. 検索メニューの表示
+    st.markdown("### 🔍 データの絞り込み")
+    c1, c2 = st.columns(2)
     
-    if sel_player != "(選択してください)":
-        ranks = []
-        for _, row in df.iterrows():
-            if row["Aさん"] == sel_player: ranks.append(int(float(row["A着順"])))
-            elif row["Bさん"] == sel_player: ranks.append(int(float(row["B着順"])))
-            elif row["Cさん"] == sel_player: ranks.append(int(float(row["C着順"])))
+    with c1:
+        sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
+    with c2:
+        sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
+
+    # 3. 絞り込み実行ロジック
+    is_filtered = False # 絞り込みが行われたかどうかのフラグ
+    
+    # 日付フィルタ
+    if sel_date != "(指定なし)":
+        df = df[df["論理日付"] == sel_date]
+        is_filtered = True
         
-        if ranks:
-            games = len(ranks)
-            avg = sum(ranks)/games
-            counts = {1: ranks.count(1), 2: ranks.count(2), 3: ranks.count(3)}
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("回数", f"{games}回")
-            c2.metric("平均着順", f"{avg:.2f}")
-            c3.metric("1着", f"{counts[1]}回")
-            c4.metric("3着", f"{counts[3]}回")
-    
+    # プレイヤーフィルタ (A, B, C いずれかに名前があれば抽出)
+    if sel_player != "(指定なし)":
+        df = df[
+            (df["Aさん"] == sel_player) | 
+            (df["Bさん"] == sel_player) | 
+            (df["Cさん"] == sel_player)
+        ]
+        is_filtered = True
+
     st.divider()
-    render_history_table(df)
+
+    # 4. 結果表示 (絞り込みされている場合のみ表示)
+    if is_filtered:
+        # --- 個人成績サマリー (プレイヤーが選択されている場合のみ) ---
+        if sel_player != "(指定なし)":
+            st.markdown(f"#### 👤 {sel_player} さんの成績 (表示範囲内)")
+            ranks = []
+            for _, row in df.iterrows():
+                if row["Aさん"] == sel_player: ranks.append(int(float(row["A着順"])))
+                elif row["Bさん"] == sel_player: ranks.append(int(float(row["B着順"])))
+                elif row["Cさん"] == sel_player: ranks.append(int(float(row["C着順"])))
+            
+            if ranks:
+                games = len(ranks)
+                avg = sum(ranks)/games
+                counts = {1: ranks.count(1), 2: ranks.count(2), 3: ranks.count(3)}
+                
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("回数", f"{games}回")
+                m2.metric("平均着順", f"{avg:.2f}")
+                m3.metric("1着", f"{counts[1]}回")
+                m4.metric("3着", f"{counts[3]}回")
+            st.write("") # スペース
+
+        # --- 履歴テーブル表示 ---
+        if not df.empty:
+            render_history_table(df)
+        else:
+            st.warning("条件に一致するデータが見つかりませんでした")
+            
+    else:
+        # 何も選択されていない時の表示
+        st.info("☝️ 上のボックスから「日付」または「プレイヤー」を選択してデータを表示してください")
+
 
 # ==========================================
 # 6. メインルーティング
