@@ -18,7 +18,7 @@ hide_style = """
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
-        max_width: 900px; /* 幅を少し広げる */
+        max_width: 950px; /* 幅を広げる */
         margin-bottom: 20px;
         font-family: "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
         color: #000;
@@ -26,7 +26,7 @@ hide_style = """
     }
     .score-sheet th, .score-sheet td {
         border: 1px solid #333;
-        padding: 6px 4px; /* パディング調整 */
+        padding: 6px 4px;
         text-align: center;
         font-size: 14px;
         vertical-align: middle;
@@ -42,23 +42,17 @@ hide_style = """
         font-weight: bold;
         font-size: 15px;
     }
-    
-    /* 順位表示のスタイル */
     .rank-num {
         font-weight: bold;
         font-size: 16px;
         margin-left: 5px;
         display: inline-block;
-        width: 20px; /* 幅固定で位置ズレ防止 */
+        width: 20px;
         text-align: center;
     }
-    
-    /* 1着のセル背景色 (薄い青) */
     .cell-top {
         background-color: #e6f7ff !important; 
     }
-    
-    /* 特殊1着の黒丸用スタイル */
     .rank-special {
         background-color: #333;
         color: #fff;
@@ -68,7 +62,6 @@ hide_style = """
         line-height: 22px;
         font-size: 13px;
     }
-
     .score-sheet .summary-row td {
         background-color: #fffbe6;
         font-weight: bold;
@@ -115,13 +108,34 @@ def load_score_data():
             df["SetNo"] = []
         if "TableNo" not in df.columns:
             df["TableNo"] = 1 if not df.empty else []
+            
+        # --- ここで「当日連番 (DailyNo)」を計算して付与 ---
+        if not df.empty:
+            # 日付処理
+            df["日時Obj"] = pd.to_datetime(df["日時"])
+            df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+            
+            # 日付ごと・卓ごとに並べ替え
+            df = df.sort_values(["论理日付", "TableNo", "GameNo"]) # GameNoは通し番号なので作成順
+            
+            # グループごとに連番を振る (これが表示用のGame Noになる)
+            df["DailyNo"] = df.groupby(["论理日付", "TableNo"]).cumcount() + 1
+        else:
+            df["DailyNo"] = []
+            
         return df
     else:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
 def save_score_data(df):
-    df.to_csv(SCORE_FILE, index=False)
+    # 保存するときは一時的に作ったカラム(DailyNoなど)を除外してもいいが、
+    # CSVに余計な列が増えても実害はないためそのまま保存し、読み込み時に再計算する形をとる
+    # ただし今回はシンプルに、計算列は保存対象外とする処理を入れる（ファイル肥大化防止）
+    save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
+    # カラムが存在するか確認してから保存
+    existing_cols = [c for c in save_cols if c in df.columns]
+    df[existing_cols].to_csv(SCORE_FILE, index=False)
 
 def load_member_data():
     if os.path.exists(MEMBER_FILE):
@@ -179,13 +193,27 @@ def render_paper_sheet(df):
 
     for key in sorted_keys:
         table_no, set_no = key
-        subset = groups.get_group(key).sort_values("GameNo")
+        # 表示順はDailyNo(その日の連番)で行う
+        subset = groups.get_group(key).sort_values("DailyNo")
         if subset.empty: continue
         
         fee, stats = calculate_set_summary(subset)
         
-        # HTML構築 (インデントなし)
-        html = f'<table class="score-sheet"><thead><tr class="set-header"><td colspan="5">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td></tr><tr><th style="width:5%">No</th><th style="width:15%">備考</th><th style="width:26%">A席</th><th style="width:26%">B席</th><th style="width:26%">C席</th></tr></thead><tbody>'
+        # --- HTML構築 (レイアウト変更: No | 時刻 | A | B | C | 備考) ---
+        html = f'''
+        <table class="score-sheet">
+            <thead>
+                <tr class="set-header"><td colspan="6">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td></tr>
+                <tr>
+                    <th style="width:5%">No</th>
+                    <th style="width:10%">時刻</th>
+                    <th style="width:23%">A席</th>
+                    <th style="width:23%">B席</th>
+                    <th style="width:23%">C席</th>
+                    <th style="width:16%">備考</th>
+                </tr>
+            </thead>
+            <tbody>'''
         
         SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
         last_names = {"A": None, "B": None, "C": None}
@@ -193,6 +221,13 @@ def render_paper_sheet(df):
         for _, row in subset.iterrows():
             ranks_html_list = []
             
+            # 時刻の抽出 (YYYY-MM-DD HH:MM -> HH:MM)
+            try:
+                dt_obj = pd.to_datetime(row["日時"])
+                time_str = dt_obj.strftime("%H:%M")
+            except:
+                time_str = ""
+
             for p_char in ["A", "B", "C"]:
                 try:
                     r_float = float(row[f"{p_char}着順"])
@@ -202,7 +237,6 @@ def render_paper_sheet(df):
                 is_1st = (rank_val == "1")
                 is_special = (row["備考"] in SPECIAL_NOTES) and is_1st
                 
-                # クラス付与: 1着なら青背景
                 td_class = ' class="cell-top"' if is_1st else ""
                 
                 if is_special:
@@ -210,37 +244,25 @@ def render_paper_sheet(df):
                 else:
                     char_map = {"1":"①", "2":"②", "3":"③"}
                     d_char = char_map.get(rank_val, rank_val)
-                    # 1着の文字色は強調、それ以外は標準
                     color_style = "color:#000;"
                     rank_span = f'<span class="rank-num" style="{color_style}">{d_char}</span>'
                 
-                # 名前重複チェック
                 p_name = row[f"{p_char}さん"]
                 if p_name == last_names[p_char]:
-                    display_content = f'<span style="opacity:0;">{p_name}</span>' # 透明にして位置合わせするか、単に空文字にするか
-                    # 位置ズレを防ぐため、名前は表示せず、数字だけを表示するレイアウトにする
-                    # ここではシンプルに「右寄せ」などで揃えるのが無難
-                    # display_content = "" 
-                    # ズレ防止のため、名前表示エリアと数字エリアを分けるのがベストだが、
-                    # 既存HTML構造維持のため、名前部分を空文字にしつつ、全体の配置を「右寄せ」気味にする手もある
-                    # 今回は要望の「重複時は名前なし」を優先
                     display_text = ""
                 else:
                     display_text = p_name
                     last_names[p_char] = p_name
                 
-                # 名前と数字の間にスペースを入れて配置
-                # 名前が空でも数字の位置がズレないよう、flexbox等を使うのが現代的だが、
-                # 簡易HTMLなら「右側に数字」で統一する
-                cell_content = f'<div style="display:flex; justify-content:space-between; align-items:center; padding:0 10px;"><span>{display_text}</span>{rank_span}</div>'
-                
+                cell_content = f'<div style="display:flex; justify-content:space-between; align-items:center; padding:0 5px;"><span>{display_text}</span>{rank_span}</div>'
                 ranks_html_list.append(f'<td{td_class}>{cell_content}</td>')
 
             note_txt = row["備考"] if row["備考"] else ""
             
-            html += f'<tr><td>{row["GameNo"]}</td><td style="color:red; font-size:12px;">{note_txt}</td>{ranks_html_list[0]}{ranks_html_list[1]}{ranks_html_list[2]}</tr>'
+            # No欄には DailyNo (当日連番) を表示
+            html += f'<tr><td>{row["DailyNo"]}</td><td>{time_str}</td>{ranks_html_list[0]}{ranks_html_list[1]}{ranks_html_list[2]}<td style="color:red; font-size:12px;">{note_txt}</td></tr>'
 
-        html += f'<tr class="summary-row"><td colspan="2" style="text-align:right;">合計</td><td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td><td colspan="2" style="font-size:12px; text-align:left;">A客:{stats["A客"]} / B客:{stats["B客"]} / AS:{stats["AS"]} / BS:{stats["BS"]}</td></tr></tbody></table>'
+        html += f'<tr class="summary-row"><td colspan="2" style="text-align:right;">合計</td><td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td><td colspan="3" style="font-size:12px; text-align:left;">A客:{stats["A客"]} / B客:{stats["B客"]} / AS:{stats["AS"]} / BS:{stats["BS"]}</td></tr></tbody></table>'
         
         st.markdown(html, unsafe_allow_html=True)
 
@@ -310,7 +332,7 @@ def page_input():
         st.session_state["page"] = "home"
         st.rerun()
 
-    df = load_score_data()
+    df = load_score_data() # ここでDailyNoが計算されている
     member_list = get_all_member_names()
     
     c_top1, c_top2 = st.columns(2)
@@ -321,23 +343,34 @@ def page_input():
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
 
+    # 日付フィルタ
     df_table = df[df["TableNo"] == current_table]
     if not df_table.empty:
-        df_table["日時Obj"] = pd.to_datetime(df_table["日時"])
-        df_table["論理日付"] = (df_table["日時Obj"] - timedelta(hours=9)).dt.date
         df_today = df_table[df_table["論理日付"] == input_date]
     else:
         df_today = pd.DataFrame()
 
+    # 次のセット番号・次のDailyNo(表示用GameNo)を計算
     current_set_no = int(df_today["SetNo"].max()) if not df_today.empty else 1
+    
+    # ここがポイント: その日の最大DailyNo + 1 を表示用に使う
+    if not df_today.empty:
+        next_display_no = int(df_today["DailyNo"].max()) + 1
+    else:
+        next_display_no = 1
+
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
+    
+    # 保存用内部GameNo (通し番号)
+    next_internal_game_no = df["GameNo"].max() + 1 if not df.empty else 1
     
     defaults = {
         "n1": None, "t1": "A客", "r1": 2,
         "n2": None, "t2": "B客", "r2": 1,
         "n3": None, "t3": "AS", "r3": 3,
         "note": "なし",
-        "game_no": df["GameNo"].max() + 1 if not df.empty else 1,
+        "internal_game_no": next_internal_game_no, # 保存用
+        "display_game_no": next_display_no,        # 表示用
         "set_no": current_set_no,
         "table_no": current_table
     }
@@ -345,15 +378,18 @@ def page_input():
     selected_game_id = None
     if is_edit_mode:
         if not df.empty:
+            # 修正時は通し番号(GameNo)で検索
             ids = df["GameNo"].sort_values(ascending=False).tolist()
-            selected_game_id = st.selectbox("修正するゲームNo", ids)
+            selected_game_id = st.selectbox("修正するデータ (通しNo)", ids)
             row = df[df["GameNo"] == selected_game_id].iloc[0]
+            
             defaults.update({
                 "n1": row["Aさん"], "t1": row["Aタイプ"], "r1": int(float(row["A着順"])),
                 "n2": row["Bさん"], "t2": row["Bタイプ"], "r2": int(float(row["B着順"])),
                 "n3": row["Cさん"], "t3": row["Cタイプ"], "r3": int(float(row["C着順"])),
                 "note": row["備考"] if row["備考"] else "なし",
-                "game_no": selected_game_id, 
+                "internal_game_no": selected_game_id, 
+                "display_game_no": row["DailyNo"], # 修正時もその日の連番を表示
                 "set_no": int(row["SetNo"]), "table_no": int(row["TableNo"])
             })
             if current_table != defaults["table_no"]:
@@ -363,7 +399,9 @@ def page_input():
             return
 
     with st.form("input_form"):
-        st.write(f"**Game No: {defaults['game_no']}**")
+        # タイトルには表示用No (当日連番) を出す
+        st.write(f"**Game No: {defaults['display_game_no']}**")
+        
         if not is_edit_mode:
             st.caption(f"【{defaults['table_no']}卓】 第 {defaults['set_no']} セット")
             start_new_set = st.checkbox(f"🆕 ここから新しいセットにする ({defaults['table_no']}卓の第{defaults['set_no']+1}セットへ)")
@@ -412,16 +450,21 @@ def page_input():
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
                 final_set_no = defaults['set_no']
                 if not is_edit_mode and start_new_set: final_set_no += 1
+                
+                # 保存時は internal_game_no (通し番号) を使う
                 new_row = {
-                    "GameNo": defaults["game_no"], "TableNo": defaults["table_no"], "SetNo": final_set_no,
+                    "GameNo": defaults["internal_game_no"], 
+                    "TableNo": defaults["table_no"], 
+                    "SetNo": final_set_no,
                     "日時": save_date_str, "備考": ("" if note == "なし" else note),
                     "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
                     "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
+                
                 if not is_edit_mode:
                     df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
-                    st.session_state["success_msg"] = f"✅ {defaults['table_no']}卓に記録しました！"
+                    st.session_state["success_msg"] = f"✅ {defaults['table_no']}卓に記録しました！ (No.{defaults['display_game_no']})"
                 else:
                     idx_list = df[df["GameNo"] == selected_game_id].index
                     if len(idx_list) > 0: df.loc[idx_list[0]] = new_row
@@ -448,13 +491,11 @@ def page_history():
         st.session_state["page"] = "home"
         st.rerun()
         
-    df = load_score_data()
+    df = load_score_data() # DailyNo計算済み
     if df.empty:
         st.info("データがありません")
         return
 
-    df["日時Obj"] = pd.to_datetime(df["日時"])
-    df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
     unique_dates = sorted(df["論理日付"].unique(), reverse=True)
     all_players = get_all_member_names()
 
@@ -477,7 +518,7 @@ def page_history():
 
     if is_filtered and not df.empty:
         if sel_player != "(指定なし)":
-            # --- パターンA: 個人分析 (詳細版) ---
+            # --- 個人分析 ---
             st.markdown(f"#### 👤 {sel_player} さんの成績")
             
             ranks = []
@@ -497,41 +538,31 @@ def page_history():
                 games = len(ranks)
                 avg = sum(ranks)/games
                 c1 = ranks.count(1)
-                c2_cnt = ranks.count(2) # 2着回数
+                c2_cnt = ranks.count(2)
                 c3 = ranks.count(3)
-                
-                # 割合計算
                 r1_rate = (c1 / games) * 100
                 r2_rate = (c2_cnt / games) * 100
                 r3_rate = (c3 / games) * 100
                 
-                # メトリクス表示
-                col1, col2, col3, col4, col5 = st.columns(5)
-                col1.metric("回数", f"{games} 回")
-                col2.metric("平均着順", f"{avg:.2f}")
-                col3.metric("1着 (率)", f"{c1} 回 ({r1_rate:.1f}%)")
-                col4.metric("2着 (率)", f"{c2_cnt} 回 ({r2_rate:.1f}%)")
-                col5.metric("3着 (率)", f"{c3} 回 ({r3_rate:.1f}%)")
+                m1, m2, m3, m4, m5 = st.columns(5)
+                m1.metric("回数", f"{games} 回")
+                m2.metric("平均着順", f"{avg:.2f}")
+                m3.metric("1着 (率)", f"{c1} 回 ({r1_rate:.1f}%)")
+                m4.metric("2着 (率)", f"{c2_cnt} 回 ({r2_rate:.1f}%)")
+                m5.metric("3着 (率)", f"{c3} 回 ({r3_rate:.1f}%)")
                 
                 st.divider()
-                
-                # グラフと日付リスト
                 c_graph, c_dates = st.columns([2, 1])
-                
                 with c_graph:
                     st.markdown("##### 📊 着順分布")
-                    chart_df = pd.DataFrame({
-                        "着順": ["1着", "2着", "3着"],
-                        "回数": [c1, c2_cnt, c3]
-                    }).set_index("着順")
+                    chart_df = pd.DataFrame({"着順": ["1着", "2着", "3着"], "回数": [c1, c2_cnt, c3]}).set_index("着順")
                     st.bar_chart(chart_df)
-                    
                 with c_dates:
                     st.markdown("##### 📅 稼働日リスト")
                     date_list = sorted(list(played_dates), reverse=True)
                     st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
         else:
-            # --- パターンB: 全体集計表 ---
+            # --- 全体集計表 (DailyNo表示) ---
             st.markdown(f"#### 📝 集計表")
             render_paper_sheet(df)
         
