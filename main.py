@@ -40,7 +40,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. データ管理関数 (成績 & メンバー)
+# 3. データ管理関数 (複数卓対応)
 # ==========================================
 SCORE_FILE = "sanma_score.csv"
 MEMBER_FILE = "members.csv"
@@ -49,13 +49,21 @@ MEMBER_FILE = "members.csv"
 def load_score_data():
     if os.path.exists(SCORE_FILE):
         df = pd.read_csv(SCORE_FILE).fillna("")
+        
+        # 旧データ互換処理
         if "SetNo" not in df.columns and not df.empty:
             df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
         elif "SetNo" not in df.columns:
             df["SetNo"] = []
+            
+        # ★追加: 卓番号カラムがない場合は「1」で埋める
+        if "TableNo" not in df.columns:
+            df["TableNo"] = 1 if not df.empty else []
+            
         return df
     else:
-        cols = ["GameNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
+        # TableNoを追加
+        cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
 def save_score_data(df):
@@ -66,25 +74,19 @@ def load_member_data():
     if os.path.exists(MEMBER_FILE):
         return pd.read_csv(MEMBER_FILE)
     else:
-        # 初期メンバー（例）
         return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
 
 def save_member_data(df):
     df.to_csv(MEMBER_FILE, index=False)
 
-# --- 選択肢用メンバーリスト生成 ---
+# --- メンバーリスト生成 ---
 def get_all_member_names():
-    # 登録済みメンバー
     df_mem = load_member_data()
     registered = df_mem["名前"].tolist() if not df_mem.empty else []
-    
-    # 過去の履歴にしかない人（登録漏れ防止）
     df_score = load_score_data()
     history = []
     if not df_score.empty:
         history = pd.concat([df_score["Aさん"], df_score["Bさん"], df_score["Cさん"]]).unique().tolist()
-    
-    # マージして重複削除・ソート
     all_names = sorted(list(set(registered + [x for x in history if x != ""])))
     return all_names
 
@@ -154,51 +156,61 @@ def render_history_table(df, highlight_game_id=None):
         st.info("データがありません")
         return
 
-    df_sorted = df.sort_values(["SetNo", "GameNo"])
-    unique_sets = sorted(df_sorted["SetNo"].unique(), reverse=True)
+    # 卓番号 -> SetNo -> GameNo の順でソート
+    df_sorted = df.sort_values(["TableNo", "SetNo", "GameNo"])
     
-    for set_no in unique_sets:
-        subset = df_sorted[df_sorted["SetNo"] == set_no]
-        if subset.empty: continue
-            
-        start_game = subset["GameNo"].min()
-        end_game = subset["GameNo"].max()
-        df_player, df_type, total_fee = calculate_summary(subset)
-        
-        label = f"📄 第 {int(set_no)} セット (Game {start_game} ～ {end_game})　　💰 合計: {total_fee} 枚"
-        is_expanded = (set_no == max(unique_sets)) or (highlight_game_id is not None and highlight_game_id in subset["GameNo"].values)
-        
-        with st.expander(label, expanded=is_expanded):
-            c1, c2 = st.columns([2, 1])
-            with c1:
-                if not df_player.empty:
-                    st.caption("👤 個人成績")
-                    st.dataframe(df_player, use_container_width=True)
-            with c2:
-                st.caption("🏆 タイプ別トップ")
-                st.table(df_type)
-            st.divider()
-            
-            display_cols = ["GameNo", "日時", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順", "備考"]
-            display_df = subset[display_cols].copy()
-            
-            SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
-            special_mask = display_df["備考"].isin(SPECIAL_NOTES)
-            for col in ["A着順", "B着順", "C着順"]:
-                display_df[col] = display_df[col].astype(str).replace({"1": "①", "2": "②", "3": "③", "1.0": "①", "2.0": "②", "3.0": "③"})
-                display_df.loc[special_mask & (display_df[col] == "①"), col] = "❶"
+    # 存在する卓番号を取得
+    unique_tables = sorted(df_sorted["TableNo"].unique())
 
-            target_cols = ["Aさん", "Aタイプ", "Bさん", "Bタイプ", "Cさん", "Cタイプ"]
-            display_df[target_cols] = display_df[target_cols].mask(display_df[target_cols] == display_df[target_cols].shift(), "")
-            
-            def highlight(val):
-                return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;' if val in ["①", "❶"] else ''
-            
-            styler = display_df.style.map(highlight)
-            if highlight_game_id:
-                styler.apply(lambda r: ['background-color: #ffffcc']*len(r) if r.name in df[df["GameNo"]==highlight_game_id].index else ['']*len(r), axis=1)
+    for table_no in unique_tables:
+        table_df = df_sorted[df_sorted["TableNo"] == table_no]
+        if table_df.empty: continue
 
-            st.dataframe(styler, use_container_width=True, hide_index=True)
+        st.markdown(f"#### 🀄 {int(table_no)} 卓の履歴")
+        unique_sets = sorted(table_df["SetNo"].unique(), reverse=True)
+        
+        for set_no in unique_sets:
+            subset = table_df[table_df["SetNo"] == set_no]
+            if subset.empty: continue
+                
+            start_game = subset["GameNo"].min()
+            end_game = subset["GameNo"].max()
+            df_player, df_type, total_fee = calculate_summary(subset)
+            
+            label = f"📄 第 {int(set_no)} セット (Game {start_game} ～ {end_game})　　💰 合計: {total_fee} 枚"
+            is_expanded = (set_no == max(unique_sets)) or (highlight_game_id is not None and highlight_game_id in subset["GameNo"].values)
+            
+            with st.expander(label, expanded=is_expanded):
+                c1, c2 = st.columns([2, 1])
+                with c1:
+                    if not df_player.empty:
+                        st.caption("👤 個人成績")
+                        st.dataframe(df_player, use_container_width=True)
+                with c2:
+                    st.caption("🏆 タイプ別トップ")
+                    st.table(df_type)
+                st.divider()
+                
+                display_cols = ["GameNo", "日時", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順", "備考"]
+                display_df = subset[display_cols].copy()
+                
+                SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
+                special_mask = display_df["備考"].isin(SPECIAL_NOTES)
+                for col in ["A着順", "B着順", "C着順"]:
+                    display_df[col] = display_df[col].astype(str).replace({"1": "①", "2": "②", "3": "③", "1.0": "①", "2.0": "②", "3.0": "③"})
+                    display_df.loc[special_mask & (display_df[col] == "①"), col] = "❶"
+
+                target_cols = ["Aさん", "Aタイプ", "Bさん", "Bタイプ", "Cさん", "Cタイプ"]
+                display_df[target_cols] = display_df[target_cols].mask(display_df[target_cols] == display_df[target_cols].shift(), "")
+                
+                def highlight(val):
+                    return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;' if val in ["①", "❶"] else ''
+                
+                styler = display_df.style.map(highlight)
+                if highlight_game_id:
+                    styler.apply(lambda r: ['background-color: #ffffcc']*len(r) if r.name in df[df["GameNo"]==highlight_game_id].index else ['']*len(r), axis=1)
+
+                st.dataframe(styler, use_container_width=True, hide_index=True)
 
 # ==========================================
 # 5. 各ページ画面
@@ -223,7 +235,7 @@ def page_home():
             st.session_state["page"] = "members"
             st.rerun()
 
-# --- メンバー管理画面 (新機能) ---
+# --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
     if st.button("🏠 ホームに戻る"):
@@ -231,14 +243,11 @@ def page_members():
         st.rerun()
     
     st.info("同姓同名の場合は「田中（A）」「田中（B）」のように区別して登録してください。")
-    
     df_mem = load_member_data()
     
-    # 新規登録フォーム
     with st.form("add_member_form"):
         new_name = st.text_input("新しいメンバーの名前を入力")
         submitted = st.form_submit_button("追加する")
-        
         if submitted and new_name:
             if new_name in df_mem["名前"].values:
                 st.error(f"「{new_name}」は既に登録されています")
@@ -248,10 +257,8 @@ def page_members():
                 save_member_data(df_mem)
                 st.success(f"「{new_name}」を追加しました")
                 st.rerun()
-
     st.divider()
     
-    # メンバーリスト表示と削除
     st.markdown("### 登録済みメンバー一覧")
     if not df_mem.empty:
         for i, row in df_mem.iterrows():
@@ -264,7 +271,6 @@ def page_members():
                 st.rerun()
     else:
         st.write("登録メンバーはいません")
-
 
 # --- 入力画面 ---
 def page_input():
@@ -279,15 +285,23 @@ def page_input():
         st.rerun()
 
     df = load_score_data()
-    member_list = get_all_member_names() # 選択肢リスト取得
+    member_list = get_all_member_names()
+    
+    # ★追加: 卓選択
+    # デフォルトは1卓
+    current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3, 4, 5], index=0)
+    
+    # その卓だけのデータを抽出（セット計算用）
+    df_table = df[df["TableNo"] == current_table]
 
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
     
     current_dt = datetime.now()
     default_date_obj = (current_dt - timedelta(hours=9)).date()
-    current_set_no = int(df["SetNo"].max()) if not df.empty else 1
     
-    # 初期値（選択肢にない名前が来るとエラーになるため安全策をとる）
+    # その卓での最新セット番号を取得
+    current_set_no = int(df_table["SetNo"].max()) if not df_table.empty else 1
+    
     def safe_default(name):
         return name if name in member_list else (member_list[0] if member_list else "")
 
@@ -296,14 +310,16 @@ def page_input():
         "n2": safe_default("野田"), "t2": "B客", "r2": 1,
         "n3": safe_default("豊村"), "t3": "AS", "r3": 3,
         "note": "なし",
-        "game_no": df["GameNo"].max() + 1 if not df.empty else 1,
+        "game_no": df["GameNo"].max() + 1 if not df.empty else 1, # GameNoは全体で通し番号
         "date_obj": default_date_obj,
-        "set_no": current_set_no
+        "set_no": current_set_no,
+        "table_no": current_table
     }
     
     selected_game_id = None
     if is_edit_mode:
         if not df.empty:
+            # 修正時は全データから選ぶ（卓関係なく）
             ids = df["GameNo"].sort_values(ascending=False).tolist()
             selected_game_id = st.selectbox("修正するゲームNo", ids)
             row = df[df["GameNo"] == selected_game_id].iloc[0]
@@ -314,8 +330,11 @@ def page_input():
                 "n2": row["Bさん"], "t2": row["Bタイプ"], "r2": int(float(row["B着順"])),
                 "n3": row["Cさん"], "t3": row["Cタイプ"], "r3": int(float(row["C着順"])),
                 "note": row["備考"] if row["備考"] else "なし",
-                "date_obj": d_obj, "game_no": selected_game_id, "set_no": int(row["SetNo"])
+                "date_obj": d_obj, "game_no": selected_game_id, 
+                "set_no": int(row["SetNo"]), "table_no": int(row["TableNo"])
             })
+            if current_table != defaults["table_no"]:
+                st.info(f"※ 選択中のゲームは「{defaults['table_no']}卓」のデータです")
         else:
             st.warning("データがありません")
             return
@@ -325,12 +344,13 @@ def page_input():
         with c_head1:
             st.write(f"**Game No: {defaults['game_no']}**")
             if not is_edit_mode:
-                st.caption(f"現在のセット: 第 {defaults['set_no']} セット")
+                # 卓番号とセット番号を表示
+                st.caption(f"【{defaults['table_no']}卓】 第 {defaults['set_no']} セット")
         with c_head2:
             input_date = st.date_input("日付 (朝9時切替)", value=defaults['date_obj'])
         
         if not is_edit_mode:
-            start_new_set = st.checkbox(f"🆕 ここから新しいセットにする (第{defaults['set_no']+1}セットへ)")
+            start_new_set = st.checkbox(f"🆕 ここから新しいセットにする ({defaults['table_no']}卓の第{defaults['set_no']+1}セットへ)")
 
         st.divider()
 
@@ -338,12 +358,10 @@ def page_input():
         def idx(opts, val): return opts.index(val) if val in opts else 0
         def get_idx_in_list(lst, val): return lst.index(val) if val in lst else 0
         
-        # 名前入力をセレクトボックスに変更
         def player_input_row(label, def_n, def_t, def_r):
             st.markdown(f"**▼ {label}**")
             c1, c2 = st.columns([1, 2])
             with c1:
-                # ここが変更点：selectbox
                 name = st.selectbox("名前", member_list, index=get_idx_in_list(member_list, def_n), key=f"n_{label}")
             with c2:
                 rank = st.radio("着順", [1, 2, 3], index=idx([1, 2, 3], def_r), horizontal=True, key=f"r_{label}")
@@ -377,11 +395,14 @@ def page_input():
             else:
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
                 final_set_no = defaults['set_no']
+                # 新規登録で、かつ「新しいセット」にチェックがあれば、その卓のセット番号を+1
                 if not is_edit_mode and start_new_set:
                     final_set_no += 1
                 
                 new_row = {
-                    "GameNo": defaults["game_no"], "SetNo": final_set_no,
+                    "GameNo": defaults["game_no"], 
+                    "TableNo": defaults["table_no"], # 卓番号保存
+                    "SetNo": final_set_no,
                     "日時": save_date_str, "備考": ("" if note == "なし" else note),
                     "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
                     "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
@@ -390,7 +411,7 @@ def page_input():
                 
                 if not is_edit_mode:
                     df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
-                    st.session_state["success_msg"] = "✅ 記録しました！"
+                    st.session_state["success_msg"] = f"✅ {defaults['table_no']}卓に記録しました！"
                 else:
                     idx_list = df[df["GameNo"] == selected_game_id].index
                     if len(idx_list) > 0: df.loc[idx_list[0]] = new_row
@@ -405,8 +426,14 @@ def page_input():
             st.session_state["success_msg"] = "🗑 削除しました"
             st.rerun()
 
-    st.markdown("### 📋 直近の対局結果")
-    render_history_table(df, selected_game_id if is_edit_mode else None)
+    # 入力画面下部の履歴（選択中の卓のみ表示）
+    st.markdown(f"### 📋 直近の対局結果 ({current_table}卓)")
+    # df_table (選択中の卓のみ) を渡して表示させる
+    # 編集中の場合はそのデータを表示するため全データから渡すが、基本は卓絞り込み
+    if is_edit_mode:
+        render_history_table(df, selected_game_id)
+    else:
+        render_history_table(df_table, None)
 
 # --- 履歴画面 ---
 def page_history():
@@ -421,16 +448,17 @@ def page_history():
         st.info("データがありません")
         return
 
-    # フィルタ用リスト
     df["日時Obj"] = pd.to_datetime(df["日時"])
     df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
     unique_dates = sorted(df["論理日付"].unique(), reverse=True)
-    all_players = get_all_member_names() # メンバーリストを使用
+    all_players = get_all_member_names()
+    unique_tables = sorted(df["TableNo"].unique())
 
     st.markdown("### 🔍 データの絞り込み")
-    c1, c2 = st.columns(2)
+    c1, c2, c3 = st.columns(3)
     with c1: sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
-    with c2: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
+    with c2: sel_table = st.selectbox("🀄 卓を選択", ["(指定なし)"] + list(unique_tables))
+    with c3: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
 
     is_filtered = False
     
@@ -438,6 +466,10 @@ def page_history():
         df = df[df["論理日付"] == sel_date]
         is_filtered = True
         
+    if sel_table != "(指定なし)":
+        df = df[df["TableNo"] == sel_table]
+        is_filtered = True
+
     if sel_player != "(指定なし)":
         df = df[(df["Aさん"] == sel_player) | (df["Bさん"] == sel_player) | (df["Cさん"] == sel_player)]
         is_filtered = True
@@ -469,7 +501,7 @@ def page_history():
         else:
             st.warning("条件に一致するデータが見つかりませんでした")
     else:
-        st.info("☝️ 上のボックスから「日付」または「プレイヤー」を選択してデータを表示してください")
+        st.info("☝️ 上のボックスから絞り込み条件を選択してください")
 
 # ==========================================
 # 6. メインルーティング
