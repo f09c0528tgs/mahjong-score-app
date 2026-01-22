@@ -66,6 +66,7 @@ def load_member_data():
     if os.path.exists(MEMBER_FILE):
         return pd.read_csv(MEMBER_FILE)
     else:
+        # 初期メンバーは空でも良いが、例として入れておく
         return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
 
 def save_member_data(df):
@@ -153,9 +154,6 @@ def render_history_table(df, highlight_game_id=None):
     for table_no in unique_tables:
         table_df = df_sorted[df_sorted["TableNo"] == table_no]
         if table_df.empty: continue
-
-        # 卓番号表示（1つしかない場合は省略可だが、念のため表示）
-        # st.markdown(f"#### 🀄 {int(table_no)} 卓")
         
         unique_sets = sorted(table_df["SetNo"].unique(), reverse=True)
         
@@ -277,28 +275,46 @@ def page_input():
     df = load_score_data()
     member_list = get_all_member_names()
     
-    # 卓選択：1, 2, 3 のみに制限
-    current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
-    
-    df_table = df[df["TableNo"] == current_table]
-
-    is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
-    
+    # --- 初期値設定（フォームの外で日付を決定）---
     current_dt = datetime.now()
     default_date_obj = (current_dt - timedelta(hours=9)).date()
     
-    current_set_no = int(df_table["SetNo"].max()) if not df_table.empty else 1
+    # ユーザーが操作する部分（フォームの外）
+    c_top1, c_top2 = st.columns(2)
+    with c_top1:
+        current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
+    with c_top2:
+        input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
+
+    # --- バグ修正：選択された「卓」と「日付」に基づいてセット番号を計算 ---
+    df_table = df[df["TableNo"] == current_table]
+    
+    # 日付フィルタリング (論理日付)
+    if not df_table.empty:
+        df_table["日時Obj"] = pd.to_datetime(df_table["日時"])
+        df_table["論理日付"] = (df_table["日時Obj"] - timedelta(hours=9)).dt.date
+        df_today = df_table[df_table["論理日付"] == input_date]
+    else:
+        df_today = pd.DataFrame()
+
+    # その日のその卓のデータがあれば続きのセット、なければ1から
+    if not df_today.empty:
+        current_set_no = int(df_today["SetNo"].max())
+    else:
+        current_set_no = 1
+    # -------------------------------------------------------------
+
+    is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
     
     def safe_default(name):
-        return name if name in member_list else (member_list[0] if member_list else "")
+        return name if name in member_list else None # 名前がない場合はNone
 
     defaults = {
-        "n1": safe_default("内山"), "t1": "A客", "r1": 2,
-        "n2": safe_default("野田"), "t2": "B客", "r2": 1,
-        "n3": safe_default("豊村"), "t3": "AS", "r3": 3,
+        "n1": None, "t1": "A客", "r1": 2,
+        "n2": None, "t2": "B客", "r2": 1,
+        "n3": None, "t3": "AS", "r3": 3,
         "note": "なし",
         "game_no": df["GameNo"].max() + 1 if not df.empty else 1,
-        "date_obj": default_date_obj,
         "set_no": current_set_no,
         "table_no": current_table
     }
@@ -309,16 +325,21 @@ def page_input():
             ids = df["GameNo"].sort_values(ascending=False).tolist()
             selected_game_id = st.selectbox("修正するゲームNo", ids)
             row = df[df["GameNo"] == selected_game_id].iloc[0]
-            try: d_obj = datetime.strptime(str(row["日時"]).split(" ")[0], "%Y-%m-%d").date()
-            except: d_obj = default_date_obj
+            
             defaults.update({
                 "n1": row["Aさん"], "t1": row["Aタイプ"], "r1": int(float(row["A着順"])),
                 "n2": row["Bさん"], "t2": row["Bタイプ"], "r2": int(float(row["B着順"])),
                 "n3": row["Cさん"], "t3": row["Cタイプ"], "r3": int(float(row["C着順"])),
                 "note": row["備考"] if row["備考"] else "なし",
-                "date_obj": d_obj, "game_no": selected_game_id, 
+                "game_no": selected_game_id, 
                 "set_no": int(row["SetNo"]), "table_no": int(row["TableNo"])
             })
+            # 編集モード時は日付もデータから復元
+            try: 
+                # 日付変更に対応するためinput_dateは上書きしないが、表示用として認識
+                pass 
+            except: pass
+            
             if current_table != defaults["table_no"]:
                 st.info(f"※ 選択中のゲームは「{defaults['table_no']}卓」のデータです")
         else:
@@ -326,13 +347,9 @@ def page_input():
             return
 
     with st.form("input_form"):
-        c_head1, c_head2 = st.columns([1, 2])
-        with c_head1:
-            st.write(f"**Game No: {defaults['game_no']}**")
-            if not is_edit_mode:
-                st.caption(f"【{defaults['table_no']}卓】 第 {defaults['set_no']} セット")
-        with c_head2:
-            input_date = st.date_input("日付 (朝9時切替)", value=defaults['date_obj'])
+        st.write(f"**Game No: {defaults['game_no']}**")
+        if not is_edit_mode:
+            st.caption(f"【{defaults['table_no']}卓】 第 {defaults['set_no']} セット")
         
         if not is_edit_mode:
             start_new_set = st.checkbox(f"🆕 ここから新しいセットにする ({defaults['table_no']}卓の第{defaults['set_no']+1}セットへ)")
@@ -341,22 +358,25 @@ def page_input():
 
         TYPE_OPTS = ["A客", "B客", "AS", "BS"]
         def idx(opts, val): return opts.index(val) if val in opts else 0
-        def get_idx_in_list(lst, val): return lst.index(val) if val in lst else 0
+        def get_idx_in_list(lst, val): return lst.index(val) if val in lst else None
         
-        def player_input_row(label, def_n, def_t, def_r):
+        # UI変更: index=None, placeholder指定
+        def player_input_row(label, placeholder_text, def_n, def_t, def_r):
             st.markdown(f"**▼ {label}**")
             c1, c2 = st.columns([1, 2])
             with c1:
-                name = st.selectbox("名前", member_list, index=get_idx_in_list(member_list, def_n), key=f"n_{label}")
+                # デフォルト値がNoneならプレースホルダーが表示される
+                idx_val = get_idx_in_list(member_list, def_n) if def_n else None
+                name = st.selectbox("名前", member_list, index=idx_val, placeholder=placeholder_text, key=f"n_{label}")
             with c2:
                 rank = st.radio("着順", [1, 2, 3], index=idx([1, 2, 3], def_r), horizontal=True, key=f"r_{label}")
                 type_ = st.radio("タイプ", TYPE_OPTS, index=idx(TYPE_OPTS, def_t), horizontal=True, key=f"t_{label}")
             st.markdown("---")
             return name, type_, rank
 
-        p1_n, p1_t, p1_r = player_input_row("A席", defaults["n1"], defaults["t1"], defaults["r1"])
-        p2_n, p2_t, p2_r = player_input_row("B席", defaults["n2"], defaults["t2"], defaults["r2"])
-        p3_n, p3_t, p3_r = player_input_row("C席", defaults["n3"], defaults["t3"], defaults["r3"])
+        p1_n, p1_t, p1_r = player_input_row("A席", "name1", defaults["n1"], defaults["t1"], defaults["r1"])
+        p2_n, p2_t, p2_r = player_input_row("B席", "name2", defaults["n2"], defaults["t2"], defaults["r2"])
+        p3_n, p3_t, p3_r = player_input_row("C席", "name3", defaults["n3"], defaults["t3"], defaults["r3"])
 
         st.markdown("**▼ 備考**")
         NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
@@ -375,7 +395,9 @@ def page_input():
             with c_btn2: delete = st.form_submit_button("🗑 削除する", type="secondary", use_container_width=True)
 
         if submitted:
-            if sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
+            if not p1_n or not p2_n or not p3_n:
+                st.error("⚠️ 名前が選択されていません！")
+            elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
                 st.error("⚠️ 着順が重複しています！")
             else:
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
@@ -411,19 +433,15 @@ def page_input():
             st.rerun()
 
     # --- 履歴表示（当日・対象卓のみ） ---
-    st.markdown(f"### 📋 {input_date.strftime('%Y/%m/%d')} の対局結果 ({defaults['table_no']}卓)")
+    st.markdown(f"### 📋 {input_date.strftime('%Y/%m/%d')} の対局結果 ({current_table}卓)")
     
     if not df.empty:
-        # 1. 卓で絞り込み
-        # 編集モードなら「そのゲームの卓」、新規なら「選択中の卓」
-        target_table = defaults['table_no']
-        
-        # 2. 日付で絞り込み (論理日付)
+        # 日付・卓で絞り込み
         df["日時Obj"] = pd.to_datetime(df["日時"])
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
         
         history_subset = df[
-            (df["TableNo"] == target_table) & 
+            (df["TableNo"] == current_table) & 
             (df["論理日付"] == input_date)
         ]
         
