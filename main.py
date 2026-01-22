@@ -68,7 +68,7 @@ hide_style = """
         border-top: 2px double #333;
     }
 
-    /* --- 個人成績表スタイル (New!) --- */
+    /* --- 個人成績表スタイル --- */
     .stats-table {
         border-collapse: collapse;
         width: 100%;
@@ -275,7 +275,6 @@ def render_paper_sheet(df):
                 ranks_html_list.append(f'<td{td_class}>{cell_content}</td>')
 
             note_txt = row["備考"] if row["備考"] else ""
-            
             html += f'<tr><td>{row["DailyNo"]}</td><td>{time_str}</td>{ranks_html_list[0]}{ranks_html_list[1]}{ranks_html_list[2]}<td style="color:red; font-size:12px;">{note_txt}</td></tr>'
 
         html += f'<tr class="summary-row"><td colspan="2" style="text-align:right;">合計</td><td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td><td colspan="3" style="font-size:12px; text-align:left;">A客:{stats["A客"]} / B客:{stats["B客"]} / AS:{stats["AS"]} / BS:{stats["BS"]}</td></tr></tbody></table>'
@@ -366,14 +365,12 @@ def page_input():
         df_today = pd.DataFrame()
 
     current_set_no = int(df_today["SetNo"].max()) if not df_today.empty else 1
-    
     if not df_today.empty:
         next_display_no = int(df_today["DailyNo"].max()) + 1
     else:
         next_display_no = 1
 
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
-    
     next_internal_game_no = df["GameNo"].max() + 1 if not df.empty else 1
     
     defaults = {
@@ -459,17 +456,13 @@ def page_input():
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
                 final_set_no = defaults['set_no']
                 if not is_edit_mode and start_new_set: final_set_no += 1
-                
                 new_row = {
-                    "GameNo": defaults["internal_game_no"], 
-                    "TableNo": defaults["table_no"], 
-                    "SetNo": final_set_no,
+                    "GameNo": defaults["internal_game_no"], "TableNo": defaults["table_no"], "SetNo": final_set_no,
                     "日時": save_date_str, "備考": ("" if note == "なし" else note),
                     "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
                     "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
-                
                 if not is_edit_mode:
                     df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
                     st.session_state["success_msg"] = f"✅ {defaults['table_no']}卓に記録しました！ (No.{defaults['display_game_no']})"
@@ -509,7 +502,6 @@ def page_history():
 
     st.markdown("### 🔍 日付と人物で絞り込み")
     
-    # フォーム化: ボタンを押すまで動かないようにする
     with st.form("history_search_form"):
         c1, c2 = st.columns(2)
         with c1: sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
@@ -519,11 +511,9 @@ def page_history():
 
     if submitted:
         is_filtered = False
-        
         if sel_date != "(指定なし)":
             df = df[df["論理日付"] == sel_date]
             is_filtered = True
-            
         if sel_player != "(指定なし)":
             df = df[(df["Aさん"] == sel_player) | (df["Bさん"] == sel_player) | (df["Cさん"] == sel_player)]
             is_filtered = True
@@ -532,22 +522,17 @@ def page_history():
 
         if is_filtered and not df.empty:
             if sel_player != "(指定なし)":
-                # --- 個人分析 (表デザイン) ---
                 st.markdown(f"#### 👤 {sel_player} さんの成績")
-                
                 ranks = []
                 played_dates = set()
-                
                 for _, row in df.iterrows():
                     rank = None
                     if row["Aさん"] == sel_player: rank = int(float(row["A着順"]))
                     elif row["Bさん"] == sel_player: rank = int(float(row["B着順"]))
                     elif row["Cさん"] == sel_player: rank = int(float(row["C着順"]))
-                    
                     if rank:
                         ranks.append(rank)
                         played_dates.add(row["論理日付"])
-                
                 if ranks:
                     games = len(ranks)
                     avg = sum(ranks)/games
@@ -558,31 +543,11 @@ def page_history():
                     r2_rate = (c2_cnt / games) * 100
                     r3_rate = (c3 / games) * 100
                     
-                    # 見やすいHTMLテーブルで表示
                     stats_html = f"""
-                    <table class="stats-table">
-                        <thead>
-                            <tr>
-                                <th>総回数</th>
-                                <th>平均着順</th>
-                                <th>1着回数</th>
-                                <th>2着回数</th>
-                                <th>3着回数</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <tr>
-                                <td>{games} 回</td>
-                                <td>{avg:.2f}</td>
-                                <td>{c1} 回<span class="stats-sub">({r1_rate:.1f}%)</span></td>
-                                <td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.1f}%)</span></td>
-                                <td>{c3} 回<span class="stats-sub">({r3_rate:.1f}%)</span></td>
-                            </tr>
-                        </tbody>
-                    </table>
+                    <table class="stats-table"><thead><tr><th>総回数</th><th>平均着順</th><th>1着回数</th><th>2着回数</th><th>3着回数</th></tr></thead>
+                    <tbody><tr><td>{games} 回</td><td>{avg:.2f}</td><td>{c1} 回<span class="stats-sub">({r1_rate:.1f}%)</span></td><td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.1f}%)</span></td><td>{c3} 回<span class="stats-sub">({r3_rate:.1f}%)</span></td></tr></tbody></table>
                     """
                     st.markdown(stats_html, unsafe_allow_html=True)
-                    
                     st.divider()
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
@@ -594,11 +559,26 @@ def page_history():
                         date_list = sorted(list(played_dates), reverse=True)
                         st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
             else:
-                # --- 全体集計表 (DailyNo表示) ---
                 st.markdown(f"#### 📝 集計表")
                 render_paper_sheet(df)
-            
         elif is_filtered and df.empty:
             st.warning("条件に一致するデータが見つかりませんでした")
         else:
             st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
+    else:
+        st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
+
+# ==========================================
+# 6. メインルーティング
+# ==========================================
+if "page" not in st.session_state:
+    st.session_state["page"] = "home"
+
+if st.session_state["page"] == "home":
+    page_home()
+elif st.session_state["page"] == "members":
+    page_members()
+elif st.session_state["page"] == "input":
+    page_input()
+elif st.session_state["page"] == "history":
+    page_history()
