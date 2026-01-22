@@ -13,6 +13,49 @@ hide_style = """
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
+    
+    /* スコアシート風のスタイル定義 */
+    .score-sheet {
+        border-collapse: collapse;
+        width: 100%;
+        max_width: 800px;
+        margin-bottom: 20px;
+        font-family: "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+        color: #000;
+    }
+    .score-sheet th, .score-sheet td {
+        border: 1px solid #333;
+        padding: 4px 8px;
+        text-align: center;
+        font-size: 14px;
+    }
+    .score-sheet th {
+        background-color: #f0f0f0;
+        font-weight: bold;
+    }
+    .score-sheet .set-header {
+        background-color: #d9edf7;
+        text-align: left;
+        padding-left: 10px;
+    }
+    .score-sheet .rank-circle {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        line-height: 20px;
+        border-radius: 50%;
+        border: 1px solid #333;
+        margin-left: 5px;
+        font-size: 12px;
+    }
+    .score-sheet .rank-1 { background-color: #fff; color: #000; font-weight:bold; }
+    .score-sheet .rank-special { background-color: #333; color: #fff; } /* ❶用 */
+    
+    .score-sheet .summary-row td {
+        background-color: #fffbe6;
+        font-weight: bold;
+        border-top: 2px double #333;
+    }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
@@ -66,7 +109,6 @@ def load_member_data():
     if os.path.exists(MEMBER_FILE):
         return pd.read_csv(MEMBER_FILE)
     else:
-        # 初期メンバーは空でも良いが、例として入れておく
         return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
 
 def save_member_data(df):
@@ -83,122 +125,122 @@ def get_all_member_names():
     return all_names
 
 # ==========================================
-# 4. 集計 & 表示ロジック
+# 4. 集計 & レンダリングロジック
 # ==========================================
-def calculate_summary(subset_df):
-    player_cols = ["Aさん", "Bさん", "Cさん"]
-    rank_cols = ["A着順", "B着順", "C着順"]
-    
-    all_players = pd.concat([subset_df[col] for col in player_cols]).unique()
-    all_players = [p for p in all_players if p != ""]
-    
-    player_stats = []
-    for player in all_players:
-        counts = {1: 0, 2: 0, 3: 0}
-        for p_col, r_col in zip(player_cols, rank_cols):
-            for _, row in subset_df.iterrows():
-                if row[p_col] == player:
-                    try:
-                        r = int(float(row[r_col]))
-                        if 1 <= r <= 3: counts[r] += 1
-                    except: pass
-        
-        total_games = sum(counts.values())
-        if total_games > 0:
-            total_score = sum(r * c for r, c in counts.items())
-            avg = round(total_score / total_games, 2)
-        else:
-            avg = 0
-            
-        stats = {"名前": player, "平均": avg, "試合数": total_games, "1着": counts[1], "2着": counts[2], "3着": counts[3]}
-        player_stats.append(stats)
-    
-    df_player = pd.DataFrame(player_stats)
-    if not df_player.empty:
-        df_player = df_player[["名前", "1着", "2着", "3着", "平均", "試合数"]].set_index("名前")
 
+# --- 集計関数 (1セット分) ---
+def calculate_set_summary(subset_df):
     target_types = ["A客", "B客", "AS", "BS"]
     type_stats = {t: 0 for t in target_types}
     FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
     total_fee = 0
     
     for _, row in subset_df.iterrows():
+        # 1着のタイプを集計
         w_type = None
-        for p_col, r_col, t_col in zip(player_cols, rank_cols, ["Aタイプ", "Bタイプ", "Cタイプ"]):
-            try:
-                if int(float(row[r_col])) == 1:
-                    w_type = row[t_col]
-                    break
-            except: pass
+        if row["A着順"] == 1: w_type = row["Aタイプ"]
+        elif row["B着順"] == 1: w_type = row["Bタイプ"]
+        elif row["C着順"] == 1: w_type = row["Cタイプ"]
         
         if w_type in target_types:
             type_stats[w_type] += 1
             if w_type in FEE_MAP: total_fee += FEE_MAP[w_type]
         
+        # 備考による割引
         note = str(row["備考"])
         if note == "東１終了": total_fee -= 1
         elif note == "２人飛ばし": total_fee -= 2
         elif note == "５連勝〜": total_fee -= 5
 
-    df_type = pd.DataFrame(list(type_stats.items()), columns=["タイプ", "1着回数"]).set_index("タイプ").T
-    return df_player, df_type, total_fee
+    return total_fee, type_stats
 
-def render_history_table(df, highlight_game_id=None):
+# --- 紙の集計表風 HTMLレンダリング ---
+def render_paper_sheet(df):
     if df.empty:
-        st.info("この日のデータはありません")
+        st.info("データがありません")
         return
 
-    df_sorted = df.sort_values(["TableNo", "SetNo", "GameNo"])
-    unique_tables = sorted(df_sorted["TableNo"].unique())
+    # セット番号順に処理
+    unique_sets = sorted(df["SetNo"].unique())
 
-    for table_no in unique_tables:
-        table_df = df_sorted[df_sorted["TableNo"] == table_no]
-        if table_df.empty: continue
+    for set_no in unique_sets:
+        subset = df[df["SetNo"] == set_no].sort_values("GameNo")
+        if subset.empty: continue
         
-        unique_sets = sorted(table_df["SetNo"].unique(), reverse=True)
+        # 集計計算
+        fee, stats = calculate_set_summary(subset)
         
-        for set_no in unique_sets:
-            subset = table_df[table_df["SetNo"] == set_no]
-            if subset.empty: continue
+        # HTML構築開始
+        html = f"""
+        <table class="score-sheet">
+            <thead>
+                <tr class="set-header">
+                    <td colspan="5">📄 第 {int(set_no)} セット</td>
+                </tr>
+                <tr>
+                    <th style="width:5%">No</th>
+                    <th style="width:20%">備考</th>
+                    <th style="width:25%">A席</th>
+                    <th style="width:25%">B席</th>
+                    <th style="width:25%">C席</th>
+                </tr>
+            </thead>
+            <tbody>
+        """
+        
+        # 各ゲームの行
+        SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
+        
+        for _, row in subset.iterrows():
+            # 着順表示の整形
+            ranks_html = []
+            for p_char in ["A", "B", "C"]:
+                rank_val = str(int(float(row[f"{p_char}着順"])))
+                # 特殊備考があり、かつ1着の場合
+                is_special = (row["備考"] in SPECIAL_NOTES) and (rank_val == "1")
                 
-            start_game = subset["GameNo"].min()
-            end_game = subset["GameNo"].max()
-            df_player, df_type, total_fee = calculate_summary(subset)
-            
-            label = f"📄 第 {int(set_no)} セット (Game {start_game} ～ {end_game})　　💰 合計: {total_fee} 枚"
-            is_expanded = (set_no == max(unique_sets)) or (highlight_game_id is not None and highlight_game_id in subset["GameNo"].values)
-            
-            with st.expander(label, expanded=is_expanded):
-                c1, c2 = st.columns([2, 1])
-                with c1:
-                    if not df_player.empty:
-                        st.caption("👤 個人成績")
-                        st.dataframe(df_player, use_container_width=True)
-                with c2:
-                    st.caption("🏆 タイプ別トップ")
-                    st.table(df_type)
-                st.divider()
+                # 丸囲み数字 or 黒丸数字
+                if is_special:
+                    rank_display = f'<span class="rank-circle rank-special">❶</span>'
+                else:
+                    # 通常の丸数字 (文字化け防ぐためCSSで装飾も可だが、ここではシンプルに文字置換)
+                    char_map = {"1":"①", "2":"②", "3":"③"}
+                    display_char = char_map.get(rank_val, rank_val)
+                    # 見やすくするためにspanで囲む
+                    rank_display = f'<span style="font-weight:bold; margin-left:4px;">{display_char}</span>'
                 
-                display_cols = ["GameNo", "日時", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順", "備考"]
-                display_df = subset[display_cols].copy()
-                
-                SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
-                special_mask = display_df["備考"].isin(SPECIAL_NOTES)
-                for col in ["A着順", "B着順", "C着順"]:
-                    display_df[col] = display_df[col].astype(str).replace({"1": "①", "2": "②", "3": "③", "1.0": "①", "2.0": "②", "3.0": "③"})
-                    display_df.loc[special_mask & (display_df[col] == "①"), col] = "❶"
+                name = row[f"{p_char}さん"]
+                # 名前 + 着順
+                ranks_html.append(f"{name} {rank_display}")
 
-                target_cols = ["Aさん", "Aタイプ", "Bさん", "Bタイプ", "Cさん", "Cタイプ"]
-                display_df[target_cols] = display_df[target_cols].mask(display_df[target_cols] == display_df[target_cols].shift(), "")
-                
-                def highlight(val):
-                    return 'background-color: #ffcccc; color: #cc0000; font-weight: bold;' if val in ["①", "❶"] else ''
-                
-                styler = display_df.style.map(highlight)
-                if highlight_game_id:
-                    styler.apply(lambda r: ['background-color: #ffffcc']*len(r) if r.name in df[df["GameNo"]==highlight_game_id].index else ['']*len(r), axis=1)
-
-                st.dataframe(styler, use_container_width=True, hide_index=True)
+            # 備考
+            note = row["備考"] if row["備考"] else ""
+            
+            html += f"""
+                <tr>
+                    <td>{row['GameNo']}</td>
+                    <td style="color:red; font-size:12px;">{note}</td>
+                    <td>{ranks_html[0]}</td>
+                    <td>{ranks_html[1]}</td>
+                    <td>{ranks_html[2]}</td>
+                </tr>
+            """
+            
+        # フッター（集計欄）
+        # 画像のように右下に集計を寄せるレイアウト
+        html += f"""
+            <tr class="summary-row">
+                <td colspan="2" style="text-align:right;">合計</td>
+                <td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td>
+                <td colspan="2" style="font-size:12px; text-align:left;">
+                    A客:{stats['A客']}回 / B客:{stats['B客']}回 / AS:{stats['AS']}回 / BS:{stats['BS']}回
+                </td>
+            </tr>
+            </tbody>
+        </table>
+        """
+        
+        st.markdown(html, unsafe_allow_html=True)
 
 # ==========================================
 # 5. 各ページ画面
@@ -208,7 +250,6 @@ def render_history_table(df, highlight_game_id=None):
 def page_home():
     st.title("🀄 ぱいん成績管理")
     st.write("")
-    
     col1, col2, col3 = st.columns(3)
     with col1:
         if st.button("📝 成績をつける", type="primary", use_container_width=True):
@@ -275,21 +316,17 @@ def page_input():
     df = load_score_data()
     member_list = get_all_member_names()
     
-    # --- 初期値設定（フォームの外で日付を決定）---
-    current_dt = datetime.now()
-    default_date_obj = (current_dt - timedelta(hours=9)).date()
-    
-    # ユーザーが操作する部分（フォームの外）
+    # 卓選択と日付
     c_top1, c_top2 = st.columns(2)
     with c_top1:
         current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
     with c_top2:
+        current_dt = datetime.now()
+        default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
 
-    # --- バグ修正：選択された「卓」と「日付」に基づいてセット番号を計算 ---
+    # セット番号計算
     df_table = df[df["TableNo"] == current_table]
-    
-    # 日付フィルタリング (論理日付)
     if not df_table.empty:
         df_table["日時Obj"] = pd.to_datetime(df_table["日時"])
         df_table["論理日付"] = (df_table["日時Obj"] - timedelta(hours=9)).dt.date
@@ -297,18 +334,13 @@ def page_input():
     else:
         df_today = pd.DataFrame()
 
-    # その日のその卓のデータがあれば続きのセット、なければ1から
     if not df_today.empty:
         current_set_no = int(df_today["SetNo"].max())
     else:
         current_set_no = 1
-    # -------------------------------------------------------------
 
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
     
-    def safe_default(name):
-        return name if name in member_list else None # 名前がない場合はNone
-
     defaults = {
         "n1": None, "t1": "A客", "r1": 2,
         "n2": None, "t2": "B客", "r2": 1,
@@ -334,12 +366,6 @@ def page_input():
                 "game_no": selected_game_id, 
                 "set_no": int(row["SetNo"]), "table_no": int(row["TableNo"])
             })
-            # 編集モード時は日付もデータから復元
-            try: 
-                # 日付変更に対応するためinput_dateは上書きしないが、表示用として認識
-                pass 
-            except: pass
-            
             if current_table != defaults["table_no"]:
                 st.info(f"※ 選択中のゲームは「{defaults['table_no']}卓」のデータです")
         else:
@@ -360,12 +386,10 @@ def page_input():
         def idx(opts, val): return opts.index(val) if val in opts else 0
         def get_idx_in_list(lst, val): return lst.index(val) if val in lst else None
         
-        # UI変更: index=None, placeholder指定
         def player_input_row(label, placeholder_text, def_n, def_t, def_r):
             st.markdown(f"**▼ {label}**")
             c1, c2 = st.columns([1, 2])
             with c1:
-                # デフォルト値がNoneならプレースホルダーが表示される
                 idx_val = get_idx_in_list(member_list, def_n) if def_n else None
                 name = st.selectbox("名前", member_list, index=idx_val, placeholder=placeholder_text, key=f"n_{label}")
             with c2:
@@ -432,22 +456,13 @@ def page_input():
             st.session_state["success_msg"] = "🗑 削除しました"
             st.rerun()
 
-    # --- 履歴表示（当日・対象卓のみ） ---
-    st.markdown(f"### 📋 {input_date.strftime('%Y/%m/%d')} の対局結果 ({current_table}卓)")
-    
-    if not df.empty:
-        # 日付・卓で絞り込み
-        df["日時Obj"] = pd.to_datetime(df["日時"])
-        df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
-        
-        history_subset = df[
-            (df["TableNo"] == current_table) & 
-            (df["論理日付"] == input_date)
-        ]
-        
-        render_history_table(history_subset, selected_game_id if is_edit_mode else None)
-    else:
-        render_history_table(df)
+    # --- 履歴表示（当日・対象卓のみ・紙風） ---
+    if not df.empty and not df_today.empty:
+        st.markdown(f"### 📋 {input_date.strftime('%Y/%m/%d')} の集計表 ({current_table}卓)")
+        render_paper_sheet(df_today)
+    elif not df.empty:
+        st.info("今日のデータはまだありません")
+
 
 # --- 履歴画面 ---
 def page_history():
@@ -465,17 +480,16 @@ def page_history():
     df["日時Obj"] = pd.to_datetime(df["日時"])
     df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
     unique_dates = sorted(df["論理日付"].unique(), reverse=True)
-    all_players = get_all_member_names()
     unique_tables = sorted(df["TableNo"].unique())
 
-    st.markdown("### 🔍 データの絞り込み")
-    c1, c2, c3 = st.columns(3)
+    st.markdown("### 🔍 日付と卓を選択")
+    c1, c2 = st.columns(2)
     with c1: sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
     with c2: sel_table = st.selectbox("🀄 卓を選択", ["(指定なし)"] + list(unique_tables))
-    with c3: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
 
     is_filtered = False
     
+    # フィルタリング
     if sel_date != "(指定なし)":
         df = df[df["論理日付"] == sel_date]
         is_filtered = True
@@ -484,38 +498,17 @@ def page_history():
         df = df[df["TableNo"] == sel_table]
         is_filtered = True
 
-    if sel_player != "(指定なし)":
-        df = df[(df["Aさん"] == sel_player) | (df["Bさん"] == sel_player) | (df["Cさん"] == sel_player)]
-        is_filtered = True
-
     st.divider()
 
-    if is_filtered:
-        if sel_player != "(指定なし)":
-            st.markdown(f"#### 👤 {sel_player} さんの成績 (表示範囲内)")
-            ranks = []
-            for _, row in df.iterrows():
-                if row["Aさん"] == sel_player: ranks.append(int(float(row["A着順"])))
-                elif row["Bさん"] == sel_player: ranks.append(int(float(row["B着順"])))
-                elif row["Cさん"] == sel_player: ranks.append(int(float(row["C着順"])))
-            
-            if ranks:
-                games = len(ranks)
-                avg = sum(ranks)/games
-                counts = {1: ranks.count(1), 2: ranks.count(2), 3: ranks.count(3)}
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("回数", f"{games}回")
-                m2.metric("平均着順", f"{avg:.2f}")
-                m3.metric("1着", f"{counts[1]}回")
-                m4.metric("3着", f"{counts[3]}回")
-            st.write("")
+    if is_filtered and not df.empty:
+        # 手書き風スコアシートを表示
+        st.markdown(f"#### 📅 {sel_date} の集計表")
+        render_paper_sheet(df)
         
-        if not df.empty:
-            render_history_table(df)
-        else:
-            st.warning("条件に一致するデータが見つかりませんでした")
+    elif is_filtered and df.empty:
+        st.warning("条件に一致するデータが見つかりませんでした")
     else:
-        st.info("☝️ 上のボックスから絞り込み条件を選択してください")
+        st.info("☝️ 上のボックスから「日付」などを選択すると、集計表が表示されます")
 
 # ==========================================
 # 6. メインルーティング
