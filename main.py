@@ -166,17 +166,14 @@ def calculate_set_summary(subset_df):
 
     return total_fee, type_stats
 
-# --- 紙の集計表風 HTMLレンダリング (修正版: インデント除去) ---
+# --- 紙の集計表風 HTMLレンダリング (インデント完全削除版) ---
 def render_paper_sheet(df):
     if df.empty:
         st.info("データがありません")
         return
 
-    # 卓番号 -> セット番号 の順で整理して表示
-    # 卓が違えばセット1が複数ある可能性があるため、(TableNo, SetNo)でユニークにする
+    # 卓番号 -> セット番号 の順で整理
     groups = df.groupby(["TableNo", "SetNo"])
-    
-    # グループキーをソート (TableNo昇順, SetNo昇順)
     sorted_keys = sorted(groups.groups.keys())
 
     for key in sorted_keys:
@@ -186,8 +183,12 @@ def render_paper_sheet(df):
         
         fee, stats = calculate_set_summary(subset)
         
-        # HTML構築（※重要: インデントをつけずに左詰めで書くことでコード表示バグを防ぐ）
-        rows_html = ""
+        # ★ここが修正点: インデントを一切使わず、1行の文字列としてHTMLを構築します★
+        # これによりStreamlitがコードブロックと誤認するのを防ぎます
+        
+        # テーブル開始タグ
+        html = f'<table class="score-sheet"><thead><tr class="set-header"><td colspan="5">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td></tr><tr><th style="width:5%">No</th><th style="width:20%">備考</th><th style="width:25%">A席</th><th style="width:25%">B席</th><th style="width:25%">C席</th></tr></thead><tbody>'
+        
         SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
         
         for _, row in subset.iterrows():
@@ -203,10 +204,8 @@ def render_paper_sheet(df):
                 
                 # スパンタグの作成
                 if is_special:
-                    # 黒丸数字
                     rank_span = f'<span class="rank-circle rank-special">❶</span>'
                 else:
-                    # 通常丸数字
                     char_map = {"1":"①", "2":"②", "3":"③"}
                     d_char = char_map.get(rank_val, rank_val)
                     rank_span = f'<span style="font-weight:bold; margin-left:4px;">{d_char}</span>'
@@ -216,44 +215,13 @@ def render_paper_sheet(df):
 
             note_txt = row["備考"] if row["備考"] else ""
             
-            # 行の追加
-            rows_html += f"""
-            <tr>
-                <td>{row['GameNo']}</td>
-                <td style="color:red; font-size:12px;">{note_txt}</td>
-                <td>{ranks_html_list[0]}</td>
-                <td>{ranks_html_list[1]}</td>
-                <td>{ranks_html_list[2]}</td>
-            </tr>"""
+            # 行の追加 (改行なしで連結)
+            html += f'<tr><td>{row["GameNo"]}</td><td style="color:red; font-size:12px;">{note_txt}</td><td>{ranks_html_list[0]}</td><td>{ranks_html_list[1]}</td><td>{ranks_html_list[2]}</td></tr>'
 
-        # 全体のHTML組み立て
-        full_html = f"""
-<table class="score-sheet">
-    <thead>
-        <tr class="set-header">
-            <td colspan="5">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td>
-        </tr>
-        <tr>
-            <th style="width:5%">No</th>
-            <th style="width:20%">備考</th>
-            <th style="width:25%">A席</th>
-            <th style="width:25%">B席</th>
-            <th style="width:25%">C席</th>
-        </tr>
-    </thead>
-    <tbody>
-        {rows_html}
-        <tr class="summary-row">
-            <td colspan="2" style="text-align:right;">合計</td>
-            <td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td>
-            <td colspan="2" style="font-size:12px; text-align:left;">
-                A客:{stats['A客']} / B客:{stats['B客']} / AS:{stats['AS']} / BS:{stats['BS']}
-            </td>
-        </tr>
-    </tbody>
-</table>
-"""
-        st.markdown(full_html, unsafe_allow_html=True)
+        # フッター追加
+        html += f'<tr class="summary-row"><td colspan="2" style="text-align:right;">合計</td><td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td><td colspan="2" style="font-size:12px; text-align:left;">A客:{stats["A客"]} / B客:{stats["B客"]} / AS:{stats["AS"]} / BS:{stats["BS"]}</td></tr></tbody></table>'
+        
+        st.markdown(html, unsafe_allow_html=True)
 
 # ==========================================
 # 5. 各ページ画面
@@ -337,7 +305,6 @@ def page_input():
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
 
-    # セット番号計算
     df_table = df[df["TableNo"] == current_table]
     if not df_table.empty:
         df_table["日時Obj"] = pd.to_datetime(df_table["日時"])
@@ -492,8 +459,7 @@ def page_history():
     unique_dates = sorted(df["論理日付"].unique(), reverse=True)
     all_players = get_all_member_names()
 
-    st.markdown("### 🔍 データの絞り込み")
-    # ★卓の絞り込みを削除、日付と人物のみに★
+    st.markdown("### 🔍 日付と人物で絞り込み")
     c1, c2 = st.columns(2)
     with c1: sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
     with c2: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
@@ -512,15 +478,34 @@ def page_history():
     st.divider()
 
     if is_filtered and not df.empty:
-        # 1. プレイヤー選択があれば個人成績サマリーを表示
+        # ロジック変更: 個人が選択されている場合とそうでない場合で表示を変える
+        
         if sel_player != "(指定なし)":
+            # 【パターンA】個人が選ばれている時 -> 個人の成績詳細のみ表示
             st.markdown(f"#### 👤 {sel_player} さんの成績 (表示範囲内)")
-            ranks = []
-            for _, row in df.iterrows():
-                if row["Aさん"] == sel_player: ranks.append(int(float(row["A着順"])))
-                elif row["Bさん"] == sel_player: ranks.append(int(float(row["B着順"])))
-                elif row["Cさん"] == sel_player: ranks.append(int(float(row["C着順"])))
             
+            # その人の全履歴を抽出
+            my_history = []
+            ranks = []
+            
+            for _, row in df.iterrows():
+                # 自分がいる行を探す
+                rank = None
+                if row["Aさん"] == sel_player: rank = int(float(row["A着順"]))
+                elif row["Bさん"] == sel_player: rank = int(float(row["B着順"]))
+                elif row["Cさん"] == sel_player: rank = int(float(row["C着順"]))
+                
+                if rank:
+                    ranks.append(rank)
+                    # 簡易履歴用にデータを保存
+                    my_history.append({
+                        "日時": row["日時"],
+                        "GameNo": row["GameNo"],
+                        "着順": rank,
+                        "備考": row["備考"]
+                    })
+            
+            # メトリクス表示
             if ranks:
                 games = len(ranks)
                 avg = sum(ranks)/games
@@ -530,11 +515,17 @@ def page_history():
                 m2.metric("平均着順", f"{avg:.2f}")
                 m3.metric("1着", f"{counts[1]}回")
                 m4.metric("3着", f"{counts[3]}回")
-            st.divider()
-
-        # 2. 紙風スコアシートを表示 (卓データは消さず、表示ロジック内で卓ごとに整理される)
-        st.markdown(f"#### 📝 集計表")
-        render_paper_sheet(df)
+            
+            # 個人の対局リスト表示（DataFrame）
+            st.markdown("##### 📝 対局履歴リスト")
+            if my_history:
+                df_history = pd.DataFrame(my_history)
+                st.dataframe(df_history, use_container_width=True, hide_index=True)
+                
+        else:
+            # 【パターンB】個人は選ばれていない（日付のみなど） -> 紙風集計表を表示
+            st.markdown(f"#### 📝 集計表")
+            render_paper_sheet(df)
         
     elif is_filtered and df.empty:
         st.warning("条件に一致するデータが見つかりませんでした")
