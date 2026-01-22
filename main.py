@@ -8,13 +8,14 @@ from datetime import datetime, date, timedelta
 # ==========================================
 st.set_page_config(page_title="ぱいん成績管理", layout="wide")
 
+# CSS: スコアシートの見た目を定義
 hide_style = """
     <style>
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* スコアシート風のスタイル定義 */
+    /* スコアシート風スタイル */
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
@@ -26,12 +27,12 @@ hide_style = """
     }
     .score-sheet th, .score-sheet td {
         border: 1px solid #333;
-        padding: 4px 8px;
+        padding: 6px 8px;
         text-align: center;
         font-size: 14px;
     }
     .score-sheet th {
-        background-color: #f0f0f0;
+        background-color: #f2f2f2;
         font-weight: bold;
     }
     .score-sheet .set-header {
@@ -39,19 +40,30 @@ hide_style = """
         text-align: left;
         padding-left: 10px;
         font-weight: bold;
+        font-size: 15px;
     }
     .score-sheet .rank-circle {
         display: inline-block;
-        width: 20px;
-        height: 20px;
-        line-height: 20px;
+        width: 22px;
+        height: 22px;
+        line-height: 22px;
         border-radius: 50%;
         border: 1px solid #333;
         margin-left: 5px;
-        font-size: 12px;
+        font-size: 13px;
+        font-weight: bold;
+        text-align: center;
     }
-    .score-sheet .rank-1 { background-color: #fff; color: #000; font-weight:bold; }
-    .score-sheet .rank-special { background-color: #333; color: #fff; } /* ❶用 */
+    /* 1着(白丸) */
+    .score-sheet .rank-1 {
+        background-color: #fff; 
+        color: #000;
+    }
+    /* 特殊1着(黒丸) */
+    .score-sheet .rank-special {
+        background-color: #333; 
+        color: #fff;
+    }
     
     .score-sheet .summary-row td {
         background-color: #fffbe6;
@@ -138,7 +150,6 @@ def calculate_set_summary(subset_df):
     total_fee = 0
     
     for _, row in subset_df.iterrows():
-        # 1着のタイプを集計
         w_type = None
         if row["A着順"] == 1: w_type = row["Aタイプ"]
         elif row["B着順"] == 1: w_type = row["Bタイプ"]
@@ -148,7 +159,6 @@ def calculate_set_summary(subset_df):
             type_stats[w_type] += 1
             if w_type in FEE_MAP: total_fee += FEE_MAP[w_type]
         
-        # 備考による割引
         note = str(row["備考"])
         if note == "東１終了": total_fee -= 1
         elif note == "２人飛ばし": total_fee -= 2
@@ -156,26 +166,72 @@ def calculate_set_summary(subset_df):
 
     return total_fee, type_stats
 
-# --- 紙の集計表風 HTMLレンダリング (修正版) ---
+# --- 紙の集計表風 HTMLレンダリング (修正版: インデント除去) ---
 def render_paper_sheet(df):
     if df.empty:
         st.info("データがありません")
         return
 
-    unique_sets = sorted(df["SetNo"].unique())
+    # 卓番号 -> セット番号 の順で整理して表示
+    # 卓が違えばセット1が複数ある可能性があるため、(TableNo, SetNo)でユニークにする
+    groups = df.groupby(["TableNo", "SetNo"])
+    
+    # グループキーをソート (TableNo昇順, SetNo昇順)
+    sorted_keys = sorted(groups.groups.keys())
 
-    for set_no in unique_sets:
-        subset = df[df["SetNo"] == set_no].sort_values("GameNo")
+    for key in sorted_keys:
+        table_no, set_no = key
+        subset = groups.get_group(key).sort_values("GameNo")
         if subset.empty: continue
         
         fee, stats = calculate_set_summary(subset)
         
-        # HTMLのインデントを削除して構築
-        html = f"""
+        # HTML構築（※重要: インデントをつけずに左詰めで書くことでコード表示バグを防ぐ）
+        rows_html = ""
+        SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
+        
+        for _, row in subset.iterrows():
+            ranks_html_list = []
+            for p_char in ["A", "B", "C"]:
+                try:
+                    r_float = float(row[f"{p_char}着順"])
+                    rank_val = str(int(r_float))
+                except:
+                    rank_val = "0"
+
+                is_special = (row["備考"] in SPECIAL_NOTES) and (rank_val == "1")
+                
+                # スパンタグの作成
+                if is_special:
+                    # 黒丸数字
+                    rank_span = f'<span class="rank-circle rank-special">❶</span>'
+                else:
+                    # 通常丸数字
+                    char_map = {"1":"①", "2":"②", "3":"③"}
+                    d_char = char_map.get(rank_val, rank_val)
+                    rank_span = f'<span style="font-weight:bold; margin-left:4px;">{d_char}</span>'
+                
+                p_name = row[f"{p_char}さん"]
+                ranks_html_list.append(f"{p_name} {rank_span}")
+
+            note_txt = row["備考"] if row["備考"] else ""
+            
+            # 行の追加
+            rows_html += f"""
+            <tr>
+                <td>{row['GameNo']}</td>
+                <td style="color:red; font-size:12px;">{note_txt}</td>
+                <td>{ranks_html_list[0]}</td>
+                <td>{ranks_html_list[1]}</td>
+                <td>{ranks_html_list[2]}</td>
+            </tr>"""
+
+        # 全体のHTML組み立て
+        full_html = f"""
 <table class="score-sheet">
     <thead>
         <tr class="set-header">
-            <td colspan="5">📄 第 {int(set_no)} セット</td>
+            <td colspan="5">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td>
         </tr>
         <tr>
             <th style="width:5%">No</th>
@@ -186,54 +242,18 @@ def render_paper_sheet(df):
         </tr>
     </thead>
     <tbody>
-"""
-        
-        SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
-        
-        for _, row in subset.iterrows():
-            ranks_html = []
-            for p_char in ["A", "B", "C"]:
-                try:
-                    rank_val = str(int(float(row[f"{p_char}着順"])))
-                except:
-                    rank_val = "0"
-
-                is_special = (row["備考"] in SPECIAL_NOTES) and (rank_val == "1")
-                
-                if is_special:
-                    rank_display = f'<span class="rank-circle rank-special">❶</span>'
-                else:
-                    char_map = {"1":"①", "2":"②", "3":"③"}
-                    display_char = char_map.get(rank_val, rank_val)
-                    rank_display = f'<span style="font-weight:bold; margin-left:4px;">{display_char}</span>'
-                
-                name = row[f"{p_char}さん"]
-                ranks_html.append(f"{name} {rank_display}")
-
-            note = row["備考"] if row["備考"] else ""
-            
-            html += f"""
-        <tr>
-            <td>{row['GameNo']}</td>
-            <td style="color:red; font-size:12px;">{note}</td>
-            <td>{ranks_html[0]}</td>
-            <td>{ranks_html[1]}</td>
-            <td>{ranks_html[2]}</td>
-        </tr>
-"""
-            
-        html += f"""
+        {rows_html}
         <tr class="summary-row">
             <td colspan="2" style="text-align:right;">合計</td>
             <td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td>
             <td colspan="2" style="font-size:12px; text-align:left;">
-                A客:{stats['A客']}回 / B客:{stats['B客']}回 / AS:{stats['AS']}回 / BS:{stats['BS']}回
+                A客:{stats['A客']} / B客:{stats['B客']} / AS:{stats['AS']} / BS:{stats['BS']}
             </td>
         </tr>
     </tbody>
 </table>
 """
-        st.markdown(html, unsafe_allow_html=True)
+        st.markdown(full_html, unsafe_allow_html=True)
 
 # ==========================================
 # 5. 各ページ画面
@@ -402,6 +422,7 @@ def page_input():
 
         if not is_edit_mode:
             submitted = st.form_submit_button("📝 記録する", type="primary", use_container_width=True)
+            delete = False
         else:
             c_btn1, c_btn2 = st.columns(2)
             with c_btn1: submitted = st.form_submit_button("🔄 更新する", type="primary", use_container_width=True)
@@ -469,14 +490,13 @@ def page_history():
     df["日時Obj"] = pd.to_datetime(df["日時"])
     df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
     unique_dates = sorted(df["論理日付"].unique(), reverse=True)
-    unique_tables = sorted(df["TableNo"].unique())
     all_players = get_all_member_names()
 
-    st.markdown("### 🔍 日付と卓を選択")
-    c1, c2, c3 = st.columns(3)
+    st.markdown("### 🔍 データの絞り込み")
+    # ★卓の絞り込みを削除、日付と人物のみに★
+    c1, c2 = st.columns(2)
     with c1: sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
-    with c2: sel_table = st.selectbox("🀄 卓を選択", ["(指定なし)"] + list(unique_tables))
-    with c3: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
+    with c2: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
 
     is_filtered = False
     
@@ -485,10 +505,6 @@ def page_history():
         df = df[df["論理日付"] == sel_date]
         is_filtered = True
         
-    if sel_table != "(指定なし)":
-        df = df[df["TableNo"] == sel_table]
-        is_filtered = True
-
     if sel_player != "(指定なし)":
         df = df[(df["Aさん"] == sel_player) | (df["Bさん"] == sel_player) | (df["Cさん"] == sel_player)]
         is_filtered = True
@@ -516,14 +532,14 @@ def page_history():
                 m4.metric("3着", f"{counts[3]}回")
             st.divider()
 
-        # 2. 紙風スコアシートを表示
+        # 2. 紙風スコアシートを表示 (卓データは消さず、表示ロジック内で卓ごとに整理される)
         st.markdown(f"#### 📝 集計表")
         render_paper_sheet(df)
         
     elif is_filtered and df.empty:
         st.warning("条件に一致するデータが見つかりませんでした")
     else:
-        st.info("☝️ 上のボックスから「日付」などを選択すると、集計表が表示されます")
+        st.info("☝️ 上のボックスから「日付」または「プレイヤー」を選択してデータを表示してください")
 
 # ==========================================
 # 6. メインルーティング
