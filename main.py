@@ -18,7 +18,7 @@ hide_style = """
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
-        max_width: 950px; /* 幅を広げる */
+        max_width: 1000px; /* 幅を広げる */
         margin-bottom: 20px;
         font-family: "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
         color: #000;
@@ -109,17 +109,19 @@ def load_score_data():
         if "TableNo" not in df.columns:
             df["TableNo"] = 1 if not df.empty else []
             
-        # --- ここで「当日連番 (DailyNo)」を計算して付与 ---
+        # --- 当日連番 (DailyNo) 計算処理 ---
         if not df.empty:
             # 日付処理
             df["日時Obj"] = pd.to_datetime(df["日時"])
+            # 朝9時切り替えの論理日付
             df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
             
-            # 日付ごと・卓ごとに並べ替え
-            df = df.sort_values(["论理日付", "TableNo", "GameNo"]) # GameNoは通し番号なので作成順
+            # 並べ替え: 論理日付 -> 卓番号 -> 入力日時順
+            # ※ここで前回のコードにTypoがありました。修正済みです。
+            df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
             
             # グループごとに連番を振る (これが表示用のGame Noになる)
-            df["DailyNo"] = df.groupby(["论理日付", "TableNo"]).cumcount() + 1
+            df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
         else:
             df["DailyNo"] = []
             
@@ -129,11 +131,8 @@ def load_score_data():
         return pd.DataFrame(columns=cols)
 
 def save_score_data(df):
-    # 保存するときは一時的に作ったカラム(DailyNoなど)を除外してもいいが、
-    # CSVに余計な列が増えても実害はないためそのまま保存し、読み込み時に再計算する形をとる
-    # ただし今回はシンプルに、計算列は保存対象外とする処理を入れる（ファイル肥大化防止）
+    # 保存するときは一時的に作ったカラム(DailyNoなど)を除外して保存
     save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
-    # カラムが存在するか確認してから保存
     existing_cols = [c for c in save_cols if c in df.columns]
     df[existing_cols].to_csv(SCORE_FILE, index=False)
 
@@ -199,7 +198,7 @@ def render_paper_sheet(df):
         
         fee, stats = calculate_set_summary(subset)
         
-        # --- HTML構築 (レイアウト変更: No | 時刻 | A | B | C | 備考) ---
+        # --- HTML構築 (レイアウト: No | 時刻 | A | B | C | 備考) ---
         html = f'''
         <table class="score-sheet">
             <thead>
@@ -221,7 +220,7 @@ def render_paper_sheet(df):
         for _, row in subset.iterrows():
             ranks_html_list = []
             
-            # 時刻の抽出 (YYYY-MM-DD HH:MM -> HH:MM)
+            # 時刻抽出 (HH:MM)
             try:
                 dt_obj = pd.to_datetime(row["日時"])
                 time_str = dt_obj.strftime("%H:%M")
@@ -332,7 +331,7 @@ def page_input():
         st.session_state["page"] = "home"
         st.rerun()
 
-    df = load_score_data() # ここでDailyNoが計算されている
+    df = load_score_data() # DailyNo計算済み
     member_list = get_all_member_names()
     
     c_top1, c_top2 = st.columns(2)
@@ -346,14 +345,15 @@ def page_input():
     # 日付フィルタ
     df_table = df[df["TableNo"] == current_table]
     if not df_table.empty:
+        # 入力日付と同じ論理日付のデータを抽出
         df_today = df_table[df_table["論理日付"] == input_date]
     else:
         df_today = pd.DataFrame()
 
-    # 次のセット番号・次のDailyNo(表示用GameNo)を計算
+    # 次のセット番号
     current_set_no = int(df_today["SetNo"].max()) if not df_today.empty else 1
     
-    # ここがポイント: その日の最大DailyNo + 1 を表示用に使う
+    # ★重要: 次の表示用GameNo (DailyNo) を計算
     if not df_today.empty:
         next_display_no = int(df_today["DailyNo"].max()) + 1
     else:
