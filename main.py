@@ -18,7 +18,7 @@ hide_style = """
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
-        max_width: 800px;
+        max_width: 900px; /* 幅を少し広げる */
         margin-bottom: 20px;
         font-family: "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
         color: #000;
@@ -26,9 +26,10 @@ hide_style = """
     }
     .score-sheet th, .score-sheet td {
         border: 1px solid #333;
-        padding: 6px 8px;
+        padding: 6px 4px; /* パディング調整 */
         text-align: center;
         font-size: 14px;
+        vertical-align: middle;
     }
     .score-sheet th {
         background-color: #f2f2f2;
@@ -41,21 +42,33 @@ hide_style = """
         font-weight: bold;
         font-size: 15px;
     }
-    .score-sheet .rank-circle {
+    
+    /* 順位表示のスタイル */
+    .rank-num {
+        font-weight: bold;
+        font-size: 16px;
+        margin-left: 5px;
         display: inline-block;
+        width: 20px; /* 幅固定で位置ズレ防止 */
+        text-align: center;
+    }
+    
+    /* 1着のセル背景色 (薄い青) */
+    .cell-top {
+        background-color: #e6f7ff !important; 
+    }
+    
+    /* 特殊1着の黒丸用スタイル */
+    .rank-special {
+        background-color: #333;
+        color: #fff;
+        border-radius: 50%;
         width: 22px;
         height: 22px;
         line-height: 22px;
-        border-radius: 50%;
-        border: 1px solid #333;
-        margin-left: 5px;
         font-size: 13px;
-        font-weight: bold;
-        text-align: center;
     }
-    .score-sheet .rank-1 { background-color: #fff; color: #000; }
-    .score-sheet .rank-special { background-color: #333; color: #fff; }
-    
+
     .score-sheet .summary-row td {
         background-color: #fffbe6;
         font-weight: bold;
@@ -171,12 +184,10 @@ def render_paper_sheet(df):
         
         fee, stats = calculate_set_summary(subset)
         
-        # HTML構築開始
-        html = f'<table class="score-sheet"><thead><tr class="set-header"><td colspan="5">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td></tr><tr><th style="width:5%">No</th><th style="width:20%">備考</th><th style="width:25%">A席</th><th style="width:25%">B席</th><th style="width:25%">C席</th></tr></thead><tbody>'
+        # HTML構築 (インデントなし)
+        html = f'<table class="score-sheet"><thead><tr class="set-header"><td colspan="5">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td></tr><tr><th style="width:5%">No</th><th style="width:15%">備考</th><th style="width:26%">A席</th><th style="width:26%">B席</th><th style="width:26%">C席</th></tr></thead><tbody>'
         
         SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
-        
-        # --- 名前重複チェック用の変数 ---
         last_names = {"A": None, "B": None, "C": None}
         
         for _, row in subset.iterrows():
@@ -184,32 +195,50 @@ def render_paper_sheet(df):
             
             for p_char in ["A", "B", "C"]:
                 try:
-                    rank_val = str(int(float(row[f"{p_char}着順"])))
+                    r_float = float(row[f"{p_char}着順"])
+                    rank_val = str(int(r_float))
                 except: rank_val = "0"
 
-                is_special = (row["備考"] in SPECIAL_NOTES) and (rank_val == "1")
+                is_1st = (rank_val == "1")
+                is_special = (row["備考"] in SPECIAL_NOTES) and is_1st
+                
+                # クラス付与: 1着なら青背景
+                td_class = ' class="cell-top"' if is_1st else ""
                 
                 if is_special:
-                    rank_span = f'<span class="rank-circle rank-special">❶</span>'
+                    rank_span = f'<span class="rank-num rank-special">❶</span>'
                 else:
                     char_map = {"1":"①", "2":"②", "3":"③"}
                     d_char = char_map.get(rank_val, rank_val)
-                    rank_span = f'<span style="font-weight:bold; margin-left:4px;">{d_char}</span>'
+                    # 1着の文字色は強調、それ以外は標準
+                    color_style = "color:#000;"
+                    rank_span = f'<span class="rank-num" style="{color_style}">{d_char}</span>'
                 
-                # --- 名前表示ロジック（重複なら空文字） ---
+                # 名前重複チェック
                 p_name = row[f"{p_char}さん"]
                 if p_name == last_names[p_char]:
-                    display_name = "" # 重複なので表示しない
+                    display_content = f'<span style="opacity:0;">{p_name}</span>' # 透明にして位置合わせするか、単に空文字にするか
+                    # 位置ズレを防ぐため、名前は表示せず、数字だけを表示するレイアウトにする
+                    # ここではシンプルに「右寄せ」などで揃えるのが無難
+                    # display_content = "" 
+                    # ズレ防止のため、名前表示エリアと数字エリアを分けるのがベストだが、
+                    # 既存HTML構造維持のため、名前部分を空文字にしつつ、全体の配置を「右寄せ」気味にする手もある
+                    # 今回は要望の「重複時は名前なし」を優先
+                    display_text = ""
                 else:
-                    display_name = p_name
-                    last_names[p_char] = p_name # 次回比較用に更新
+                    display_text = p_name
+                    last_names[p_char] = p_name
                 
-                # 表示は「名前 + 着順」だが、名前が空なら「着順のみ」
-                ranks_html_list.append(f"{display_name} {rank_span}")
+                # 名前と数字の間にスペースを入れて配置
+                # 名前が空でも数字の位置がズレないよう、flexbox等を使うのが現代的だが、
+                # 簡易HTMLなら「右側に数字」で統一する
+                cell_content = f'<div style="display:flex; justify-content:space-between; align-items:center; padding:0 10px;"><span>{display_text}</span>{rank_span}</div>'
+                
+                ranks_html_list.append(f'<td{td_class}>{cell_content}</td>')
 
             note_txt = row["備考"] if row["備考"] else ""
             
-            html += f'<tr><td>{row["GameNo"]}</td><td style="color:red; font-size:12px;">{note_txt}</td><td>{ranks_html_list[0]}</td><td>{ranks_html_list[1]}</td><td>{ranks_html_list[2]}</td></tr>'
+            html += f'<tr><td>{row["GameNo"]}</td><td style="color:red; font-size:12px;">{note_txt}</td>{ranks_html_list[0]}{ranks_html_list[1]}{ranks_html_list[2]}</tr>'
 
         html += f'<tr class="summary-row"><td colspan="2" style="text-align:right;">合計</td><td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td><td colspan="2" style="font-size:12px; text-align:left;">A客:{stats["A客"]} / B客:{stats["B客"]} / AS:{stats["AS"]} / BS:{stats["BS"]}</td></tr></tbody></table>'
         
@@ -448,7 +477,7 @@ def page_history():
 
     if is_filtered and not df.empty:
         if sel_player != "(指定なし)":
-            # --- パターンA: 個人分析 ---
+            # --- パターンA: 個人分析 (詳細版) ---
             st.markdown(f"#### 👤 {sel_player} さんの成績")
             
             ranks = []
@@ -465,16 +494,24 @@ def page_history():
                     played_dates.add(row["論理日付"])
             
             if ranks:
-                # メトリクス
                 games = len(ranks)
                 avg = sum(ranks)/games
-                counts = {1: ranks.count(1), 2: ranks.count(2), 3: ranks.count(3)}
+                c1 = ranks.count(1)
+                c2_cnt = ranks.count(2) # 2着回数
+                c3 = ranks.count(3)
                 
-                m1, m2, m3, m4 = st.columns(4)
-                m1.metric("回数", f"{games}回")
-                m2.metric("平均着順", f"{avg:.2f}")
-                m3.metric("1着", f"{counts[1]}回")
-                m4.metric("3着", f"{counts[3]}回")
+                # 割合計算
+                r1_rate = (c1 / games) * 100
+                r2_rate = (c2_cnt / games) * 100
+                r3_rate = (c3 / games) * 100
+                
+                # メトリクス表示
+                col1, col2, col3, col4, col5 = st.columns(5)
+                col1.metric("回数", f"{games} 回")
+                col2.metric("平均着順", f"{avg:.2f}")
+                col3.metric("1着 (率)", f"{c1} 回 ({r1_rate:.1f}%)")
+                col4.metric("2着 (率)", f"{c2_cnt} 回 ({r2_rate:.1f}%)")
+                col5.metric("3着 (率)", f"{c3} 回 ({r3_rate:.1f}%)")
                 
                 st.divider()
                 
@@ -485,7 +522,7 @@ def page_history():
                     st.markdown("##### 📊 着順分布")
                     chart_df = pd.DataFrame({
                         "着順": ["1着", "2着", "3着"],
-                        "回数": [counts[1], counts[2], counts[3]]
+                        "回数": [c1, c2_cnt, c3]
                     }).set_index("着順")
                     st.bar_chart(chart_df)
                     
