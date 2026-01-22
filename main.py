@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime, date, timedelta
+from streamlit_gsheets import GSheetsConnection
 
 # ==========================================
 # 1. ページ設定 & デザイン調整
@@ -14,7 +14,7 @@ hide_style = """
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* --- スコアシート風スタイル (集計表) --- */
+    /* --- スコアシート風スタイル --- */
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
@@ -126,46 +126,67 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. データ管理関数
+# 3. データ管理関数 (Google Sheets版)
 # ==========================================
-SCORE_FILE = "sanma_score.csv"
-MEMBER_FILE = "members.csv"
+# シート名定義 (スプレッドシートのタブ名と一致させる)
+SHEET_SCORE = "score"
+SHEET_MEMBER = "members"
+
+def get_conn():
+    return st.connection("gsheets", type=GSheetsConnection)
 
 def load_score_data():
-    if os.path.exists(SCORE_FILE):
-        df = pd.read_csv(SCORE_FILE).fillna("")
-        if "SetNo" not in df.columns and not df.empty:
-            df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
-        elif "SetNo" not in df.columns:
-            df["SetNo"] = []
-        if "TableNo" not in df.columns:
-            df["TableNo"] = 1 if not df.empty else []
-            
-        if not df.empty:
-            df["日時Obj"] = pd.to_datetime(df["日時"])
-            df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
-            df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
-            df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
-        else:
-            df["DailyNo"] = []
-        return df
-    else:
+    conn = get_conn()
+    try:
+        # ttl=0 でキャッシュ無効化（常に最新を取得）
+        df = conn.read(worksheet=SHEET_SCORE, ttl=0).fillna("")
+    except:
+        # シートがない場合などのエラー回避用（空のDF作成）
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
+    # 必須カラムの補完
+    if "SetNo" not in df.columns and not df.empty:
+        df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
+    elif "SetNo" not in df.columns:
+        df["SetNo"] = []
+    if "TableNo" not in df.columns:
+        df["TableNo"] = 1 if not df.empty else []
+    
+    # --- 当日連番 (DailyNo) 計算処理 ---
+    if not df.empty:
+        df["日時Obj"] = pd.to_datetime(df["日時"])
+        df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+        df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
+        df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
+    else:
+        df["DailyNo"] = []
+        
+    return df
+
 def save_score_data(df):
+    conn = get_conn()
     save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
+    # 存在確認
     existing_cols = [c for c in save_cols if c in df.columns]
-    df[existing_cols].to_csv(SCORE_FILE, index=False)
+    df_to_save = df[existing_cols]
+    
+    # スプレッドシート更新
+    conn.update(worksheet=SHEET_SCORE, data=df_to_save)
 
 def load_member_data():
-    if os.path.exists(MEMBER_FILE):
-        return pd.read_csv(MEMBER_FILE)
-    else:
+    conn = get_conn()
+    try:
+        df = conn.read(worksheet=SHEET_MEMBER, ttl=0).fillna("")
+        if df.empty:
+             return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
+        return df
+    except:
         return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
 
 def save_member_data(df):
-    df.to_csv(MEMBER_FILE, index=False)
+    conn = get_conn()
+    conn.update(worksheet=SHEET_MEMBER, data=df)
 
 def get_all_member_names():
     df_mem = load_member_data()
@@ -347,7 +368,7 @@ def page_input():
         st.session_state["page"] = "home"
         st.rerun()
 
-    df = load_score_data()
+    df = load_score_data() # DailyNo計算済み
     member_list = get_all_member_names()
     
     c_top1, c_top2 = st.columns(2)
@@ -371,7 +392,12 @@ def page_input():
         next_display_no = 1
 
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
-    next_internal_game_no = df["GameNo"].max() + 1 if not df.empty else 1
+    
+    # GameNoが存在しない場合は初期化
+    if not df.empty:
+        next_internal_game_no = df["GameNo"].max() + 1
+    else:
+        next_internal_game_no = 1
     
     defaults = {
         "n1": None, "t1": "A客", "r1": 2,
