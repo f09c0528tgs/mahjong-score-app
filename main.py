@@ -40,36 +40,28 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. データ管理関数 (複数卓対応)
+# 3. データ管理関数
 # ==========================================
 SCORE_FILE = "sanma_score.csv"
 MEMBER_FILE = "members.csv"
 
-# --- 成績データの読み書き ---
 def load_score_data():
     if os.path.exists(SCORE_FILE):
         df = pd.read_csv(SCORE_FILE).fillna("")
-        
-        # 旧データ互換処理
         if "SetNo" not in df.columns and not df.empty:
             df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
         elif "SetNo" not in df.columns:
             df["SetNo"] = []
-            
-        # ★追加: 卓番号カラムがない場合は「1」で埋める
         if "TableNo" not in df.columns:
             df["TableNo"] = 1 if not df.empty else []
-            
         return df
     else:
-        # TableNoを追加
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
 def save_score_data(df):
     df.to_csv(SCORE_FILE, index=False)
 
-# --- メンバーデータの読み書き ---
 def load_member_data():
     if os.path.exists(MEMBER_FILE):
         return pd.read_csv(MEMBER_FILE)
@@ -79,7 +71,6 @@ def load_member_data():
 def save_member_data(df):
     df.to_csv(MEMBER_FILE, index=False)
 
-# --- メンバーリスト生成 ---
 def get_all_member_names():
     df_mem = load_member_data()
     registered = df_mem["名前"].tolist() if not df_mem.empty else []
@@ -153,20 +144,19 @@ def calculate_summary(subset_df):
 
 def render_history_table(df, highlight_game_id=None):
     if df.empty:
-        st.info("データがありません")
+        st.info("この日のデータはありません")
         return
 
-    # 卓番号 -> SetNo -> GameNo の順でソート
     df_sorted = df.sort_values(["TableNo", "SetNo", "GameNo"])
-    
-    # 存在する卓番号を取得
     unique_tables = sorted(df_sorted["TableNo"].unique())
 
     for table_no in unique_tables:
         table_df = df_sorted[df_sorted["TableNo"] == table_no]
         if table_df.empty: continue
 
-        st.markdown(f"#### 🀄 {int(table_no)} 卓の履歴")
+        # 卓番号表示（1つしかない場合は省略可だが、念のため表示）
+        # st.markdown(f"#### 🀄 {int(table_no)} 卓")
+        
         unique_sets = sorted(table_df["SetNo"].unique(), reverse=True)
         
         for set_no in unique_sets:
@@ -287,11 +277,9 @@ def page_input():
     df = load_score_data()
     member_list = get_all_member_names()
     
-    # ★追加: 卓選択
-    # デフォルトは1卓
-    current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3, 4, 5], index=0)
+    # 卓選択：1, 2, 3 のみに制限
+    current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
     
-    # その卓だけのデータを抽出（セット計算用）
     df_table = df[df["TableNo"] == current_table]
 
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
@@ -299,7 +287,6 @@ def page_input():
     current_dt = datetime.now()
     default_date_obj = (current_dt - timedelta(hours=9)).date()
     
-    # その卓での最新セット番号を取得
     current_set_no = int(df_table["SetNo"].max()) if not df_table.empty else 1
     
     def safe_default(name):
@@ -310,7 +297,7 @@ def page_input():
         "n2": safe_default("野田"), "t2": "B客", "r2": 1,
         "n3": safe_default("豊村"), "t3": "AS", "r3": 3,
         "note": "なし",
-        "game_no": df["GameNo"].max() + 1 if not df.empty else 1, # GameNoは全体で通し番号
+        "game_no": df["GameNo"].max() + 1 if not df.empty else 1,
         "date_obj": default_date_obj,
         "set_no": current_set_no,
         "table_no": current_table
@@ -319,7 +306,6 @@ def page_input():
     selected_game_id = None
     if is_edit_mode:
         if not df.empty:
-            # 修正時は全データから選ぶ（卓関係なく）
             ids = df["GameNo"].sort_values(ascending=False).tolist()
             selected_game_id = st.selectbox("修正するゲームNo", ids)
             row = df[df["GameNo"] == selected_game_id].iloc[0]
@@ -344,7 +330,6 @@ def page_input():
         with c_head1:
             st.write(f"**Game No: {defaults['game_no']}**")
             if not is_edit_mode:
-                # 卓番号とセット番号を表示
                 st.caption(f"【{defaults['table_no']}卓】 第 {defaults['set_no']} セット")
         with c_head2:
             input_date = st.date_input("日付 (朝9時切替)", value=defaults['date_obj'])
@@ -395,13 +380,12 @@ def page_input():
             else:
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
                 final_set_no = defaults['set_no']
-                # 新規登録で、かつ「新しいセット」にチェックがあれば、その卓のセット番号を+1
                 if not is_edit_mode and start_new_set:
                     final_set_no += 1
                 
                 new_row = {
                     "GameNo": defaults["game_no"], 
-                    "TableNo": defaults["table_no"], # 卓番号保存
+                    "TableNo": defaults["table_no"],
                     "SetNo": final_set_no,
                     "日時": save_date_str, "備考": ("" if note == "なし" else note),
                     "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
@@ -426,14 +410,26 @@ def page_input():
             st.session_state["success_msg"] = "🗑 削除しました"
             st.rerun()
 
-    # 入力画面下部の履歴（選択中の卓のみ表示）
-    st.markdown(f"### 📋 直近の対局結果 ({current_table}卓)")
-    # df_table (選択中の卓のみ) を渡して表示させる
-    # 編集中の場合はそのデータを表示するため全データから渡すが、基本は卓絞り込み
-    if is_edit_mode:
-        render_history_table(df, selected_game_id)
+    # --- 履歴表示（当日・対象卓のみ） ---
+    st.markdown(f"### 📋 {input_date.strftime('%Y/%m/%d')} の対局結果 ({defaults['table_no']}卓)")
+    
+    if not df.empty:
+        # 1. 卓で絞り込み
+        # 編集モードなら「そのゲームの卓」、新規なら「選択中の卓」
+        target_table = defaults['table_no']
+        
+        # 2. 日付で絞り込み (論理日付)
+        df["日時Obj"] = pd.to_datetime(df["日時"])
+        df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+        
+        history_subset = df[
+            (df["TableNo"] == target_table) & 
+            (df["論理日付"] == input_date)
+        ]
+        
+        render_history_table(history_subset, selected_game_id if is_edit_mode else None)
     else:
-        render_history_table(df_table, None)
+        render_history_table(df)
 
 # --- 履歴画面 ---
 def page_history():
