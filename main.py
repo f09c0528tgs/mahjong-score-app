@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import altair as alt  # 円グラフ用にこれだけ追加しました
+import altair as alt
 from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 
@@ -129,7 +129,6 @@ if not check_password():
 # ==========================================
 # 3. データ管理関数 (Google Sheets版)
 # ==========================================
-# シート名定義 (スプレッドシートのタブ名と一致させる)
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
 
@@ -139,14 +138,11 @@ def get_conn():
 def load_score_data():
     conn = get_conn()
     try:
-        # ttl=0 でキャッシュ無効化（常に最新を取得）
         df = conn.read(worksheet=SHEET_SCORE, ttl=0).fillna("")
     except:
-        # シートがない場合などのエラー回避用（空のDF作成）
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
-    # 必須カラムの補完
     if "SetNo" not in df.columns and not df.empty:
         df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
     elif "SetNo" not in df.columns:
@@ -154,7 +150,6 @@ def load_score_data():
     if "TableNo" not in df.columns:
         df["TableNo"] = 1 if not df.empty else []
     
-    # --- 当日連番 (DailyNo) 計算処理 ---
     if not df.empty:
         df["日時Obj"] = pd.to_datetime(df["日時"])
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
@@ -168,11 +163,8 @@ def load_score_data():
 def save_score_data(df):
     conn = get_conn()
     save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
-    # 存在確認
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
-    
-    # スプレッドシート更新
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
 
 def load_member_data():
@@ -369,12 +361,11 @@ def page_input():
         st.session_state["page"] = "home"
         st.rerun()
 
-    df = load_score_data() # DailyNo計算済み
+    df = load_score_data()
     member_list = get_all_member_names()
-    
-    # JSTの設定
     JST = timezone(timedelta(hours=9), 'JST')
     
+    # --- 卓と日付の選択 ---
     c_top1, c_top2 = st.columns(2)
     with c_top1:
         current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
@@ -383,19 +374,55 @@ def page_input():
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
 
+    # --- 今日のデータの抽出 ---
     df_table = df[df["TableNo"] == current_table]
     if not df_table.empty:
         df_today = df_table[df_table["論理日付"] == input_date]
     else:
         df_today = pd.DataFrame()
 
+    # --- 編集対象の選択ロジック（ここを修正） ---
+    selected_game_id = None
+    is_edit_mode = False
+
+    if not df_today.empty:
+        st.markdown("### 📋 本日の履歴 (修正する場合は行をクリック)")
+        
+        # 表示用のデータ作成（見やすくする）
+        df_display = df_today.sort_values("DailyNo", ascending=False)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
+        
+        # 修正: 時刻だけを表示するように整形
+        df_display["日時"] = pd.to_datetime(df_display["日時"]).dt.strftime('%H:%M')
+        
+        # ★ ここでクリック可能なテーブルを表示
+        event = st.dataframe(
+            df_display, 
+            use_container_width=True, 
+            hide_index=True,
+            on_select="rerun",  # クリックしたらリロード
+            selection_mode="single-row"
+        )
+        
+        # 選択された行があるかチェック
+        if len(event.selection.rows) > 0:
+            selected_idx = event.selection.rows[0] # 選択された行番号(0, 1...)
+            # 表示用DFから元のGameNoを特定するためのキーを取得（DailyNoを使う）
+            target_daily_no = df_display.iloc[selected_idx]["DailyNo"]
+            # 元データからGameNoを取得
+            target_row = df_today[df_today["DailyNo"] == target_daily_no].iloc[0]
+            selected_game_id = target_row["GameNo"]
+            is_edit_mode = True
+            
+            st.info(f"🔧 修正モード: No.{target_daily_no} を編集中")
+            if st.button("編集をキャンセル (新規入力に戻る)"):
+                st.rerun() # リロードして選択解除
+
+    # --- フォームの初期値設定 ---
     current_set_no = int(df_today["SetNo"].max()) if not df_today.empty else 1
     if not df_today.empty:
         next_display_no = int(df_today["DailyNo"].max()) + 1
     else:
         next_display_no = 1
-
-    is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
     
     if not df.empty:
         next_internal_game_no = df["GameNo"].max() + 1
@@ -413,28 +440,20 @@ def page_input():
         "table_no": current_table
     }
     
-    selected_game_id = None
-    if is_edit_mode:
-        if not df.empty:
-            ids = df["GameNo"].sort_values(ascending=False).tolist()
-            selected_game_id = st.selectbox("修正するデータ (通しNo)", ids)
-            row = df[df["GameNo"] == selected_game_id].iloc[0]
-            
-            defaults.update({
-                "n1": row["Aさん"], "t1": row["Aタイプ"], "r1": int(float(row["A着順"])),
-                "n2": row["Bさん"], "t2": row["Bタイプ"], "r2": int(float(row["B着順"])),
-                "n3": row["Cさん"], "t3": row["Cタイプ"], "r3": int(float(row["C着順"])),
-                "note": row["備考"] if row["備考"] else "なし",
-                "internal_game_no": selected_game_id, 
-                "display_game_no": row["DailyNo"], 
-                "set_no": int(row["SetNo"]), "table_no": int(row["TableNo"])
-            })
-            if current_table != defaults["table_no"]:
-                st.info(f"※ 選択中のゲームは「{defaults['table_no']}卓」のデータです")
-        else:
-            st.warning("データがありません")
-            return
+    # 編集モードなら初期値を上書き
+    if is_edit_mode and selected_game_id:
+        row = df[df["GameNo"] == selected_game_id].iloc[0]
+        defaults.update({
+            "n1": row["Aさん"], "t1": row["Aタイプ"], "r1": int(float(row["A着順"])),
+            "n2": row["Bさん"], "t2": row["Bタイプ"], "r2": int(float(row["B着順"])),
+            "n3": row["Cさん"], "t3": row["Cタイプ"], "r3": int(float(row["C着順"])),
+            "note": row["備考"] if row["備考"] else "なし",
+            "internal_game_no": selected_game_id, 
+            "display_game_no": row["DailyNo"], 
+            "set_no": int(row["SetNo"]), "table_no": int(row["TableNo"])
+        })
 
+    # --- 入力フォーム ---
     with st.form("input_form"):
         st.write(f"**Game No: {defaults['display_game_no']}**")
         if not is_edit_mode:
@@ -493,7 +512,6 @@ def page_input():
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
                 if not is_edit_mode:
-                    # ✅ 修正: 新しいデータを既存データの「後ろ」に追加するように変更
                     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     st.session_state["success_msg"] = f"✅ {defaults['table_no']}卓に記録しました！ (No.{defaults['display_game_no']})"
                 else:
@@ -582,8 +600,6 @@ def page_history():
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
                         st.markdown("##### 📊 着順分布 (円グラフ)")
-                        
-                        # ✅ 修正: 棒グラフを円グラフに変更 (Altair使用)
                         source = pd.DataFrame({
                             "着順": ["1着", "2着", "3着"],
                             "回数": [c1, c2_cnt, c3]
