@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 
 # ==========================================
@@ -371,11 +371,15 @@ def page_input():
     df = load_score_data() # DailyNo計算済み
     member_list = get_all_member_names()
     
+    # 修正: 日本時間(JST)の設定
+    JST = timezone(timedelta(hours=9), 'JST')
+    
     c_top1, c_top2 = st.columns(2)
     with c_top1:
         current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
     with c_top2:
-        current_dt = datetime.now()
+        # 修正: JSTで現在時刻を取得
+        current_dt = datetime.now(JST)
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
 
@@ -479,7 +483,8 @@ def page_input():
             elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
                 st.error("⚠️ 着順が重複しています！")
             else:
-                save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now().strftime("%H:%M")
+                # 修正: 保存時刻もJSTで取得
+                save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now(JST).strftime("%H:%M")
                 final_set_no = defaults['set_no']
                 if not is_edit_mode and start_new_set: final_set_no += 1
                 new_row = {
