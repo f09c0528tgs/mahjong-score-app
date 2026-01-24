@@ -143,7 +143,7 @@ def load_score_data():
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
-    # 1. 数値列の強制変換（文字が入っていても0にする）
+    # 1. 数値列の強制変換
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
         if col in df.columns:
@@ -160,25 +160,14 @@ def load_score_data():
     if "TableNo" not in df.columns:
         df["TableNo"] = 1 if not df.empty else []
     
-    # 2. 日時処理の強化（ここが修正ポイント！）
-    # 日時が空っぽだったり壊れている行を排除してから計算する
+    # 2. 日時処理の強化
     if not df.empty and "日時" in df.columns:
-        # 強制的に日付型へ。変換できない文字は NaT (無効) になる
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
-        
-        # 【重要】日時が NaT（無効）の行は完全に無視する
         df = df.dropna(subset=["日時Obj"])
-        
-        # 論理日付（朝9時切り替え）を計算
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
-        
-        # 並び替え
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
-        
-        # 連番を振る
         df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
     else:
-        # データがない、または日時列がない場合
         df["DailyNo"] = []
         if "日時" not in df.columns:
              df["論理日付"] = []
@@ -591,6 +580,33 @@ def page_input():
     # ==========================================
     if not df_today.empty:
         st.markdown("### 📋 本日の履歴")
+
+        # --- 【追加】本日の集計表示 ---
+        total_fee_today = 0
+        type_counts = {"A客": 0, "B客": 0, "AS": 0, "BS": 0}
+        FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
+
+        for _, row in df_today.iterrows():
+            # 1着のタイプ判定
+            w_type = None
+            if int(float(row["A着順"])) == 1: w_type = row["Aタイプ"]
+            elif int(float(row["B着順"])) == 1: w_type = row["Bタイプ"]
+            elif int(float(row["C着順"])) == 1: w_type = row["Cタイプ"]
+
+            if w_type in type_counts:
+                type_counts[w_type] += 1
+                total_fee_today += FEE_MAP[w_type]
+
+            # 備考による減額
+            note = str(row["備考"])
+            if note == "東１終了": total_fee_today -= 1
+            elif note == "２人飛ばし": total_fee_today -= 2
+            elif note == "５連勝〜": total_fee_today -= 5
+
+        # 表示
+        st.info(f"💰 **本日の合計:** ゲーム代 **{total_fee_today}** 枚  \n"
+                f"📊 **内訳:** A客:{type_counts['A客']} / B客:{type_counts['B客']} / AS:{type_counts['AS']} / BS:{type_counts['BS']}")
+        # -----------------------------------
         
         # A. HTML成績表 (上)
         render_paper_sheet(df_today)
