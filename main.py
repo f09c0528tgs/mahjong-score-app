@@ -138,11 +138,23 @@ def get_conn():
 def load_score_data():
     conn = get_conn()
     try:
-        df = conn.read(worksheet=SHEET_SCORE, ttl=0).fillna("")
+        # fillna("") をここではせず、まずは生データを読む
+        df = conn.read(worksheet=SHEET_SCORE, ttl=0)
     except:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
+    # 【重要】数値列を強制的に数値型に変換する（エラー回避の肝）
+    # 空文字や変な文字は 0 に変換してから int にする
+    numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
+    for col in numeric_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+
+    # その他の列（名前など）の空白を空文字で埋める
+    df = df.fillna("")
+
+    # SetNo, TableNo がない場合の補完
     if "SetNo" not in df.columns and not df.empty:
         df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
     elif "SetNo" not in df.columns:
@@ -150,6 +162,7 @@ def load_score_data():
     if "TableNo" not in df.columns:
         df["TableNo"] = 1 if not df.empty else []
     
+    # DailyNo 計算
     if not df.empty:
         df["日時Obj"] = pd.to_datetime(df["日時"])
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
