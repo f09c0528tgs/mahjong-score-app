@@ -138,19 +138,18 @@ def get_conn():
 def load_score_data():
     conn = get_conn()
     try:
-        # fillnaせずに生データを取得
         df = conn.read(worksheet=SHEET_SCORE, ttl=0)
     except:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
-    # 【重要】数値列を強制的に数値型に変換（TypeError回避）
+    # 1. 数値列の強制変換（文字が入っていても0にする）
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
-    # その他の列は空白を埋める
+    # その他の空欄を埋める
     df = df.fillna("")
 
     # SetNo, TableNo がない場合の補完
@@ -161,14 +160,28 @@ def load_score_data():
     if "TableNo" not in df.columns:
         df["TableNo"] = 1 if not df.empty else []
     
-    # DailyNo 計算
-    if not df.empty:
-        df["日時Obj"] = pd.to_datetime(df["日時"])
+    # 2. 日時処理の強化（ここが修正ポイント！）
+    # 日時が空っぽだったり壊れている行を排除してから計算する
+    if not df.empty and "日時" in df.columns:
+        # 強制的に日付型へ。変換できない文字は NaT (無効) になる
+        df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
+        
+        # 【重要】日時が NaT（無効）の行は完全に無視する
+        df = df.dropna(subset=["日時Obj"])
+        
+        # 論理日付（朝9時切り替え）を計算
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+        
+        # 並び替え
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
+        
+        # 連番を振る
         df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
     else:
+        # データがない、または日時列がない場合
         df["DailyNo"] = []
+        if "日時" not in df.columns:
+             df["論理日付"] = []
         
     return df
 
@@ -626,7 +639,14 @@ def page_history():
         st.info("データがありません")
         return
 
-    unique_dates = sorted(df["論理日付"].unique(), reverse=True)
+    # 日時が正しく読み込めていれば論理日付があるはず
+    if "論理日付" in df.columns:
+        # ここで NaT (無効な日付) を除外してから並び替える
+        valid_dates = df["論理日付"].dropna().unique()
+        unique_dates = sorted(valid_dates, reverse=True)
+    else:
+        unique_dates = []
+
     all_players = get_all_member_names()
 
     st.markdown("### 🔍 日付と人物で絞り込み")
