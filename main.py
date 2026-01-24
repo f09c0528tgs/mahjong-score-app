@@ -138,23 +138,19 @@ def get_conn():
 def load_score_data():
     conn = get_conn()
     try:
-        # fillna("") をここではせず、まずは生データを読む
         df = conn.read(worksheet=SHEET_SCORE, ttl=0)
     except:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
-    # 【重要】数値列を強制的に数値型に変換する（エラー回避の肝）
-    # 空文字や変な文字は 0 に変換してから int にする
+    # 数値列を強制変換
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
-    # その他の列（名前など）の空白を空文字で埋める
     df = df.fillna("")
 
-    # SetNo, TableNo がない場合の補完
     if "SetNo" not in df.columns and not df.empty:
         df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
     elif "SetNo" not in df.columns:
@@ -162,7 +158,6 @@ def load_score_data():
     if "TableNo" not in df.columns:
         df["TableNo"] = 1 if not df.empty else []
     
-    # DailyNo 計算
     if not df.empty:
         df["日時Obj"] = pd.to_datetime(df["日時"])
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
@@ -500,44 +495,9 @@ def page_input():
     else:
         df_today = pd.DataFrame()
 
-    # --- 本日の履歴リスト (クリックで編集へ遷移) ---
-    if not df_today.empty:
-        st.markdown("### 📋 本日の履歴")
-        st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
-        
-        # 表示用のデータ作成
-        df_display = df_today.sort_values("DailyNo", ascending=False)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
-        df_display["日時"] = pd.to_datetime(df_display["日時"]).dt.strftime('%H:%M')
-        
-        # クリック可能なテーブル
-        event = st.dataframe(
-            df_display, 
-            use_container_width=True, 
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row"
-        )
-        
-        # 選択されたら編集ページへ遷移
-        if len(event.selection.rows) > 0:
-            selected_idx = event.selection.rows[0]
-            target_daily_no = df_display.iloc[selected_idx]["DailyNo"]
-            target_row = df_today[df_today["DailyNo"] == target_daily_no].iloc[0]
-            
-            # ステートをセットしてリロード
-            st.session_state["editing_game_id"] = target_row["GameNo"]
-            st.session_state["page"] = "edit"
-            st.rerun()
-
-        # HTML成績表の表示 (リストのすぐ下に配置)
-        render_paper_sheet(df_today)
-        st.divider()
-
-    else:
-        st.info("今日のデータはまだありません")
-        st.divider()
-
-    # --- 新規入力フォーム ---
+    # ==========================================
+    # 1. 新規入力フォーム (上部へ移動)
+    # ==========================================
     st.subheader("🆕 新しい対局の入力")
     
     current_set_no = int(df_today["SetNo"].max()) if not df_today.empty else 1
@@ -607,100 +567,48 @@ def page_input():
                 st.session_state["success_msg"] = f"✅ 記録しました！ (No.{defaults['display_game_no']})"
                 st.rerun()
 
-# --- 履歴画面 ---
-def page_history():
-    st.title("📊 過去データ参照")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
+    st.divider()
+
+    # ==========================================
+    # 2. 本日の履歴 (下部へ移動 & 順序入替)
+    # ==========================================
+    if not df_today.empty:
+        st.markdown("### 📋 本日の履歴")
         
-    df = load_score_data()
-    if df.empty:
-        st.info("データがありません")
-        return
-
-    unique_dates = sorted(df["論理日付"].unique(), reverse=True)
-    all_players = get_all_member_names()
-
-    st.markdown("### 🔍 日付と人物で絞り込み")
-    
-    with st.form("history_search_form"):
-        c1, c2 = st.columns(2)
-        with c1: sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
-        with c2: sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
+        # A. HTML成績表 (上)
+        render_paper_sheet(df_today)
         
-        submitted = st.form_submit_button("🔍 絞り込み表示")
+        st.write("") # スペース
+        
+        # B. 編集用リスト (下)
+        st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
+        
+        # 表示用のデータ作成
+        df_display = df_today.sort_values("DailyNo", ascending=False)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
+        df_display["日時"] = pd.to_datetime(df_display["日時"]).dt.strftime('%H:%M')
+        
+        # クリック可能なテーブル
+        event = st.dataframe(
+            df_display, 
+            use_container_width=True, 
+            hide_index=True,
+            on_select="rerun",
+            selection_mode="single-row"
+        )
+        
+        # 選択されたら編集ページへ遷移
+        if len(event.selection.rows) > 0:
+            selected_idx = event.selection.rows[0]
+            target_daily_no = df_display.iloc[selected_idx]["DailyNo"]
+            target_row = df_today[df_today["DailyNo"] == target_daily_no].iloc[0]
+            
+            # ステートをセットしてリロード
+            st.session_state["editing_game_id"] = target_row["GameNo"]
+            st.session_state["page"] = "edit"
+            st.rerun()
 
-    if submitted:
-        is_filtered = False
-        if sel_date != "(指定なし)":
-            df = df[df["論理日付"] == sel_date]
-            is_filtered = True
-        if sel_player != "(指定なし)":
-            df = df[(df["Aさん"] == sel_player) | (df["Bさん"] == sel_player) | (df["Cさん"] == sel_player)]
-            is_filtered = True
-
-        st.divider()
-
-        if is_filtered and not df.empty:
-            if sel_player != "(指定なし)":
-                st.markdown(f"#### 👤 {sel_player} さんの成績")
-                ranks = []
-                played_dates = set()
-                for _, row in df.iterrows():
-                    rank = None
-                    if row["Aさん"] == sel_player: rank = int(float(row["A着順"]))
-                    elif row["Bさん"] == sel_player: rank = int(float(row["B着順"]))
-                    elif row["Cさん"] == sel_player: rank = int(float(row["C着順"]))
-                    if rank:
-                        ranks.append(rank)
-                        played_dates.add(row["論理日付"])
-                if ranks:
-                    games = len(ranks)
-                    avg = sum(ranks)/games
-                    c1 = ranks.count(1)
-                    c2_cnt = ranks.count(2)
-                    c3 = ranks.count(3)
-                    r1_rate = (c1 / games) * 100
-                    r2_rate = (c2_cnt / games) * 100
-                    r3_rate = (c3 / games) * 100
-                    
-                    stats_html = f"""
-                    <table class="stats-table"><thead><tr><th>総回数</th><th>平均着順</th><th>1着回数</th><th>2着回数</th><th>3着回数</th></tr></thead>
-                    <tbody><tr><td>{games} 回</td><td>{avg:.2f}</td><td>{c1} 回<span class="stats-sub">({r1_rate:.1f}%)</span></td><td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.1f}%)</span></td><td>{c3} 回<span class="stats-sub">({r3_rate:.1f}%)</span></td></tr></tbody></table>
-                    """
-                    st.markdown(stats_html, unsafe_allow_html=True)
-                    st.divider()
-                    c_graph, c_dates = st.columns([2, 1])
-                    with c_graph:
-                        st.markdown("##### 📊 着順分布 (円グラフ)")
-                        source = pd.DataFrame({
-                            "着順": ["1着", "2着", "3着"],
-                            "回数": [c1, c2_cnt, c3]
-                        })
-                        base = alt.Chart(source).encode(
-                            theta=alt.Theta("回数", stack=True)
-                        )
-                        pie = base.mark_arc(outerRadius=100).encode(
-                            color=alt.Color("着順"),
-                            order=alt.Order("着順"),
-                            tooltip=["着順", "回数"]
-                        )
-                        st.altair_chart(pie, use_container_width=True)
-
-                    with c_dates:
-                        st.markdown("##### 📅 稼働日リスト")
-                        date_list = sorted(list(played_dates), reverse=True)
-                        st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
-            else:
-                st.markdown(f"#### 📝 集計表")
-                render_paper_sheet(df)
-        elif is_filtered and df.empty:
-            st.warning("条件に一致するデータが見つかりませんでした")
-        else:
-            st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
     else:
-        st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
+        st.info("今日のデータはまだありません")
 
 # ==========================================
 # 6. メインルーティング
