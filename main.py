@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt  # 円グラフ用にこれだけ追加しました
 from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 
@@ -371,14 +372,13 @@ def page_input():
     df = load_score_data() # DailyNo計算済み
     member_list = get_all_member_names()
     
-    # 修正: 日本時間(JST)の設定
+    # JSTの設定
     JST = timezone(timedelta(hours=9), 'JST')
     
     c_top1, c_top2 = st.columns(2)
     with c_top1:
         current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
     with c_top2:
-        # 修正: JSTで現在時刻を取得
         current_dt = datetime.now(JST)
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
@@ -397,7 +397,6 @@ def page_input():
 
     is_edit_mode = st.checkbox("🔧 過去の記録を修正・削除する")
     
-    # GameNoが存在しない場合は初期化
     if not df.empty:
         next_internal_game_no = df["GameNo"].max() + 1
     else:
@@ -483,7 +482,6 @@ def page_input():
             elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
                 st.error("⚠️ 着順が重複しています！")
             else:
-                # 修正: 保存時刻もJSTで取得
                 save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now(JST).strftime("%H:%M")
                 final_set_no = defaults['set_no']
                 if not is_edit_mode and start_new_set: final_set_no += 1
@@ -495,7 +493,8 @@ def page_input():
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
                 if not is_edit_mode:
-                    df = pd.concat([pd.DataFrame([new_row]), df], ignore_index=True)
+                    # ✅ 修正: 新しいデータを既存データの「後ろ」に追加するように変更
+                    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
                     st.session_state["success_msg"] = f"✅ {defaults['table_no']}卓に記録しました！ (No.{defaults['display_game_no']})"
                 else:
                     idx_list = df[df["GameNo"] == selected_game_id].index
@@ -582,9 +581,23 @@ def page_history():
                     st.divider()
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
-                        st.markdown("##### 📊 着順分布")
-                        chart_df = pd.DataFrame({"着順": ["1着", "2着", "3着"], "回数": [c1, c2_cnt, c3]}).set_index("着順")
-                        st.bar_chart(chart_df)
+                        st.markdown("##### 📊 着順分布 (円グラフ)")
+                        
+                        # ✅ 修正: 棒グラフを円グラフに変更 (Altair使用)
+                        source = pd.DataFrame({
+                            "着順": ["1着", "2着", "3着"],
+                            "回数": [c1, c2_cnt, c3]
+                        })
+                        base = alt.Chart(source).encode(
+                            theta=alt.Theta("回数", stack=True)
+                        )
+                        pie = base.mark_arc(outerRadius=100).encode(
+                            color=alt.Color("着順"),
+                            order=alt.Order("着順"),
+                            tooltip=["着順", "回数"]
+                        )
+                        st.altair_chart(pie, use_container_width=True)
+
                     with c_dates:
                         st.markdown("##### 📅 稼働日リスト")
                         date_list = sorted(list(played_dates), reverse=True)
