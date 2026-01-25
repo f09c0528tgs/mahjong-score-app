@@ -104,27 +104,7 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-# ==========================================
-# 2. パスワード認証 (2026)
-# ==========================================
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
-    if st.session_state["password_correct"]:
-        return True
-    
-    st.title("🔒 ログイン")
-    password = st.text_input("パスワードを入力してください", type="password")
-    if st.button("ログイン"):
-        if password == "2026":
-            st.session_state["password_correct"] = True
-            st.rerun()
-        else:
-            st.error("パスワードが違います")
-    return False
 
-if not check_password():
-    st.stop()
 
 # ==========================================
 # 3. データ管理関数 (Google Sheets版)
@@ -293,10 +273,15 @@ def render_paper_sheet(df):
                     rank_span = f'<span class="rank-num" style="{color_style}">{d_char}</span>'
                 
                 p_name = row[f"{p_char}さん"]
+                p_type = row[f"{p_char}タイプ"] # タイプを取得
+                
+                # 名前が前行と同じなら空にするが、今回はタイプも併記するので
+                # 名前が変わった時だけ表示するロジックにする
                 if p_name == last_names[p_char]:
                     display_text = ""
                 else:
-                    display_text = p_name
+                    # ここでタイプを小さく併記
+                    display_text = f"{p_name}<span style='font-size:11px; color:#555; margin-left:3px;'>({p_type})</span>"
                     last_names[p_char] = p_name
                 
                 cell_content = f'<div style="display:flex; justify-content:space-between; align-items:center; padding:0 5px;"><span>{display_text}</span>{rank_span}</div>'
@@ -334,16 +319,23 @@ def player_input_row(label, member_list, def_n, def_t, def_r):
 def page_home():
     st.title("🀄 ぱいん成績管理")
     st.write("")
-    col1, col2, col3 = st.columns(3)
-    with col1:
+    
+    # 2行2列のレイアウトに変更
+    c1, c2 = st.columns(2)
+    with c1:
         if st.button("📝 成績をつける", type="primary", use_container_width=True):
             st.session_state["page"] = "input"
             st.rerun()
-    with col2:
+        st.write("") # スペース
+        if st.button("🏆 ランキング", use_container_width=True):
+            st.session_state["page"] = "ranking"
+            st.rerun()
+            
+    with c2:
         if st.button("📊 データを見る", use_container_width=True):
             st.session_state["page"] = "history"
             st.rerun()
-    with col3:
+        st.write("") # スペース
         if st.button("👥 メンバー管理", use_container_width=True):
             st.session_state["page"] = "members"
             st.rerun()
@@ -581,13 +573,12 @@ def page_input():
     if not df_today.empty:
         st.markdown("### 📋 本日の履歴")
 
-        # --- 【追加】本日の集計表示 ---
+        # 本日の集計表示
         total_fee_today = 0
         type_counts = {"A客": 0, "B客": 0, "AS": 0, "BS": 0}
         FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
 
         for _, row in df_today.iterrows():
-            # 1着のタイプ判定
             w_type = None
             if int(float(row["A着順"])) == 1: w_type = row["Aタイプ"]
             elif int(float(row["B着順"])) == 1: w_type = row["Bタイプ"]
@@ -597,16 +588,13 @@ def page_input():
                 type_counts[w_type] += 1
                 total_fee_today += FEE_MAP[w_type]
 
-            # 備考による減額
             note = str(row["備考"])
             if note == "東１終了": total_fee_today -= 1
             elif note == "２人飛ばし": total_fee_today -= 2
             elif note == "５連勝〜": total_fee_today -= 5
 
-        # 表示
         st.info(f"💰 **本日の合計:** ゲーム代 **{total_fee_today}** 枚  \n"
                 f"📊 **内訳:** A客:{type_counts['A客']} / B客:{type_counts['B客']} / AS:{type_counts['AS']} / BS:{type_counts['BS']}")
-        # -----------------------------------
         
         # A. HTML成績表 (上)
         render_paper_sheet(df_today)
@@ -616,11 +604,9 @@ def page_input():
         # B. 編集用リスト (下)
         st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
         
-        # 表示用のデータ作成
         df_display = df_today.sort_values("DailyNo", ascending=False)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
         df_display["日時"] = pd.to_datetime(df_display["日時"]).dt.strftime('%H:%M')
         
-        # クリック可能なテーブル
         event = st.dataframe(
             df_display, 
             use_container_width=True, 
@@ -629,13 +615,10 @@ def page_input():
             selection_mode="single-row"
         )
         
-        # 選択されたら編集ページへ遷移
         if len(event.selection.rows) > 0:
             selected_idx = event.selection.rows[0]
             target_daily_no = df_display.iloc[selected_idx]["DailyNo"]
             target_row = df_today[df_today["DailyNo"] == target_daily_no].iloc[0]
-            
-            # ステートをセットしてリロード
             st.session_state["editing_game_id"] = target_row["GameNo"]
             st.session_state["page"] = "edit"
             st.rerun()
@@ -643,7 +626,7 @@ def page_input():
     else:
         st.info("今日のデータはまだありません")
 
-# --- 履歴画面 (復活!) ---
+# --- 履歴画面 ---
 def page_history():
     st.title("📊 過去データ参照")
     if st.button("🏠 ホームに戻る"):
@@ -655,9 +638,7 @@ def page_history():
         st.info("データがありません")
         return
 
-    # 日時が正しく読み込めていれば論理日付があるはず
     if "論理日付" in df.columns:
-        # ここで NaT (無効な日付) を除外してから並び替える
         valid_dates = df["論理日付"].dropna().unique()
         unique_dates = sorted(valid_dates, reverse=True)
     else:
@@ -745,6 +726,105 @@ def page_history():
     else:
         st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
 
+# --- ランキング画面 (新規) ---
+def page_ranking():
+    st.title("🏆 ランキング (通算)")
+    if st.button("🏠 ホームに戻る"):
+        st.session_state["page"] = "home"
+        st.rerun()
+
+    df = load_score_data()
+    if df.empty:
+        st.info("データがありません")
+        return
+
+    # 全期間、全員のデータをフラットにする
+    records = []
+    for _, row in df.iterrows():
+        for seat in ["A", "B", "C"]:
+            name = row[f"{seat}さん"]
+            rank = row[f"{seat}着順"]
+            if name:
+                # rankを数値化
+                try: r = int(float(rank))
+                except: r = 0
+                if r > 0:
+                    records.append({"name": name, "rank": r})
+    
+    if not records:
+        st.warning("集計できるデータがありません")
+        return
+
+    # DataFrame化して集計
+    df_raw = pd.DataFrame(records)
+    
+    # プレイヤーごとの集計
+    # count:打数, mean:平均着順, sum(rank==1):トップ数, sum(rank==3):ラス数
+    stats = df_raw.groupby("name")["rank"].agg(
+        games="count",
+        avg_rank="mean",
+        first_count=lambda x: (x==1).sum(),
+        third_count=lambda x: (x==3).sum()
+    ).reset_index()
+
+    # 指標計算
+    stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
+    stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
+    
+    # 規定打数フィルタ（デフォルトは5回以上など）
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
+    
+    filtered_stats = stats[stats["games"] >= min_games].copy()
+    
+    if filtered_stats.empty:
+        st.warning(f"打数が {min_games} 回以上のプレイヤーがいません。")
+        return
+
+    st.write("---")
+    
+    # 4つのランキング表示
+    t1, t2, t3, t4 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率"])
+    
+    with t1:
+        st.subheader("📊 打数ランキング")
+        res = filtered_stats.sort_values("games", ascending=False).reset_index(drop=True)
+        res["順位"] = res.index + 1
+        st.dataframe(
+            res[["順位", "name", "games"]].rename(columns={"name":"名前", "games":"打数"}),
+            hide_index=True, use_container_width=True
+        )
+
+    with t2:
+        st.subheader("🥇 平均着順ランキング (低い方が優秀)")
+        res = filtered_stats.sort_values("avg_rank", ascending=True).reset_index(drop=True)
+        res["順位"] = res.index + 1
+        # 小数点フォーマット
+        res["avg_rank"] = res["avg_rank"].map('{:.2f}'.format)
+        st.dataframe(
+            res[["順位", "name", "avg_rank", "games"]].rename(columns={"name":"名前", "avg_rank":"平均着順", "games":"打数"}),
+            hide_index=True, use_container_width=True
+        )
+
+    with t3:
+        st.subheader("👑 トップ率ランキング")
+        res = filtered_stats.sort_values("top_rate", ascending=False).reset_index(drop=True)
+        res["順位"] = res.index + 1
+        res["top_rate"] = res["top_rate"].map('{:.1f}%'.format)
+        st.dataframe(
+            res[["順位", "name", "top_rate", "first_count", "games"]].rename(columns={"name":"名前", "top_rate":"トップ率", "first_count":"トップ回数", "games":"打数"}),
+            hide_index=True, use_container_width=True
+        )
+
+    with t4:
+        st.subheader("🛡 ラス回避率ランキング (3着にならない率)")
+        res = filtered_stats.sort_values("last_avoid_rate", ascending=False).reset_index(drop=True)
+        res["順位"] = res.index + 1
+        res["last_avoid_rate"] = res["last_avoid_rate"].map('{:.1f}%'.format)
+        st.dataframe(
+            res[["順位", "name", "last_avoid_rate", "games"]].rename(columns={"name":"名前", "last_avoid_rate":"ラス回避率", "games":"打数"}),
+            hide_index=True, use_container_width=True
+        )
+
 # ==========================================
 # 6. メインルーティング
 # ==========================================
@@ -761,3 +841,5 @@ elif st.session_state["page"] == "history":
     page_history()
 elif st.session_state["page"] == "edit":
     page_edit()
+elif st.session_state["page"] == "ranking":
+    page_ranking()
