@@ -104,6 +104,7 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
+
 # ==========================================
 # 3. データ管理関数 (Google Sheets版)
 # ==========================================
@@ -121,15 +122,16 @@ def load_score_data():
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
 
-    # 数値列の強制変換 (エラーがあっても0にするだけで、行は消さない)
+    # 1. 数値列の強制変換
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
+    # その他の空欄を埋める
     df = df.fillna("")
 
-    # 補完処理
+    # SetNo, TableNo がない場合の補完
     if "SetNo" not in df.columns and not df.empty:
         df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
     elif "SetNo" not in df.columns:
@@ -137,15 +139,10 @@ def load_score_data():
     if "TableNo" not in df.columns:
         df["TableNo"] = 1 if not df.empty else []
     
-    # 【重要修正】日付処理でエラーが出ても行を絶対に削除しない
+    # 2. 日時処理
     if not df.empty and "日時" in df.columns:
-        # 日付変換（エラーならNaTになる）
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
-        
-        # NaT（無効な日付）の行も消さずに、仮の日付を入れておく（1900年など）
-        # これによりデータ消失バグを完全に防ぐ
-        df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
-        
+        df = df.dropna(subset=["日時Obj"])
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
         df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
@@ -158,14 +155,9 @@ def load_score_data():
 
 def save_score_data(df):
     conn = get_conn()
-    # 保存するときは、アプリ内で作った一時的な計算用カラム（日時Objや論理日付など）を除外して
-    # 元のカラムだけを保存する（これによりシートが壊れるのを防ぐ）
     save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
-    
-    # 実際に存在するカラムだけを抽出
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
-    
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
 
 def load_member_data():
@@ -204,7 +196,6 @@ def calculate_set_summary(subset_df):
     
     for _, row in subset_df.iterrows():
         w_type = None
-        # 着順が文字型でも数値型でも対応できるように変換
         try:
             r_a = int(float(row["A着順"]))
             r_b = int(float(row["B着順"]))
@@ -492,8 +483,7 @@ def page_input():
 
     df_table = df[df["TableNo"] == current_table]
     if not df_table.empty:
-        # 日付フィルタ (NaTが含まれている場合も考慮)
-        # 論理日付列が存在し、かつinput_dateと一致するものを抽出
+        # 日付フィルタ
         mask = df_table["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
         df_today = df_table[mask]
     else:
@@ -519,10 +509,26 @@ def page_input():
     else:
         next_internal_game_no = 1
     
+    # --- 前回のゲームから名前とタイプを引き継ぐ ---
+    # デフォルト値（前回データがない場合）
+    last_n1, last_t1 = None, "A客"
+    last_n2, last_t2 = None, "B客"
+    last_n3, last_t3 = None, "AS"
+
+    if not df_today.empty:
+        # df_today は load_score_data ですでに日時順にソートされているため、末尾が最新
+        last_game = df_today.iloc[-1]
+        last_n1 = last_game["Aさん"]
+        last_t1 = last_game["Aタイプ"]
+        last_n2 = last_game["Bさん"]
+        last_t2 = last_game["Bタイプ"]
+        last_n3 = last_game["Cさん"]
+        last_t3 = last_game["Cタイプ"]
+
     defaults = {
-        "n1": None, "t1": "A客", "r1": 2,
-        "n2": None, "t2": "B客", "r2": 1,
-        "n3": None, "t3": "AS", "r3": 3,
+        "n1": last_n1, "t1": last_t1, "r1": 2,
+        "n2": last_n2, "t2": last_t2, "r2": 1,
+        "n3": last_n3, "t3": last_t3, "r3": 3,
         "note": "なし",
         "internal_game_no": next_internal_game_no,
         "display_game_no": next_display_no,
@@ -587,7 +593,6 @@ def page_input():
 
         for _, row in df_today.iterrows():
             w_type = None
-            # 着順の安全な数値化
             try:
                 r_a = int(float(row["A着順"]))
                 r_b = int(float(row["B着順"]))
@@ -617,7 +622,6 @@ def page_input():
         st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
         df_display = df_today.sort_values("DailyNo", ascending=False)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
         
-        # 時刻表示の安全化
         def safe_strftime(x):
             try: return pd.to_datetime(x).strftime('%H:%M')
             except: return ""
@@ -634,7 +638,6 @@ def page_input():
         if len(event.selection.rows) > 0:
             selected_idx = event.selection.rows[0]
             target_daily_no = df_display.iloc[selected_idx]["DailyNo"]
-            # DailyNoが一致する行を抽出
             target_rows = df_today[df_today["DailyNo"] == target_daily_no]
             if not target_rows.empty:
                 target_row = target_rows.iloc[0]
@@ -657,9 +660,7 @@ def page_history():
         st.info("データがありません")
         return
 
-    # 有効な日付のみ抽出してリスト化
     if "論理日付" in df.columns:
-        # NaTを除去し、date型であることを保証
         valid_dates = [d for d in df["論理日付"].unique() if pd.notnull(d) and d != pd.Timestamp("1900-01-01").date()]
         unique_dates = sorted(valid_dates, reverse=True)
     else:
