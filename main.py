@@ -105,8 +105,9 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 
+
 # ==========================================
-# 3. データ管理関数 (Google Sheets版)
+# 3. データ管理関数 (Google Sheets版・キャッシュ機能付き)
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
@@ -114,14 +115,21 @@ SHEET_MEMBER = "members"
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
+# --- ★ここが重要！キャッシュ機能の追加 ---
+# ttl=600 (10分間) データが変わらなければメモリから読み出す
+# これによりGoogleへのアクセス回数を劇的に減らす
+@st.cache_data(ttl=600)
+def fetch_data_from_sheets(_conn, sheet_name):
+    return _conn.read(worksheet=sheet_name, ttl=0)
+
 def load_score_data():
     conn = get_conn()
     try:
-        df = conn.read(worksheet=SHEET_SCORE, ttl=0)
+        # キャッシュを使ってデータを取得
+        df = fetch_data_from_sheets(conn, SHEET_SCORE)
     except Exception as e:
-        # 【重要修正】読み込みエラー時に「空のデータ」を返すのをやめる
-        # ここで空を返すと、その状態で保存した時にデータが全消去されるため、強制停止する
-        st.error(f"⚠️ データの読み込みに失敗しました。リロードしてください。(Error: {e})")
+        # エラーが出たら画面を停止してデータを守る
+        st.error(f"⚠️ データの読み込みに失敗しました。少し待ってからリロードしてください。(Error: {e})")
         st.stop()
         return pd.DataFrame()
 
@@ -162,12 +170,18 @@ def save_score_data(df):
     save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
+    
+    # スプレッドシートを更新
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
+    
+    # ★重要：保存したので、古いキャッシュ（記憶）を削除して、次回は最新を読むようにする
+    fetch_data_from_sheets.clear()
 
 def load_member_data():
     conn = get_conn()
     try:
-        df = conn.read(worksheet=SHEET_MEMBER, ttl=0).fillna("")
+        # メンバー表もキャッシュする
+        df = fetch_data_from_sheets(conn, SHEET_MEMBER).fillna("")
         if df.empty:
              return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
         return df
@@ -177,6 +191,8 @@ def load_member_data():
 def save_member_data(df):
     conn = get_conn()
     conn.update(worksheet=SHEET_MEMBER, data=df)
+    # 保存したらキャッシュクリア
+    fetch_data_from_sheets.clear()
 
 def get_all_member_names():
     df_mem = load_member_data()
@@ -801,7 +817,7 @@ def page_ranking():
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 500, 10)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 500, 5)
     
     filtered_stats = stats[stats["games"] >= min_games].copy()
     
