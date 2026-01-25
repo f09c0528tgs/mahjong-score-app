@@ -118,20 +118,22 @@ def load_score_data():
     conn = get_conn()
     try:
         df = conn.read(worksheet=SHEET_SCORE, ttl=0)
-    except:
-        cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
-        return pd.DataFrame(columns=cols)
+    except Exception as e:
+        # 【重要修正】読み込みエラー時に「空のデータ」を返すのをやめる
+        # ここで空を返すと、その状態で保存した時にデータが全消去されるため、強制停止する
+        st.error(f"⚠️ データの読み込みに失敗しました。リロードしてください。(Error: {e})")
+        st.stop()
+        return pd.DataFrame()
 
-    # 1. 数値列の強制変換
+    # 数値列の強制変換
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
-    # その他の空欄を埋める
     df = df.fillna("")
 
-    # SetNo, TableNo がない場合の補完
+    # 補完処理
     if "SetNo" not in df.columns and not df.empty:
         df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
     elif "SetNo" not in df.columns:
@@ -139,10 +141,12 @@ def load_score_data():
     if "TableNo" not in df.columns:
         df["TableNo"] = 1 if not df.empty else []
     
-    # 2. 日時処理
+    # 日時処理
     if not df.empty and "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
-        df = df.dropna(subset=["日時Obj"])
+        # NaT（日付エラー）があっても行を消さずに、仮の日付を入れてデータを守る
+        df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
+        
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
         df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
@@ -510,13 +514,11 @@ def page_input():
         next_internal_game_no = 1
     
     # --- 前回のゲームから名前とタイプを引き継ぐ ---
-    # デフォルト値（前回データがない場合）
     last_n1, last_t1 = None, "A客"
     last_n2, last_t2 = None, "B客"
     last_n3, last_t3 = None, "AS"
 
     if not df_today.empty:
-        # df_today は load_score_data ですでに日時順にソートされているため、末尾が最新
         last_game = df_today.iloc[-1]
         last_n1 = last_game["Aさん"]
         last_t1 = last_game["Aタイプ"]
@@ -799,7 +801,7 @@ def page_ranking():
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 500, 10)
     
     filtered_stats = stats[stats["games"] >= min_games].copy()
     
@@ -821,7 +823,7 @@ def page_ranking():
         )
 
     with t2:
-        st.subheader("🥇 平均着順ランキング (低い方が優秀)")
+        st.subheader("🥇 平均着順ランキング ")
         res = filtered_stats.sort_values("avg_rank", ascending=True).reset_index(drop=True)
         res["順位"] = res.index + 1
         res["avg_rank"] = res["avg_rank"].map('{:.2f}'.format)
