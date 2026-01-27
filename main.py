@@ -187,6 +187,7 @@ def load_log_data():
     df = fetch_data_from_sheets(conn, SHEET_LOG)
     if df.empty:
         return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
+    # 新しい順にソート
     if "日時" in df.columns:
         df = df.sort_values("日時", ascending=False)
     return df
@@ -500,28 +501,12 @@ def page_edit():
                     "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
-                
-                # --- 変更点の比較ロジック ---
-                changes = []
-                compare_keys = [
-                    ("備考", "備考"),
-                    ("A名前", "Aさん"), ("A着順", "A着順"), ("Aタイプ", "Aタイプ"),
-                    ("B名前", "Bさん"), ("B着順", "B着順"), ("Bタイプ", "Bタイプ"),
-                    ("C名前", "Cさん"), ("C着順", "C着順"), ("Cタイプ", "Cタイプ"),
-                ]
-                for label, key in compare_keys:
-                    old_val = row[key]
-                    new_val = new_data[key]
-                    if str(old_val) != str(new_val):
-                        changes.append(f"{label}: {old_val}→{new_val}")
-                
-                diff_text = ", ".join(changes) if changes else "変更なし"
-                
                 idx = df[df["GameNo"] == edit_id].index[0]
                 df.loc[idx, list(new_data.keys())] = list(new_data.values())
                 save_score_data(df)
                 
-                save_action_log("修正", row["GameNo"], diff_text)
+                log_detail = f"修正: No.{row['DailyNo']}"
+                save_action_log("修正", row["GameNo"], log_detail)
                 
                 st.session_state["success_msg"] = "✅ 修正しました！"
                 st.session_state["page"] = "input"
@@ -532,8 +517,8 @@ def page_edit():
             df = df[df["GameNo"] != edit_id]
             save_score_data(df)
             
-            del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']} (A:{row['Aさん']}, B:{row['Bさん']}, C:{row['Cさん']})"
-            save_action_log("削除", row["GameNo"], del_info)
+            log_detail = f"削除: No.{row['DailyNo']}"
+            save_action_log("削除", row["GameNo"], log_detail)
             
             st.session_state["success_msg"] = "🗑 削除しました"
             st.session_state["page"] = "input"
@@ -708,6 +693,7 @@ def page_input():
         st.write("")
         
         st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
+        # 修正: 最新のデータが下に来るように昇順ソートに変更
         df_display = df_today.sort_values("DailyNo", ascending=True)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
         
         def safe_strftime(x):
@@ -940,20 +926,19 @@ def page_ranking():
 
 # --- ログ閲覧画面 ---
 def page_logs():
-    st.title("📜 修正・削除ログ")
+    st.title("📜 修正ログ")
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
     
     df_logs = load_log_data()
     
-    # フィルタリング: 「修正」または「削除」を抽出
+    # フィルタリング: 「修正」のみ抽出 (削除等は表示しない)
     if not df_logs.empty and "操作" in df_logs.columns:
-        target_actions = ["修正", "削除"]
-        df_logs = df_logs[df_logs["操作"].isin(target_actions)]
+        df_logs = df_logs[df_logs["操作"] == "修正"]
     
     if df_logs.empty:
-        st.info("修正・削除の履歴はありません")
+        st.info("修正履歴はありません")
     else:
         st.dataframe(df_logs, use_container_width=True, hide_index=True)
 
