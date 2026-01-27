@@ -106,11 +106,10 @@ st.markdown(hide_style, unsafe_allow_html=True)
 
 
 # ==========================================
-# 3. データ管理関数 (ログ機能追加)
+# 3. データ管理関数
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
-SHEET_LOG = "logs"
 
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
@@ -118,18 +117,16 @@ def get_conn():
 # キャッシュ機能 (10分)
 @st.cache_data(ttl=600)
 def fetch_data_from_sheets(_conn, sheet_name):
-    try:
-        return _conn.read(worksheet=sheet_name, ttl=0)
-    except:
-        return pd.DataFrame()
+    return _conn.read(worksheet=sheet_name, ttl=0)
 
 def load_score_data():
     conn = get_conn()
-    df = fetch_data_from_sheets(conn, SHEET_SCORE)
-    
-    if df.empty:
-        cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
-        return pd.DataFrame(columns=cols)
+    try:
+        df = fetch_data_from_sheets(conn, SHEET_SCORE)
+    except Exception as e:
+        st.error(f"⚠️ データの読み込みに失敗しました。少し待ってからリロードしてください。(Error: {e})")
+        st.stop()
+        return pd.DataFrame()
 
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
@@ -138,8 +135,12 @@ def load_score_data():
 
     df = df.fillna("")
 
-    if "SetNo" not in df.columns: df["SetNo"] = []
-    if "TableNo" not in df.columns: df["TableNo"] = []
+    if "SetNo" not in df.columns and not df.empty:
+        df["SetNo"] = (df["GameNo"] - 1) // 10 + 1
+    elif "SetNo" not in df.columns:
+        df["SetNo"] = []
+    if "TableNo" not in df.columns:
+        df["TableNo"] = 1 if not df.empty else []
     
     if not df.empty and "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
@@ -149,7 +150,8 @@ def load_score_data():
         df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
     else:
         df["DailyNo"] = []
-        if "日時" not in df.columns: df["論理日付"] = []
+        if "日時" not in df.columns:
+             df["論理日付"] = []
         
     return df
 
@@ -161,50 +163,22 @@ def save_score_data(df):
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
     fetch_data_from_sheets.clear()
 
-# --- ログ保存関数 ---
-def save_action_log(action, game_no, detail=""):
-    conn = get_conn()
-    try:
-        df_log = conn.read(worksheet=SHEET_LOG, ttl=0)
-    except:
-        df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
-    
-    jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
-    new_log = pd.DataFrame([{
-        "日時": jst_now,
-        "操作": action,
-        "GameNo": game_no,
-        "詳細": detail
-    }])
-    
-    df_log = pd.concat([df_log, new_log], ignore_index=True)
-    conn.update(worksheet=SHEET_LOG, data=df_log)
-    fetch_data_from_sheets.clear()
-
-def load_log_data():
-    conn = get_conn()
-    df = fetch_data_from_sheets(conn, SHEET_LOG)
-    if df.empty:
-        return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
-    # 新しい順にソート
-    if "日時" in df.columns:
-        df = df.sort_values("日時", ascending=False)
-    return df
-
 def load_member_data():
     conn = get_conn()
     try:
         df = fetch_data_from_sheets(conn, SHEET_MEMBER).fillna("")
-        if df.empty: return pd.DataFrame({"名前": [], "登録日": []})
+        if df.empty:
+             return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
         return df
     except:
-        return pd.DataFrame({"名前": [], "登録日": []})
+        return pd.DataFrame({"名前": ["内山", "野田", "豊村"], "登録日": [date.today()]*3})
 
 def save_member_data(df):
     conn = get_conn()
     conn.update(worksheet=SHEET_MEMBER, data=df)
     fetch_data_from_sheets.clear()
 
+# --- 【修正】関数名を統一してエラーを解消 ---
 def get_all_member_names():
     df_mem = load_member_data()
     all_members = df_mem["名前"].tolist() if not df_mem.empty else []
@@ -213,6 +187,7 @@ def get_all_member_names():
     if df_score.empty:
         return sorted(list(set(all_members)))
 
+    # 全対局履歴から、各プレイヤーの最終対局日時を取得
     last_played = {}
     for _, row in df_score.iterrows():
         dt = row["日時Obj"]
@@ -222,15 +197,18 @@ def get_all_member_names():
                 if name not in last_played or dt > last_played[name]:
                     last_played[name] = dt
     
+    # 未プレイの人は1900年に設定
     formatted_list = []
     for m in all_members:
         last_dt = last_played.get(m, pd.Timestamp("1900-01-01"))
         formatted_list.append({"name": m, "last_dt": last_dt})
     
+    # 今までの履歴にあるが名簿にない人も追加（念のため）
     for m in last_played.keys():
         if m not in all_members:
             formatted_list.append({"name": m, "last_dt": last_played[m]})
 
+    # 最終対局日が新しい順にソート
     sorted_data = sorted(formatted_list, key=lambda x: x["last_dt"], reverse=True)
     return [x["name"] for x in sorted_data]
 
@@ -350,6 +328,7 @@ def render_paper_sheet(df):
 # 5. 各ページ画面
 # ==========================================
 
+# --- 共通: プレイヤー入力行（選択可能な着順を制御） ---
 def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_ranks, key_suffix=""):
     st.markdown(f"**▼ {label}**")
     TYPE_OPTS = ["A客", "B客", "AS", "BS"]
@@ -393,11 +372,6 @@ def page_home():
         if st.button("👥 メンバー管理", use_container_width=True):
             st.session_state["page"] = "members"
             st.rerun()
-    
-    st.write("")
-    if st.button("📜 操作ログ", use_container_width=True):
-        st.session_state["page"] = "logs"
-        st.rerun()
 
 # --- メンバー管理画面 ---
 def page_members():
@@ -456,11 +430,12 @@ def page_edit():
         return
 
     row = target_row.iloc[0]
-    member_list = get_all_member_names()
+    member_list = get_all_member_names() # ここでエラーが出ていたので修正済み
     
     st.info(f"編集中: No.{row['DailyNo']} (卓: {row['TableNo']}, セット: {row['SetNo']})")
 
     with st.form("edit_form"):
+        # 編集画面では自由に変更できるよう制限なしリスト[1,2,3]を渡す
         p1_n, p1_t, p1_r = player_input_row_dynamic("A席", member_list, row["Aさん"], row["Aタイプ"], int(float(row["A着順"])), [1, 2, 3], "_edit")
         p2_n, p2_t, p2_r = player_input_row_dynamic("B席", member_list, row["Bさん"], row["Bタイプ"], int(float(row["B着順"])), [1, 2, 3], "_edit")
         p3_n, p3_t, p3_r = player_input_row_dynamic("C席", member_list, row["Cさん"], row["Cタイプ"], int(float(row["C着順"])), [1, 2, 3], "_edit")
@@ -503,11 +478,6 @@ def page_edit():
                 idx = df[df["GameNo"] == edit_id].index[0]
                 df.loc[idx, list(new_data.keys())] = list(new_data.values())
                 save_score_data(df)
-                
-                # --- ログ保存 ---
-                log_detail = f"修正: No.{row['DailyNo']}"
-                save_action_log("修正", row["GameNo"], log_detail)
-                
                 st.session_state["success_msg"] = "✅ 修正しました！"
                 st.session_state["page"] = "input"
                 st.session_state["editing_game_id"] = None
@@ -516,11 +486,6 @@ def page_edit():
         if submit_delete:
             df = df[df["GameNo"] != edit_id]
             save_score_data(df)
-            
-            # --- ログ保存 ---
-            log_detail = f"削除: No.{row['DailyNo']}"
-            save_action_log("削除", row["GameNo"], log_detail)
-            
             st.session_state["success_msg"] = "🗑 削除しました"
             st.session_state["page"] = "input"
             st.session_state["editing_game_id"] = None
@@ -537,6 +502,7 @@ def page_input():
         st.rerun()
 
     df = load_score_data()
+    # ソート済みメンバーリストを取得 (関数名 get_all_member_names に統一済み)
     member_list = get_all_member_names()
     JST = timezone(timedelta(hours=9), 'JST')
     
@@ -555,6 +521,9 @@ def page_input():
     else:
         df_today = pd.DataFrame()
 
+    # ==========================================
+    # 1. 新規入力フォーム
+    # ==========================================
     st.subheader("🆕 新しい対局の入力")
     
     if not df_today.empty and "SetNo" in df_today.columns:
@@ -572,6 +541,7 @@ def page_input():
     else:
         next_internal_game_no = 1
     
+    # 前回のゲームから名前とタイプを引き継ぐ
     last_n1, last_t1 = None, "A客"
     last_n2, last_t2 = None, "B客"
     last_n3, last_t3 = None, "AS"
@@ -585,21 +555,24 @@ def page_input():
         last_n3 = last_game["Cさん"]
         last_t3 = last_game["Cタイプ"]
 
+    # --- A席 ---
     st.markdown(f"**▼ A席**")
     c1, c2 = st.columns([1, 2])
     with c1:
         idx1 = member_list.index(last_n1) if last_n1 in member_list else None
         n1 = st.selectbox("名前", member_list, index=idx1, key="p1_name_input")
     with c2:
-        r1 = st.radio("着順", [1, 2, 3], index=1, horizontal=True, key="p1_rank_input")
+        r1 = st.radio("着順", [1, 2, 3], index=1, horizontal=True, key="p1_rank_input") # デフォルト2
         TYPE_OPTS = ["A客", "B客", "AS", "BS"]
         t_idx1 = TYPE_OPTS.index(last_t1) if last_t1 in TYPE_OPTS else 0
         t1 = st.radio("タイプ", TYPE_OPTS, index=t_idx1, horizontal=True, key="p1_type_input")
     st.markdown("---")
 
+    # --- B席 (A席で選んだ着順を除外) ---
     st.markdown(f"**▼ B席**")
     c1, c2 = st.columns([1, 2])
     ranks_for_2 = [x for x in [1, 2, 3] if x != r1]
+    
     with c1:
         idx2 = member_list.index(last_n2) if last_n2 in member_list else None
         n2 = st.selectbox("名前", member_list, index=idx2, key="p2_name_input")
@@ -609,9 +582,11 @@ def page_input():
         t2 = st.radio("タイプ", TYPE_OPTS, index=t_idx2, horizontal=True, key="p2_type_input")
     st.markdown("---")
 
+    # --- C席 (A, Bで選んだ着順を除外) ---
     st.markdown(f"**▼ C席**")
     c1, c2 = st.columns([1, 2])
     ranks_for_3 = [x for x in ranks_for_2 if x != r2]
+    
     with c1:
         idx3 = member_list.index(last_n3) if last_n3 in member_list else None
         n3 = st.selectbox("名前", member_list, index=idx3, key="p3_name_input")
@@ -650,15 +625,14 @@ def page_input():
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             save_score_data(df)
             
-            # --- ログ保存 ---
-            log_detail = f"新規: {current_table}卓 No.{next_display_no}"
-            save_action_log("新規登録", next_internal_game_no, log_detail)
-            
             st.session_state["success_msg"] = f"✅ 記録しました！ (No.{next_display_no})"
             st.rerun()
 
     st.divider()
 
+    # ==========================================
+    # 2. 本日の履歴
+    # ==========================================
     if not df_today.empty:
         st.markdown("### 📋 本日の履歴")
 
@@ -723,7 +697,7 @@ def page_input():
     else:
         st.info("今日のデータはまだありません")
 
-# --- 履歴画面 ---
+# --- 履歴画面 (フォームによる絞り込み) ---
 def page_history():
     st.title("📊 過去データ参照")
     if st.button("🏠 ホームに戻る"):
@@ -925,19 +899,6 @@ def page_ranking():
             hide_index=True, use_container_width=True
         )
 
-# --- ログ閲覧画面 (NEW) ---
-def page_logs():
-    st.title("📜 操作ログ")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
-    
-    df_logs = load_log_data()
-    if df_logs.empty:
-        st.info("ログはまだありません")
-    else:
-        st.dataframe(df_logs, use_container_width=True, hide_index=True)
-
 # ==========================================
 # 6. メインルーティング
 # ==========================================
@@ -956,5 +917,3 @@ elif st.session_state["page"] == "edit":
     page_edit()
 elif st.session_state["page"] == "ranking":
     page_ranking()
-elif st.session_state["page"] == "logs":
-    page_logs()
