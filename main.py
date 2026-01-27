@@ -178,8 +178,8 @@ def save_member_data(df):
     conn.update(worksheet=SHEET_MEMBER, data=df)
     fetch_data_from_sheets.clear()
 
-# --- 【改良】よく遊ぶ人順に並び替えてリストを取得 ---
-def get_sorted_member_names():
+# --- 【修正】関数名を統一してエラーを解消 ---
+def get_all_member_names():
     df_mem = load_member_data()
     all_members = df_mem["名前"].tolist() if not df_mem.empty else []
     
@@ -292,7 +292,6 @@ def render_paper_sheet(df):
                 except: rank_val = "0"
 
                 is_1st = (rank_val == "1")
-                # 特殊備考: トップ時のみ強調
                 SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
                 is_special = (row["備考"] in SPECIAL_NOTES) and is_1st
                 
@@ -342,8 +341,6 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
         idx_val = get_idx_in_list(member_list, def_n) if def_n else None
         name = st.selectbox("名前", member_list, index=idx_val, key=f"n_{label}{key_suffix}")
     with c2:
-        # 選択可能なランクのみを表示
-        # もしデフォルト値(def_r)が選択可能リストにない場合は、リストの先頭をデフォルトにする
         final_idx = 0
         if def_r in available_ranks:
             final_idx = available_ranks.index(def_r)
@@ -433,14 +430,12 @@ def page_edit():
         return
 
     row = target_row.iloc[0]
-    member_list = get_sorted_member_names() # ソート済みリスト使用
+    member_list = get_all_member_names() # ここでエラーが出ていたので修正済み
     
     st.info(f"編集中: No.{row['DailyNo']} (卓: {row['TableNo']}, セット: {row['SetNo']})")
 
-    # 編集画面はラジオボタンの動的制御を入れると操作がややこしくなるため
-    # あえて全選択肢(1,2,3)を表示して自由に直せるようにしています
-    # (名前リストだけ最新順を適用)
     with st.form("edit_form"):
+        # 編集画面では自由に変更できるよう制限なしリスト[1,2,3]を渡す
         p1_n, p1_t, p1_r = player_input_row_dynamic("A席", member_list, row["Aさん"], row["Aタイプ"], int(float(row["A着順"])), [1, 2, 3], "_edit")
         p2_n, p2_t, p2_r = player_input_row_dynamic("B席", member_list, row["Bさん"], row["Bタイプ"], int(float(row["B着順"])), [1, 2, 3], "_edit")
         p3_n, p3_t, p3_r = player_input_row_dynamic("C席", member_list, row["Cさん"], row["Cタイプ"], int(float(row["C着順"])), [1, 2, 3], "_edit")
@@ -507,8 +502,8 @@ def page_input():
         st.rerun()
 
     df = load_score_data()
-    # 【改良】よく遊ぶ順にソートされたメンバーリストを取得
-    member_list = get_sorted_member_names()
+    # ソート済みメンバーリストを取得 (関数名 get_all_member_names に統一済み)
+    member_list = get_all_member_names()
     JST = timezone(timedelta(hours=9), 'JST')
     
     c_top1, c_top2 = st.columns(2)
@@ -560,11 +555,7 @@ def page_input():
         last_n3 = last_game["Cさん"]
         last_t3 = last_game["Cタイプ"]
 
-    # フォーム外で動的に値を管理するため、セッションステートを使っても良いが
-    # ここではシンプルに上から順に決定していくUIにする
-    # 注意: ラジオボタンの変更でリロードが走るため、session_stateに一時保存が必要
-    
-    # --- A席の入力 ---
+    # --- A席 ---
     st.markdown(f"**▼ A席**")
     c1, c2 = st.columns([1, 2])
     with c1:
@@ -577,23 +568,21 @@ def page_input():
         t1 = st.radio("タイプ", TYPE_OPTS, index=t_idx1, horizontal=True, key="p1_type_input")
     st.markdown("---")
 
-    # --- B席の入力 (A席で選んだ着順を除外) ---
+    # --- B席 (A席で選んだ着順を除外) ---
     st.markdown(f"**▼ B席**")
     c1, c2 = st.columns([1, 2])
-    # 残りの着順リスト
     ranks_for_2 = [x for x in [1, 2, 3] if x != r1]
     
     with c1:
         idx2 = member_list.index(last_n2) if last_n2 in member_list else None
         n2 = st.selectbox("名前", member_list, index=idx2, key="p2_name_input")
     with c2:
-        # デフォルトで一番左を選択
         r2 = st.radio("着順", ranks_for_2, index=0, horizontal=True, key="p2_rank_input")
         t_idx2 = TYPE_OPTS.index(last_t2) if last_t2 in TYPE_OPTS else 1
         t2 = st.radio("タイプ", TYPE_OPTS, index=t_idx2, horizontal=True, key="p2_type_input")
     st.markdown("---")
 
-    # --- C席の入力 (A, Bで選んだ着順を除外) ---
+    # --- C席 (A, Bで選んだ着順を除外) ---
     st.markdown(f"**▼ C席**")
     c1, c2 = st.columns([1, 2])
     ranks_for_3 = [x for x in ranks_for_2 if x != r2]
@@ -602,13 +591,11 @@ def page_input():
         idx3 = member_list.index(last_n3) if last_n3 in member_list else None
         n3 = st.selectbox("名前", member_list, index=idx3, key="p3_name_input")
     with c2:
-        # 残りは1つしかないはずだが、radioで表示
         r3 = st.radio("着順", ranks_for_3, index=0, horizontal=True, key="p3_rank_input")
         t_idx3 = TYPE_OPTS.index(last_t3) if last_t3 in TYPE_OPTS else 2
         t3 = st.radio("タイプ", TYPE_OPTS, index=t_idx3, horizontal=True, key="p3_type_input")
     st.markdown("---")
 
-    # 備考
     st.markdown("**▼ 備考**")
     NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
     note = st.radio("内容を選択", NOTE_OPTS, index=0, horizontal=True)
@@ -619,7 +606,6 @@ def page_input():
     
     st.divider()
     
-    # 送信ボタン（フォームの外に出すことで、ラジオボタン変更時の即時反映を可能にする）
     if st.button("📝 記録する", type="primary", use_container_width=True):
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
@@ -711,7 +697,7 @@ def page_input():
     else:
         st.info("今日のデータはまだありません")
 
-# --- 履歴画面 ---
+# --- 履歴画面 (フォームによる絞り込み) ---
 def page_history():
     st.title("📊 過去データ参照")
     if st.button("🏠 ホームに戻る"):
