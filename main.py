@@ -973,7 +973,7 @@ def page_history():
 def page_ranking():
     st.title("🏆 ランキング (通算)")
     
-    # ゲストならホームボタンを非表示
+    # ★ゲストならホームボタンを非表示
     is_admin = (st.session_state.get("user_role") == "admin")
     
     if is_admin:
@@ -986,8 +986,39 @@ def page_ranking():
         st.info("データがありません")
         return
 
+    # --- 日付範囲フィルター ---
+    valid_dates = pd.to_datetime(df["論理日付"]).dropna()
+    if not valid_dates.empty:
+        min_date = valid_dates.min().date()
+        max_date = valid_dates.max().date()
+    else:
+        min_date = date.today()
+        max_date = date.today()
+
+    c1, c2 = st.columns(2)
+    with c1:
+        date_range = st.date_input(
+            "📅 集計期間",
+            value=(min_date, max_date),
+            min_value=min_date,
+            max_value=max_date
+        )
+    
+    # フィルタリング
+    if len(date_range) == 2:
+        start_d, end_d = date_range
+        mask = (df["論理日付"] >= start_d) & (df["論理日付"] <= end_d)
+        df_filtered = df[mask]
+    else:
+        df_filtered = df
+
+    if df_filtered.empty:
+        st.warning("指定された期間のデータはありません")
+        return
+
+    # 集計ロジック
     records = []
-    for _, row in df.iterrows():
+    for _, row in df_filtered.iterrows():
         for seat in ["A", "B", "C"]:
             name = row[f"{seat}さん"]
             rank = row[f"{seat}着順"]
@@ -1023,6 +1054,7 @@ def page_ranking():
 
     st.write("---")
     
+    # --- Top 5 表示 ---
     t1, t2, t3, t4 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率"])
     
     with t1:
