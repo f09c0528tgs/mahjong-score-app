@@ -104,7 +104,6 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -692,7 +691,6 @@ def page_input():
         st.write("")
         
         st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
-        # 修正: 最新のデータが下に来るように昇順ソートに変更
         df_display = df_today.sort_values("DailyNo", ascending=True)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
         
         def safe_strftime(x):
@@ -872,7 +870,7 @@ def page_ranking():
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 500, 5)
     
     filtered_stats = stats[stats["games"] >= min_games].copy()
     
@@ -894,7 +892,7 @@ def page_ranking():
         )
 
     with t2:
-        st.subheader("🥇 平均着順ランキング (低い方が優秀)")
+        st.subheader("🥇 平均着順ランキング ")
         res = filtered_stats.sort_values("avg_rank", ascending=True).reset_index(drop=True)
         res["順位"] = res.index + 1
         res["avg_rank"] = res["avg_rank"].map('{:.2f}'.format)
@@ -925,19 +923,20 @@ def page_ranking():
 
 # --- ログ閲覧画面 ---
 def page_logs():
-    st.title("📜 修正ログ")
+    st.title("📜 修正・削除ログ")
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
     
     df_logs = load_log_data()
     
-    # フィルタリング: 「修正」のみ抽出 (削除等は表示しない)
+    # フィルタリング: 「修正」または「削除」を抽出
     if not df_logs.empty and "操作" in df_logs.columns:
-        df_logs = df_logs[df_logs["操作"] == "修正"]
+        target_actions = ["修正", "削除"]
+        df_logs = df_logs[df_logs["操作"].isin(target_actions)]
     
     if df_logs.empty:
-        st.info("修正履歴はありません")
+        st.info("修正・削除の履歴はありません")
     else:
         st.dataframe(df_logs, use_container_width=True, hide_index=True)
 
