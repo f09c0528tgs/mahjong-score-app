@@ -143,7 +143,7 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. データ管理関数 (安全装置・リトライ付き)
+# 3. データ管理関数
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
@@ -658,6 +658,7 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
+    # 既存データの最大値を取得（表示用）
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -673,6 +674,7 @@ def page_input():
     else:
         next_internal_game_no = 1
     
+    # 前回のゲームから名前とタイプを引き継ぐ
     last_n1, last_t1 = None, "A客"
     last_n2, last_t2 = None, "B客"
     last_n3, last_t3 = None, "AS"
@@ -744,6 +746,7 @@ def page_input():
                 st.error("データの読み込みに失敗しました。再試行してください。")
                 st.stop()
             
+            # 【安全装置】データが0件で読み込まれてしまう事故を防ぐ
             if not df.empty and df_latest.empty:
                 st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。もう一度ボタンを押してください。")
                 st.stop()
@@ -808,6 +811,7 @@ def page_input():
         for _, row in df_today.iterrows():
             w_type = None
             
+            # 各プレイヤーの着順を取得
             try:
                 r_a = int(float(row["A着順"]))
                 r_b = int(float(row["B着順"]))
@@ -820,10 +824,12 @@ def page_input():
             elif r_b == 1: w_type = row["Bタイプ"]
             elif r_c == 1: w_type = row["Cタイプ"]
 
+            # ゲーム代の加算
             if w_type in type_counts:
                 type_counts[w_type] += 1
                 total_fee_today += FEE_MAP[w_type]
 
+            # 備考によるゲーム代の減算 & バック枚数のカウント
             note = str(row["備考"])
             discount = 0
             
