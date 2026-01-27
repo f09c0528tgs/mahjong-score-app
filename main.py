@@ -764,16 +764,11 @@ def page_input():
 
             now_jst = datetime.now(JST)
             
-            # 日付ズレ補正 (深夜0-8時台は前日扱いではなく、入力フォームの日付+1日として記録するわけではなく
-            # 単純に「カレンダー日付」として処理するため、入力された日付を正とするが
-            # システム日付として記録する場合のロジックが必要ならここを調整。
-            # 今回は「入力されたinput_date」を信頼し、時刻だけ現在時刻を付与する。
+            save_date_obj = input_date
+            if now_jst.hour < 9:
+                save_date_obj = input_date + timedelta(days=1)
             
-            # ただし、input_dateが「今日の営業日」を指している場合、
-            # 深夜2時に打ったなら、それは「暦の上では明日」かもしれない。
-            # ここではシンプルに「選択された日付」＋「現在時刻」を文字列にする。
-            
-            save_date_str = input_date.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+            save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
             
             final_set_no = current_set_no
             if start_new_set: final_set_no += 1
@@ -978,7 +973,7 @@ def page_history():
 def page_ranking():
     st.title("🏆 ランキング (通算)")
     
-    # ★ゲストならホームボタンを非表示
+    # ゲストならホームボタンを非表示
     is_admin = (st.session_state.get("user_role") == "admin")
     
     if is_admin:
@@ -1031,8 +1026,8 @@ def page_ranking():
     t1, t2, t3, t4 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率"])
     
     with t1:
-        st.subheader("📊 打数ランキング")
-        res = filtered_stats.sort_values("games", ascending=False).reset_index(drop=True)
+        st.subheader("📊 打数ランキング (Top 5)")
+        res = filtered_stats.sort_values("games", ascending=False).reset_index(drop=True).head(5)
         res["順位"] = res.index + 1
         st.dataframe(
             res[["順位", "name", "games"]].rename(columns={"name":"名前", "games":"打数"}),
@@ -1040,8 +1035,8 @@ def page_ranking():
         )
 
     with t2:
-        st.subheader("🥇 平均着順ランキング (低い方が優秀)")
-        res = filtered_stats.sort_values("avg_rank", ascending=True).reset_index(drop=True)
+        st.subheader("🥇 平均着順ランキング (Top 5)")
+        res = filtered_stats.sort_values("avg_rank", ascending=True).reset_index(drop=True).head(5)
         res["順位"] = res.index + 1
         res["avg_rank"] = res["avg_rank"].map('{:.2f}'.format)
         st.dataframe(
@@ -1050,8 +1045,8 @@ def page_ranking():
         )
 
     with t3:
-        st.subheader("👑 トップ率ランキング")
-        res = filtered_stats.sort_values("top_rate", ascending=False).reset_index(drop=True)
+        st.subheader("👑 トップ率ランキング (Top 5)")
+        res = filtered_stats.sort_values("top_rate", ascending=False).reset_index(drop=True).head(5)
         res["順位"] = res.index + 1
         res["top_rate"] = res["top_rate"].map('{:.1f}%'.format)
         st.dataframe(
@@ -1060,8 +1055,8 @@ def page_ranking():
         )
 
     with t4:
-        st.subheader("🛡 ラス回避率ランキング")
-        res = filtered_stats.sort_values("last_avoid_rate", ascending=False).reset_index(drop=True)
+        st.subheader("🛡 ラス回避率ランキング (Top 5)")
+        res = filtered_stats.sort_values("last_avoid_rate", ascending=False).reset_index(drop=True).head(5)
         res["順位"] = res.index + 1
         res["last_avoid_rate"] = res["last_avoid_rate"].map('{:.1f}%'.format)
         st.dataframe(
