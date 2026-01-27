@@ -106,8 +106,6 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -118,23 +116,26 @@ SHEET_LOG = "logs"
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-# キャッシュ機能 (10分)
+# --- 【表示用】キャッシュありで読み込む ---
 @st.cache_data(ttl=600)
-def fetch_data_from_sheets(_conn, sheet_name):
-    try:
-        return _conn.read(worksheet=sheet_name, ttl=0)
-    except:
-        return pd.DataFrame()
+def fetch_data_cached(_conn, sheet_name):
+    return _conn.read(worksheet=sheet_name, ttl=0)
 
-def load_score_data():
-    conn = get_conn()
+# --- 【保存用】キャッシュなしで強制的に読み込む ---
+def fetch_data_fresh(conn, sheet_name):
+    # ttl=0 を指定して最新を取得
     try:
-        df = fetch_data_from_sheets(conn, SHEET_SCORE)
+        return conn.read(worksheet=sheet_name, ttl=0)
     except Exception as e:
-        st.error(f"⚠️ データの読み込みに失敗しました。リロードしてください。(Error: {e})")
-        st.stop()
-        return pd.DataFrame()
-    
+        # エラー（Quota exceededなど）が出たら一瞬待って1回だけリトライ
+        time.sleep(1)
+        try:
+            return conn.read(worksheet=sheet_name, ttl=0)
+        except Exception as e2:
+            raise e2
+
+# 共通のデータ整理ロジック
+def process_score_df(df):
     if df.empty:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
@@ -149,17 +150,42 @@ def load_score_data():
     if "SetNo" not in df.columns: df["SetNo"] = []
     if "TableNo" not in df.columns: df["TableNo"] = []
     
-    if not df.empty and "日時" in df.columns:
+    if "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+        
+        # 並び替え: 論理日付 -> 卓 -> 日時
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
-        df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
+        
+        # デイリーNoの振り直し（表示用）
+        if not df.empty:
+            df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
+        else:
+            df["DailyNo"] = []
     else:
         df["DailyNo"] = []
-        if "日時" not in df.columns: df["論理日付"] = []
         
     return df
+
+# 表示用ロード
+def load_score_data():
+    conn = get_conn()
+    try:
+        df = fetch_data_cached(conn, SHEET_SCORE)
+    except:
+        return pd.DataFrame()
+    return process_score_df(df)
+
+# 保存用ロード（キャッシュ無視）
+def load_score_data_fresh():
+    conn = get_conn()
+    try:
+        df = fetch_data_fresh(conn, SHEET_SCORE)
+    except Exception as e:
+        st.error(f"⚠️ データの読み込みに失敗しました。時間をおいて再試行してください。(Error: {e})")
+        st.stop()
+    return process_score_df(df)
 
 def save_score_data(df):
     conn = get_conn()
@@ -167,14 +193,20 @@ def save_score_data(df):
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
     
+    # 念のため日時でソートしてから保存（古い順に並べておくのが安全）
+    # 日時文字列をパース可能な形式にしてソート
+    df_to_save["_tmpsort"] = pd.to_datetime(df_to_save["日時"], errors='coerce')
+    df_to_save = df_to_save.sort_values("_tmpsort").drop(columns=["_tmpsort"])
+    
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
-    time.sleep(2) # 更新待ち
-    fetch_data_from_sheets.clear()
+    time.sleep(2)
+    # 保存後は表示用キャッシュをクリア
+    fetch_data_cached.clear()
 
 def save_action_log(action, game_no, detail=""):
     conn = get_conn()
     try:
-        df_log = conn.read(worksheet=SHEET_LOG, ttl=0)
+        df_log = fetch_data_fresh(conn, SHEET_LOG)
     except:
         df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     
@@ -188,18 +220,15 @@ def save_action_log(action, game_no, detail=""):
     
     df_log = pd.concat([df_log, new_log], ignore_index=True)
     conn.update(worksheet=SHEET_LOG, data=df_log)
-    time.sleep(1)
-    fetch_data_from_sheets.clear()
+    fetch_data_cached.clear()
 
 def load_log_data():
     conn = get_conn()
     try:
-        df = fetch_data_from_sheets(conn, SHEET_LOG)
+        df = fetch_data_cached(conn, SHEET_LOG)
     except:
-        return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
-        
-    if df.empty:
-        return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
+        return pd.DataFrame()
+    if df.empty: return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     if "日時" in df.columns:
         df = df.sort_values("日時", ascending=False)
     return df
@@ -207,7 +236,7 @@ def load_log_data():
 def load_member_data():
     conn = get_conn()
     try:
-        df = fetch_data_from_sheets(conn, SHEET_MEMBER).fillna("")
+        df = fetch_data_cached(conn, SHEET_MEMBER).fillna("")
         if df.empty: return pd.DataFrame({"名前": [], "登録日": []})
         return df
     except:
@@ -216,13 +245,11 @@ def load_member_data():
 def save_member_data(df):
     conn = get_conn()
     conn.update(worksheet=SHEET_MEMBER, data=df)
-    time.sleep(1)
-    fetch_data_from_sheets.clear()
+    fetch_data_cached.clear()
 
 def get_all_member_names():
     df_mem = load_member_data()
     all_members = df_mem["名前"].tolist() if not df_mem.empty else []
-    
     df_score = load_score_data()
     if df_score.empty:
         return sorted(list(set(all_members)))
@@ -459,6 +486,7 @@ def page_edit():
             st.rerun()
         return
 
+    # 編集画面読み込み時はキャッシュありでOK
     df = load_score_data()
     target_row = df[df["GameNo"] == edit_id]
     
@@ -502,9 +530,8 @@ def page_edit():
             st.rerun()
 
         if submit_update:
-            # --- 【重要】更新時も最新データを再取得して上書き防止 ---
-            fetch_data_from_sheets.clear()
-            df_latest = load_score_data()
+            # 更新時は最新を取得
+            df_latest = load_score_data_fresh()
             
             if edit_id not in df_latest["GameNo"].values:
                 st.error("データが他で削除された可能性があります")
@@ -549,8 +576,7 @@ def page_edit():
                     st.rerun()
         
         if submit_delete:
-            fetch_data_from_sheets.clear()
-            df_latest = load_score_data()
+            df_latest = load_score_data_fresh()
             
             if edit_id in df_latest["GameNo"].values:
                 df_latest = df_latest[df_latest["GameNo"] != edit_id]
@@ -577,6 +603,7 @@ def page_input():
         st.session_state["page"] = "home"
         st.rerun()
 
+    # 画面表示用はキャッシュを使う
     df = load_score_data()
     member_list = get_all_member_names()
     JST = timezone(timedelta(hours=9), 'JST')
@@ -598,6 +625,7 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
+    # 既存データの最大値を取得（表示用）
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -613,6 +641,7 @@ def page_input():
     else:
         next_internal_game_no = 1
     
+    # 前回のゲームから名前とタイプを引き継ぐ
     last_n1, last_t1 = None, "A客"
     last_n2, last_t2 = None, "B客"
     last_n3, last_t3 = None, "AS"
@@ -676,9 +705,8 @@ def page_input():
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
         else:
-            # --- 【重要】保存直前に必ずキャッシュをクリアし、最新データを再取得する ---
-            fetch_data_from_sheets.clear()
-            df_latest = load_score_data()
+            # --- 【重要】保存直前に必ず最新データを強制取得して上書き防止 ---
+            df_latest = load_score_data_fresh()
             
             # 再取得した最新データに基づいてIDを計算
             if not df_latest.empty and "GameNo" in df_latest.columns:
@@ -686,7 +714,7 @@ def page_input():
             else:
                 next_internal_game_no = 1
             
-            # ここでも最新データからdf_todayを作り直すのが安全
+            # 最新データからdf_todayを作り直してNoを正確にする
             df_table_latest = df_latest[df_latest["TableNo"] == current_table]
             mask_latest = df_table_latest["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
             df_today_latest = df_table_latest[mask_latest]
