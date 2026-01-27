@@ -17,6 +17,7 @@ hide_style = """
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
+    /* --- スコアシート風スタイル --- */
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
@@ -70,6 +71,7 @@ hide_style = """
         border-top: 2px double #333;
     }
 
+    /* --- 個人成績表スタイル --- */
     .stats-table {
         border-collapse: collapse;
         width: 100%;
@@ -105,12 +107,12 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証
+# 2. パスワード認証 (2種類対応)
 # ==========================================
 def check_password():
     if "password_correct" not in st.session_state:
         st.session_state["password_correct"] = False
-        st.session_state["user_role"] = None 
+        st.session_state["user_role"] = None # role: 'admin' or 'guest'
 
     if st.session_state["password_correct"]:
         return True
@@ -119,17 +121,22 @@ def check_password():
     password = st.text_input("パスワードを入力してください", type="password")
     
     if st.button("ログイン"):
+        # --- 管理者用パスワード ---
         if password == "2026":
             st.session_state["password_correct"] = True
             st.session_state["user_role"] = "admin"
             st.rerun()
-        elif password == "5555": 
+            
+        # --- ランキング閲覧用パスワード ---
+        elif password == "5555": # ★ここを好きな番号に変えてください
             st.session_state["password_correct"] = True
             st.session_state["user_role"] = "guest"
-            st.session_state["page"] = "ranking"
+            st.session_state["page"] = "ranking" # 強制的にランキングへ
             st.rerun()
+            
         else:
             st.error("パスワードが違います")
+            
     return False
 
 if not check_password():
@@ -145,12 +152,12 @@ SHEET_LOG = "logs"
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-# --- キャッシュあり読み込み ---
+# --- 【表示用】キャッシュありで読み込む ---
 @st.cache_data(ttl=600)
 def fetch_data_cached(_conn, sheet_name):
     return _conn.read(worksheet=sheet_name, ttl=0)
 
-# --- キャッシュなし読み込み ---
+# --- 【保存用】キャッシュなしで強制的に読み込む（リトライ機能付き） ---
 def fetch_data_fresh(conn, sheet_name):
     max_retries = 3
     for i in range(max_retries):
@@ -163,7 +170,7 @@ def fetch_data_fresh(conn, sheet_name):
             else:
                 raise
 
-# データ整理（9時切り替えロジック含む）
+# 共通のデータ整理ロジック
 def process_score_df(df):
     if df.empty:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
@@ -179,11 +186,14 @@ def process_score_df(df):
     if "SetNo" not in df.columns: df["SetNo"] = []
     if "TableNo" not in df.columns: df["TableNo"] = []
     
+    # 日付計算ロジック (9時切り替え)
     if "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
+        
         # 9時間を引いた日付を「論理日付(営業日)」とする
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+        
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
         if not df.empty:
             df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
@@ -191,8 +201,10 @@ def process_score_df(df):
             df["DailyNo"] = []
     else:
         df["DailyNo"] = []
+        
     return df
 
+# 表示用ロード
 def load_score_data():
     conn = get_conn()
     try:
@@ -201,12 +213,13 @@ def load_score_data():
         return pd.DataFrame()
     return process_score_df(df)
 
+# 保存用ロード（キャッシュ無視 & エラーなら停止）
 def load_score_data_fresh():
     conn = get_conn()
     try:
         df = fetch_data_fresh(conn, SHEET_SCORE)
     except Exception as e:
-        st.error(f"データの読み込みに失敗しました: {e}")
+        st.error(f"⚠️ データの読み込みに失敗しました。時間をおいて再試行してください。(Error: {e})")
         st.stop()
     return process_score_df(df)
 
@@ -216,7 +229,7 @@ def save_score_data(df):
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
     
-    # 日時でソートしてから保存
+    # 念のため日時でソートしてから保存
     df_to_save["_tmpsort"] = pd.to_datetime(df_to_save["日時"], errors='coerce')
     df_to_save = df_to_save.sort_values("_tmpsort").drop(columns=["_tmpsort"])
     
@@ -724,6 +737,7 @@ def page_input():
             st.error("⚠️ 名前が選択されていません！")
         else:
             fetch_data_cached.clear()
+            
             try:
                 df_latest = load_score_data_fresh()
             except:
@@ -731,7 +745,7 @@ def page_input():
                 st.stop()
             
             if not df.empty and df_latest.empty:
-                st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。")
+                st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。もう一度ボタンを押してください。")
                 st.stop()
 
             if not df_latest.empty and "GameNo" in df_latest.columns:
@@ -749,11 +763,13 @@ def page_input():
                 next_display_no = 1
 
             now_jst = datetime.now(JST)
+            
             save_date_obj = input_date
             if now_jst.hour < 9:
                 save_date_obj = input_date + timedelta(days=1)
             
             save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+            
             final_set_no = current_set_no
             if start_new_set: final_set_no += 1
             
@@ -782,12 +798,16 @@ def page_input():
 
         total_fee_today = 0
         type_counts = {"A客": 0, "B客": 0, "AS": 0, "BS": 0}
+        
+        # --- バック枚数のカウント ---
         total_back_a = 0
         total_back_b = 0
+        
         FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
 
         for _, row in df_today.iterrows():
             w_type = None
+            
             try:
                 r_a = int(float(row["A着順"]))
                 r_b = int(float(row["B着順"]))
@@ -873,6 +893,51 @@ def page_history():
     if df.empty:
         st.info("データがありません")
         return
+        
+    # --- 【追加】全期間の統計サマリ ---
+    st.markdown("### 📈 全期間の統計")
+
+    total_games = len(df)
+    unique_days = df["論理日付"].nunique()
+    avg_games_day = total_games / unique_days if unique_days > 0 else 0
+
+    total_back_a = 0
+    total_back_b = 0
+    
+    # 全期間のバック枚数を計算
+    for _, row in df.iterrows():
+        note = str(row["備考"])
+        discount = 0
+        if note == "東１終了": discount = 1
+        elif note == "２人飛ばし": discount = 2
+        elif note == "５連勝〜": discount = 5
+
+        if discount > 0:
+            winner_type = None
+            try:
+                r_a = int(float(row["A着順"]))
+                r_b = int(float(row["B着順"]))
+                r_c = int(float(row["C着順"]))
+            except:
+                r_a, r_b, r_c = 0, 0, 0
+                
+            if r_a == 1: winner_type = row["Aタイプ"]
+            elif r_b == 1: winner_type = row["Bタイプ"]
+            elif r_c == 1: winner_type = row["Cタイプ"]
+            
+            if winner_type == "A客": total_back_a += discount
+            elif winner_type == "B客": total_back_b += discount
+
+    avg_back_a = total_back_a / unique_days if unique_days > 0 else 0
+    avg_back_b = total_back_b / unique_days if unique_days > 0 else 0
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("総ゲーム数", f"{total_games} 回")
+    c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
+    c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
+    c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
+
+    st.divider()
 
     if "論理日付" in df.columns:
         valid_dates = [d for d in df["論理日付"].unique() if pd.notnull(d) and d != pd.Timestamp("1900-01-01").date()]
