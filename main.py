@@ -545,7 +545,24 @@ def page_input():
     st.title("📝 成績入力")
     if "success_msg" in st.session_state and st.session_state.get("success_msg"):
         st.success(st.session_state["success_msg"])
-        components.html("""<script>window.parent.scrollTo({top: 0, behavior: 'smooth'});</script>""", height=0)
+        
+        # --- スクロール処理の強化 (JSによる強制スクロール) ---
+        js_scroll = """
+            <script>
+                try {
+                    // Streamlitのメインエリアを特定してスクロール
+                    var main = window.parent.document.querySelector('section.main');
+                    if (main) { main.scrollTo(0, 0); }
+                    
+                    // 念のため全体もスクロール
+                    window.parent.scrollTo(0, 0);
+                } catch(e) {
+                    console.log('Scroll error:', e);
+                }
+            </script>
+        """
+        components.html(js_scroll, height=0)
+        
         st.session_state["success_msg"] = None 
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
@@ -669,7 +686,6 @@ def page_input():
             log_detail = f"新規: {current_table}卓 No.{next_display_no}"
             save_action_log("新規登録", next_display_no, log_detail)
             
-            # --- 【追加】記録時刻を表示 ---
             time_str = now_jst.strftime("%H:%M")
             st.session_state["success_msg"] = f"✅ 記録しました！ ({time_str} / No.{next_display_no})"
             st.rerun()
