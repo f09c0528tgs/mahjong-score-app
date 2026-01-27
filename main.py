@@ -105,9 +105,8 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 
-
 # ==========================================
-# 3. データ管理関数
+# 3. データ管理関数 (ログ機能追加)
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
@@ -505,6 +504,7 @@ def page_edit():
                 df.loc[idx, list(new_data.keys())] = list(new_data.values())
                 save_score_data(df)
                 
+                # --- ログ保存 ---
                 log_detail = f"修正: No.{row['DailyNo']}"
                 save_action_log("修正", row["GameNo"], log_detail)
                 
@@ -517,6 +517,7 @@ def page_edit():
             df = df[df["GameNo"] != edit_id]
             save_score_data(df)
             
+            # --- ログ保存 ---
             log_detail = f"削除: No.{row['DailyNo']}"
             save_action_log("削除", row["GameNo"], log_detail)
             
@@ -649,6 +650,7 @@ def page_input():
             df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
             save_score_data(df)
             
+            # --- ログ保存 ---
             log_detail = f"新規: {current_table}卓 No.{next_display_no}"
             save_action_log("新規登録", next_internal_game_no, log_detail)
             
@@ -693,8 +695,7 @@ def page_input():
         st.write("")
         
         st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
-        # 修正: 最新のデータが下に来るように昇順ソートに変更
-        df_display = df_today.sort_values("DailyNo", ascending=True)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
+        df_display = df_today.sort_values("DailyNo", ascending=False)[["DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
         
         def safe_strftime(x):
             try: return pd.to_datetime(x).strftime('%H:%M')
@@ -924,21 +925,16 @@ def page_ranking():
             hide_index=True, use_container_width=True
         )
 
-# --- ログ閲覧画面 ---
+# --- ログ閲覧画面 (NEW) ---
 def page_logs():
-    st.title("📜 修正ログ")
+    st.title("📜 操作ログ")
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
     
     df_logs = load_log_data()
-    
-    # フィルタリング: 「修正」のみ抽出 (削除等は表示しない)
-    if not df_logs.empty and "操作" in df_logs.columns:
-        df_logs = df_logs[df_logs["操作"] == "修正"]
-    
     if df_logs.empty:
-        st.info("修正履歴はありません")
+        st.info("ログはまだありません")
     else:
         st.dataframe(df_logs, use_container_width=True, hide_index=True)
 
