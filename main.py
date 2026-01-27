@@ -113,7 +113,7 @@ SHEET_MEMBER = "members"
 SHEET_LOG = "logs"
 
 def get_conn():
-    return st.connection("gsheets", type=GSheetsConnection)
+    return st.connection("gsheets",type=GSheetsConnection)
 
 # キャッシュ機能 (10分)
 @st.cache_data(ttl=600)
