@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-import streamlit.components.v1 as components
 from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 
@@ -163,8 +162,8 @@ def save_score_data(df):
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
     fetch_data_from_sheets.clear()
 
-# --- ログ保存関数 ---
-def save_action_log(action, game_no, detail=""):
+# --- ログ保存関数 (GameNoの代わりにDailyNoも受け取れるようにする) ---
+def save_action_log(action, game_no_or_daily_no, detail=""):
     conn = get_conn()
     try:
         df_log = conn.read(worksheet=SHEET_LOG, ttl=0)
@@ -172,10 +171,13 @@ def save_action_log(action, game_no, detail=""):
         df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     
     jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
+    
+    # 既存の列名が "GameNo" なので、そこに DailyNo を入れる形をとる
+    # (シートの構造を変えずに中身を変えるアプローチ)
     new_log = pd.DataFrame([{
         "日時": jst_now,
         "操作": action,
-        "GameNo": game_no,
+        "GameNo": game_no_or_daily_no, # ここにDailyNoが入る
         "詳細": detail
     }])
     
@@ -502,6 +504,7 @@ def page_edit():
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
                 
+                # --- 変更点の比較ロジック ---
                 changes = []
                 compare_keys = [
                     ("備考", "備考"),
@@ -521,6 +524,7 @@ def page_edit():
                 df.loc[idx, list(new_data.keys())] = list(new_data.values())
                 save_score_data(df)
                 
+                # GameNoの代わりにDailyNoを保存する
                 save_action_log("修正", row["DailyNo"], diff_text)
                 
                 st.session_state["success_msg"] = "✅ 修正しました！"
@@ -545,24 +549,6 @@ def page_input():
     st.title("📝 成績入力")
     if "success_msg" in st.session_state and st.session_state.get("success_msg"):
         st.success(st.session_state["success_msg"])
-        
-        # --- スクロール処理の強化 (JSによる強制スクロール) ---
-        js_scroll = """
-            <script>
-                try {
-                    // Streamlitのメインエリアを特定してスクロール
-                    var main = window.parent.document.querySelector('section.main');
-                    if (main) { main.scrollTo(0, 0); }
-                    
-                    // 念のため全体もスクロール
-                    window.parent.scrollTo(0, 0);
-                } catch(e) {
-                    console.log('Scroll error:', e);
-                }
-            </script>
-        """
-        components.html(js_scroll, height=0)
-        
         st.session_state["success_msg"] = None 
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
@@ -667,8 +653,7 @@ def page_input():
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
         else:
-            now_jst = datetime.now(JST)
-            save_date_str = input_date.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+            save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now(JST).strftime("%H:%M")
             final_set_no = current_set_no
             if start_new_set: final_set_no += 1
             
@@ -686,8 +671,7 @@ def page_input():
             log_detail = f"新規: {current_table}卓 No.{next_display_no}"
             save_action_log("新規登録", next_display_no, log_detail)
             
-            time_str = now_jst.strftime("%H:%M")
-            st.session_state["success_msg"] = f"✅ 記録しました！ ({time_str} / No.{next_display_no})"
+            st.session_state["success_msg"] = f"✅ 記録しました！ (No.{next_display_no})"
             st.rerun()
 
     st.divider()
