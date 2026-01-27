@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import streamlit.components.v1 as components
+import time
 from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 
@@ -15,7 +17,6 @@ hide_style = """
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
-    /* --- スコアシート風スタイル --- */
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
@@ -69,7 +70,6 @@ hide_style = """
         border-top: 2px double #333;
     }
 
-    /* --- 個人成績表スタイル --- */
     .stats-table {
         border-collapse: collapse;
         width: 100%;
@@ -105,7 +105,6 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -116,18 +115,26 @@ SHEET_LOG = "logs"
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-# キャッシュ機能 (10分)
+# --- 【表示用】キャッシュありで読み込む ---
 @st.cache_data(ttl=600)
-def fetch_data_from_sheets(_conn, sheet_name):
-    try:
-        return _conn.read(worksheet=sheet_name, ttl=0)
-    except:
-        return pd.DataFrame()
+def fetch_data_cached(_conn, sheet_name):
+    return _conn.read(worksheet=sheet_name, ttl=0)
 
-def load_score_data():
-    conn = get_conn()
-    df = fetch_data_from_sheets(conn, SHEET_SCORE)
-    
+# --- 【保存用】キャッシュなしで強制的に読み込む（リトライ機能付き） ---
+def fetch_data_fresh(conn, sheet_name):
+    max_retries = 3
+    for i in range(max_retries):
+        try:
+            return conn.read(worksheet=sheet_name, ttl=0)
+        except Exception:
+            if i < max_retries - 1:
+                time.sleep(2)
+                continue
+            else:
+                raise
+
+# 共通のデータ整理ロジック
+def process_score_df(df):
     if df.empty:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
@@ -142,31 +149,61 @@ def load_score_data():
     if "SetNo" not in df.columns: df["SetNo"] = []
     if "TableNo" not in df.columns: df["TableNo"] = []
     
-    if not df.empty and "日時" in df.columns:
+    # 日付計算ロジック (9時切り替え)
+    if "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
+        
+        # 9時間を引いた日付を「論理日付(営業日)」とする
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
+        
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
-        df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
+        if not df.empty:
+            df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
+        else:
+            df["DailyNo"] = []
     else:
         df["DailyNo"] = []
-        if "日時" not in df.columns: df["論理日付"] = []
         
     return df
+
+# 表示用ロード
+def load_score_data():
+    conn = get_conn()
+    try:
+        df = fetch_data_cached(conn, SHEET_SCORE)
+    except:
+        return pd.DataFrame()
+    return process_score_df(df)
+
+# 保存用ロード（キャッシュ無視 & エラーなら停止）
+def load_score_data_fresh():
+    conn = get_conn()
+    try:
+        df = fetch_data_fresh(conn, SHEET_SCORE)
+    except Exception as e:
+        st.error(f"⚠️ データの読み込みに失敗しました。時間をおいて再試行してください。(Error: {e})")
+        st.stop()
+    return process_score_df(df)
 
 def save_score_data(df):
     conn = get_conn()
     save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
+    
+    # 日時でソートしてから保存
+    df_to_save["_tmpsort"] = pd.to_datetime(df_to_save["日時"], errors='coerce')
+    df_to_save = df_to_save.sort_values("_tmpsort").drop(columns=["_tmpsort"])
+    
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
-    fetch_data_from_sheets.clear()
+    time.sleep(2)
+    fetch_data_cached.clear()
 
-# --- ログ保存関数 ---
 def save_action_log(action, game_no, detail=""):
     conn = get_conn()
     try:
-        df_log = conn.read(worksheet=SHEET_LOG, ttl=0)
+        df_log = fetch_data_fresh(conn, SHEET_LOG)
     except:
         df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     
@@ -180,13 +217,15 @@ def save_action_log(action, game_no, detail=""):
     
     df_log = pd.concat([df_log, new_log], ignore_index=True)
     conn.update(worksheet=SHEET_LOG, data=df_log)
-    fetch_data_from_sheets.clear()
+    fetch_data_cached.clear()
 
 def load_log_data():
     conn = get_conn()
-    df = fetch_data_from_sheets(conn, SHEET_LOG)
-    if df.empty:
-        return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
+    try:
+        df = fetch_data_cached(conn, SHEET_LOG)
+    except:
+        return pd.DataFrame()
+    if df.empty: return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     if "日時" in df.columns:
         df = df.sort_values("日時", ascending=False)
     return df
@@ -194,7 +233,7 @@ def load_log_data():
 def load_member_data():
     conn = get_conn()
     try:
-        df = fetch_data_from_sheets(conn, SHEET_MEMBER).fillna("")
+        df = fetch_data_cached(conn, SHEET_MEMBER).fillna("")
         if df.empty: return pd.DataFrame({"名前": [], "登録日": []})
         return df
     except:
@@ -203,12 +242,11 @@ def load_member_data():
 def save_member_data(df):
     conn = get_conn()
     conn.update(worksheet=SHEET_MEMBER, data=df)
-    fetch_data_from_sheets.clear()
+    fetch_data_cached.clear()
 
 def get_all_member_names():
     df_mem = load_member_data()
     all_members = df_mem["名前"].tolist() if not df_mem.empty else []
-    
     df_score = load_score_data()
     if df_score.empty:
         return sorted(list(set(all_members)))
@@ -488,63 +526,75 @@ def page_edit():
             st.rerun()
 
         if submit_update:
-            if not p1_n or not p2_n or not p3_n:
-                st.error("名前を選択してください")
-            elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
-                st.error("着順が重複しています")
+            fetch_data_cached.clear()
+            df_latest = load_score_data_fresh()
+            
+            if edit_id not in df_latest["GameNo"].values:
+                st.error("データが他で削除された可能性があります")
             else:
-                new_data = {
-                    "GameNo": row["GameNo"], "TableNo": row["TableNo"], "SetNo": row["SetNo"],
-                    "日時": row["日時"], "備考": ("" if note == "なし" else note),
-                    "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
-                    "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
-                    "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
-                }
+                if not p1_n or not p2_n or not p3_n:
+                    st.error("名前を選択してください")
+                elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
+                    st.error("着順が重複しています")
+                else:
+                    new_data = {
+                        "GameNo": row["GameNo"], "TableNo": row["TableNo"], "SetNo": row["SetNo"],
+                        "日時": row["日時"], "備考": ("" if note == "なし" else note),
+                        "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
+                        "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
+                        "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
+                    }
+                    
+                    changes = []
+                    compare_keys = [
+                        ("備考", "備考"),
+                        ("A名前", "Aさん"), ("A着順", "A着順"), ("Aタイプ", "Aタイプ"),
+                        ("B名前", "Bさん"), ("B着順", "B着順"), ("Bタイプ", "Bタイプ"),
+                        ("C名前", "Cさん"), ("C着順", "C着順"), ("Cタイプ", "Cタイプ"),
+                    ]
+                    for label, key in compare_keys:
+                        old_val = row[key]
+                        new_val = new_data[key]
+                        if str(old_val) != str(new_val):
+                            changes.append(f"{label}: {old_val}→{new_val}")
+                    
+                    diff_text = ", ".join(changes) if changes else "変更なし"
+                    
+                    idx = df_latest[df_latest["GameNo"] == edit_id].index[0]
+                    df_latest.loc[idx, list(new_data.keys())] = list(new_data.values())
+                    save_score_data(df_latest)
+                    
+                    save_action_log("修正", row["DailyNo"], diff_text)
+                    
+                    st.session_state["success_msg"] = "✅ 修正しました！"
+                    st.session_state["page"] = "input"
+                    st.session_state["editing_game_id"] = None
+                    st.rerun()
+        
+        if submit_delete:
+            fetch_data_cached.clear()
+            df_latest = load_score_data_fresh()
+            
+            if edit_id in df_latest["GameNo"].values:
+                df_latest = df_latest[df_latest["GameNo"] != edit_id]
+                save_score_data(df_latest)
                 
-                # --- 変更点の比較ロジック ---
-                changes = []
-                compare_keys = [
-                    ("備考", "備考"),
-                    ("A名前", "Aさん"), ("A着順", "A着順"), ("Aタイプ", "Aタイプ"),
-                    ("B名前", "Bさん"), ("B着順", "B着順"), ("Bタイプ", "Bタイプ"),
-                    ("C名前", "Cさん"), ("C着順", "C着順"), ("Cタイプ", "Cタイプ"),
-                ]
-                for label, key in compare_keys:
-                    old_val = row[key]
-                    new_val = new_data[key]
-                    if str(old_val) != str(new_val):
-                        changes.append(f"{label}: {old_val}→{new_val}")
+                del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']} (A:{row['Aさん']}, B:{row['Bさん']}, C:{row['Cさん']})"
+                save_action_log("削除", row["DailyNo"], del_info)
                 
-                diff_text = ", ".join(changes) if changes else "変更なし"
-                
-                idx = df[df["GameNo"] == edit_id].index[0]
-                df.loc[idx, list(new_data.keys())] = list(new_data.values())
-                save_score_data(df)
-                
-                save_action_log("修正", row["GameNo"], diff_text)
-                
-                st.session_state["success_msg"] = "✅ 修正しました！"
+                st.session_state["success_msg"] = "🗑 削除しました"
                 st.session_state["page"] = "input"
                 st.session_state["editing_game_id"] = None
                 st.rerun()
-        
-        if submit_delete:
-            df = df[df["GameNo"] != edit_id]
-            save_score_data(df)
-            
-            del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']} (A:{row['Aさん']}, B:{row['Bさん']}, C:{row['Cさん']})"
-            save_action_log("削除", row["GameNo"], del_info)
-            
-            st.session_state["success_msg"] = "🗑 削除しました"
-            st.session_state["page"] = "input"
-            st.session_state["editing_game_id"] = None
-            st.rerun()
+            else:
+                st.error("既に削除されています")
 
 # --- 入力画面 ---
 def page_input():
     st.title("📝 成績入力")
     if "success_msg" in st.session_state and st.session_state.get("success_msg"):
         st.success(st.session_state["success_msg"])
+        components.html("""<script>try{var main=window.parent.document.querySelector('section.main');if(main){main.scrollTo(0,0);}window.parent.scrollTo(0,0);}catch(e){console.log(e);}</script>""", height=0)
         st.session_state["success_msg"] = None 
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
@@ -649,7 +699,45 @@ def page_input():
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
         else:
-            save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now(JST).strftime("%H:%M")
+            fetch_data_cached.clear()
+            
+            # 安全にロード
+            try:
+                df_latest = load_score_data_fresh()
+            except:
+                st.error("データの読み込みに失敗しました。再試行してください。")
+                st.stop()
+            
+            # 【安全装置】データが0件で読み込まれてしまう事故を防ぐ
+            if not df.empty and df_latest.empty:
+                st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。もう一度ボタンを押してください。")
+                st.stop()
+
+            # ID計算
+            if not df_latest.empty and "GameNo" in df_latest.columns:
+                next_internal_game_no = df_latest["GameNo"].max() + 1
+            else:
+                next_internal_game_no = 1
+            
+            # 最新データからdf_todayを作り直してNoを正確にする
+            df_table_latest = df_latest[df_latest["TableNo"] == current_table]
+            mask_latest = df_table_latest["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
+            df_today_latest = df_table_latest[mask_latest]
+            
+            if not df_today_latest.empty:
+                next_display_no = int(df_today_latest["DailyNo"].max()) + 1
+            else:
+                next_display_no = 1
+
+            now_jst = datetime.now(JST)
+            
+            # 【重要修正】深夜(0:00〜8:59)の入力における日付ズレを補正
+            save_date_obj = input_date
+            if now_jst.hour < 9:
+                save_date_obj = input_date + timedelta(days=1)
+            
+            save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+            
             final_set_no = current_set_no
             if start_new_set: final_set_no += 1
             
@@ -661,13 +749,15 @@ def page_input():
                 "Cさん": n3, "Cタイプ": t3, "C着順": r3
             }
             
-            df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-            save_score_data(df)
+            # 最新データに対して結合
+            df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
+            save_score_data(df_final)
             
             log_detail = f"新規: {current_table}卓 No.{next_display_no}"
-            save_action_log("新規登録", next_internal_game_no, log_detail)
+            save_action_log("新規登録", next_display_no, log_detail)
             
-            st.session_state["success_msg"] = f"✅ 記録しました！ (No.{next_display_no})"
+            time_str = now_jst.strftime("%H:%M")
+            st.session_state["success_msg"] = f"✅ 記録しました！ ({time_str} / No.{next_display_no})"
             st.rerun()
 
     st.divider()
@@ -952,6 +1042,10 @@ def page_logs():
         target_actions = ["修正", "削除"]
         df_logs = df_logs[df_logs["操作"].isin(target_actions)]
     
+    # 項目名を "GameNo" -> "DailyNo" に変えて表示
+    if not df_logs.empty and "GameNo" in df_logs.columns:
+        df_logs = df_logs.rename(columns={"GameNo": "DailyNo"})
+
     if df_logs.empty:
         st.info("修正・削除の履歴はありません")
     else:
