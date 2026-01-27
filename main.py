@@ -17,6 +17,7 @@ hide_style = """
     header {visibility: hidden;}
     footer {visibility: hidden;}
     
+    /* --- スコアシート風スタイル --- */
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
@@ -70,6 +71,7 @@ hide_style = """
         border-top: 2px double #333;
     }
 
+    /* --- 個人成績表スタイル --- */
     .stats-table {
         border-collapse: collapse;
         width: 100%;
@@ -104,6 +106,41 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
+# ==========================================
+# 2. パスワード認証 (2種類対応)
+# ==========================================
+def check_password():
+    if "password_correct" not in st.session_state:
+        st.session_state["password_correct"] = False
+        st.session_state["user_role"] = None # role: 'admin' or 'guest'
+
+    if st.session_state["password_correct"]:
+        return True
+    
+    st.title("🔒 ログイン")
+    password = st.text_input("パスワードを入力してください", type="password")
+    
+    if st.button("ログイン"):
+        # --- 管理者用パスワード ---
+        if password == "2026":
+            st.session_state["password_correct"] = True
+            st.session_state["user_role"] = "admin"
+            st.rerun()
+            
+        # --- ランキング閲覧用パスワード ---
+        elif password == "5555": # ★ここを好きな番号に変えてください
+            st.session_state["password_correct"] = True
+            st.session_state["user_role"] = "guest"
+            st.session_state["page"] = "ranking" # 強制的にランキングへ
+            st.rerun()
+            
+        else:
+            st.error("パスワードが違います")
+            
+    return False
+
+if not check_password():
+    st.stop()
 
 # ==========================================
 # 3. データ管理関数
@@ -192,7 +229,7 @@ def save_score_data(df):
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
     
-    # 日時でソートしてから保存
+    # 念のため日時でソートしてから保存
     df_to_save["_tmpsort"] = pd.to_datetime(df_to_save["日時"], errors='coerce')
     df_to_save = df_to_save.sort_values("_tmpsort").drop(columns=["_tmpsort"])
     
@@ -410,7 +447,7 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
     st.markdown("---")
     return name, type_, rank
 
-# --- ホーム画面 ---
+# --- ホーム画面 (Adminのみ) ---
 def page_home():
     st.title("🀄 ぱいん成績管理")
     st.write("")
@@ -701,25 +738,21 @@ def page_input():
         else:
             fetch_data_cached.clear()
             
-            # 安全にロード
             try:
                 df_latest = load_score_data_fresh()
             except:
                 st.error("データの読み込みに失敗しました。再試行してください。")
                 st.stop()
             
-            # 【安全装置】データが0件で読み込まれてしまう事故を防ぐ
             if not df.empty and df_latest.empty:
                 st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。もう一度ボタンを押してください。")
                 st.stop()
 
-            # ID計算
             if not df_latest.empty and "GameNo" in df_latest.columns:
                 next_internal_game_no = df_latest["GameNo"].max() + 1
             else:
                 next_internal_game_no = 1
             
-            # 最新データからdf_todayを作り直してNoを正確にする
             df_table_latest = df_latest[df_latest["TableNo"] == current_table]
             mask_latest = df_table_latest["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
             df_today_latest = df_table_latest[mask_latest]
@@ -731,12 +764,16 @@ def page_input():
 
             now_jst = datetime.now(JST)
             
-            # 【重要修正】深夜(0:00〜8:59)の入力における日付ズレを補正
-            save_date_obj = input_date
-            if now_jst.hour < 9:
-                save_date_obj = input_date + timedelta(days=1)
+            # 日付ズレ補正 (深夜0-8時台は前日扱いではなく、入力フォームの日付+1日として記録するわけではなく
+            # 単純に「カレンダー日付」として処理するため、入力された日付を正とするが
+            # システム日付として記録する場合のロジックが必要ならここを調整。
+            # 今回は「入力されたinput_date」を信頼し、時刻だけ現在時刻を付与する。
             
-            save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+            # ただし、input_dateが「今日の営業日」を指している場合、
+            # 深夜2時に打ったなら、それは「暦の上では明日」かもしれない。
+            # ここではシンプルに「選択された日付」＋「現在時刻」を文字列にする。
+            
+            save_date_str = input_date.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
             
             final_set_no = current_set_no
             if start_new_set: final_set_no += 1
@@ -749,12 +786,11 @@ def page_input():
                 "Cさん": n3, "Cタイプ": t3, "C着順": r3
             }
             
-            # 最新データに対して結合
             df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
             save_score_data(df_final)
             
             log_detail = f"新規: {current_table}卓 No.{next_display_no}"
-            save_action_log("新規登録", next_display_no, log_detail)
+            save_action_log("新規登録", next_internal_game_no, log_detail)
             
             time_str = now_jst.strftime("%H:%M")
             st.session_state["success_msg"] = f"✅ 記録しました！ ({time_str} / No.{next_display_no})"
@@ -941,9 +977,14 @@ def page_history():
 # --- ランキング画面 ---
 def page_ranking():
     st.title("🏆 ランキング (通算)")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
+    
+    # ★ゲストならホームボタンを非表示
+    is_admin = (st.session_state.get("user_role") == "admin")
+    
+    if is_admin:
+        if st.button("🏠 ホームに戻る"):
+            st.session_state["page"] = "home"
+            st.rerun()
 
     df = load_score_data()
     if df.empty:
@@ -1057,17 +1098,25 @@ def page_logs():
 if "page" not in st.session_state:
     st.session_state["page"] = "home"
 
-if st.session_state["page"] == "home":
-    page_home()
-elif st.session_state["page"] == "members":
-    page_members()
-elif st.session_state["page"] == "input":
-    page_input()
-elif st.session_state["page"] == "history":
-    page_history()
-elif st.session_state["page"] == "edit":
-    page_edit()
-elif st.session_state["page"] == "ranking":
+# ロールベースのルーティング制御
+user_role = st.session_state.get("user_role")
+
+if user_role == "guest":
+    # ゲストは強制的にランキング画面のみ
     page_ranking()
-elif st.session_state["page"] == "logs":
-    page_logs()
+else:
+    # 管理者は全ページ遷移可能
+    if st.session_state["page"] == "home":
+        page_home()
+    elif st.session_state["page"] == "members":
+        page_members()
+    elif st.session_state["page"] == "input":
+        page_input()
+    elif st.session_state["page"] == "history":
+        page_history()
+    elif st.session_state["page"] == "edit":
+        page_edit()
+    elif st.session_state["page"] == "ranking":
+        page_ranking()
+    elif st.session_state["page"] == "logs":
+        page_logs()
