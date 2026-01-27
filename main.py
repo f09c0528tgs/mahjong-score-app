@@ -1,6 +1,8 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
+import streamlit.components.v1 as components
+import time # タイムラグ対策用
 from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 
@@ -105,6 +107,7 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 
+
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -118,15 +121,21 @@ def get_conn():
 # キャッシュ機能 (10分)
 @st.cache_data(ttl=600)
 def fetch_data_from_sheets(_conn, sheet_name):
-    try:
-        return _conn.read(worksheet=sheet_name, ttl=0)
-    except:
-        return pd.DataFrame()
+    # 【重要修正】ここでtry-exceptで空データを返すと、読み込み失敗時にデータが全消去される原因になるため
+    # エラーをそのまま発生させて、呼び出し元で処理する
+    return _conn.read(worksheet=sheet_name, ttl=0)
 
 def load_score_data():
     conn = get_conn()
-    df = fetch_data_from_sheets(conn, SHEET_SCORE)
+    try:
+        df = fetch_data_from_sheets(conn, SHEET_SCORE)
+    except Exception as e:
+        # 【重要修正】読み込みエラー時は強制停止（データを守るため）
+        st.error(f"⚠️ データの読み込みに失敗しました。時間をおいてリロードしてください。(Error: {e})")
+        st.stop()
+        return pd.DataFrame()
     
+    # データが本当に空の場合の処理
     if df.empty:
         cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
         return pd.DataFrame(columns=cols)
@@ -158,32 +167,44 @@ def save_score_data(df):
     save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
     existing_cols = [c for c in save_cols if c in df.columns]
     df_to_save = df[existing_cols]
+    
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
+    
+    # 【重要修正】保存直後の読み込みラグを防ぐために待機
+    time.sleep(2)
     fetch_data_from_sheets.clear()
 
 # --- ログ保存関数 ---
-def save_action_log(action, game_no, detail=""):
+def save_action_log(action, game_no_or_daily_no, detail=""):
     conn = get_conn()
     try:
+        # ログは読み込み失敗しても本体データには影響ないので空で進めても良いが、念のためtry
         df_log = conn.read(worksheet=SHEET_LOG, ttl=0)
     except:
         df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     
     jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
+    
     new_log = pd.DataFrame([{
         "日時": jst_now,
         "操作": action,
-        "GameNo": game_no,
+        "GameNo": game_no_or_daily_no,
         "詳細": detail
     }])
     
     df_log = pd.concat([df_log, new_log], ignore_index=True)
     conn.update(worksheet=SHEET_LOG, data=df_log)
+    
+    time.sleep(1) # ログ保存も少し待つ
     fetch_data_from_sheets.clear()
 
 def load_log_data():
     conn = get_conn()
-    df = fetch_data_from_sheets(conn, SHEET_LOG)
+    try:
+        df = fetch_data_from_sheets(conn, SHEET_LOG)
+    except:
+        return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
+        
     if df.empty:
         return pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     if "日時" in df.columns:
@@ -202,6 +223,7 @@ def load_member_data():
 def save_member_data(df):
     conn = get_conn()
     conn.update(worksheet=SHEET_MEMBER, data=df)
+    time.sleep(1)
     fetch_data_from_sheets.clear()
 
 def get_all_member_names():
@@ -500,7 +522,6 @@ def page_edit():
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
                 }
                 
-                # --- 変更点の比較ロジック ---
                 changes = []
                 compare_keys = [
                     ("備考", "備考"),
@@ -520,7 +541,7 @@ def page_edit():
                 df.loc[idx, list(new_data.keys())] = list(new_data.values())
                 save_score_data(df)
                 
-                save_action_log("修正", row["GameNo"], diff_text)
+                save_action_log("修正", row["DailyNo"], diff_text)
                 
                 st.session_state["success_msg"] = "✅ 修正しました！"
                 st.session_state["page"] = "input"
@@ -532,7 +553,7 @@ def page_edit():
             save_score_data(df)
             
             del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']} (A:{row['Aさん']}, B:{row['Bさん']}, C:{row['Cさん']})"
-            save_action_log("削除", row["GameNo"], del_info)
+            save_action_log("削除", row["DailyNo"], del_info)
             
             st.session_state["success_msg"] = "🗑 削除しました"
             st.session_state["page"] = "input"
@@ -544,6 +565,7 @@ def page_input():
     st.title("📝 成績入力")
     if "success_msg" in st.session_state and st.session_state.get("success_msg"):
         st.success(st.session_state["success_msg"])
+        components.html("""<script>try{var main=window.parent.document.querySelector('section.main');if(main){main.scrollTo(0,0);}window.parent.scrollTo(0,0);}catch(e){console.log(e);}</script>""", height=0)
         st.session_state["success_msg"] = None 
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
@@ -648,7 +670,8 @@ def page_input():
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
         else:
-            save_date_str = input_date.strftime("%Y-%m-%d") + " " + datetime.now(JST).strftime("%H:%M")
+            now_jst = datetime.now(JST)
+            save_date_str = input_date.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
             final_set_no = current_set_no
             if start_new_set: final_set_no += 1
             
@@ -664,9 +687,10 @@ def page_input():
             save_score_data(df)
             
             log_detail = f"新規: {current_table}卓 No.{next_display_no}"
-            save_action_log("新規登録", next_internal_game_no, log_detail)
+            save_action_log("新規登録", next_display_no, log_detail)
             
-            st.session_state["success_msg"] = f"✅ 記録しました！ (No.{next_display_no})"
+            time_str = now_jst.strftime("%H:%M")
+            st.session_state["success_msg"] = f"✅ 記録しました！ ({time_str} / No.{next_display_no})"
             st.rerun()
 
     st.divider()
@@ -951,6 +975,10 @@ def page_logs():
         target_actions = ["修正", "削除"]
         df_logs = df_logs[df_logs["操作"].isin(target_actions)]
     
+    # 項目名を "GameNo" -> "DailyNo" に変えて表示
+    if not df_logs.empty and "GameNo" in df_logs.columns:
+        df_logs = df_logs.rename(columns={"GameNo": "DailyNo"})
+
     if df_logs.empty:
         st.info("修正・削除の履歴はありません")
     else:
