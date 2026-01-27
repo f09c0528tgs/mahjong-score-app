@@ -105,7 +105,6 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -162,8 +161,8 @@ def save_score_data(df):
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
     fetch_data_from_sheets.clear()
 
-# --- ログ保存関数 ---
-def save_action_log(action, game_no, detail=""):
+# --- ログ保存関数 (GameNoの代わりにDailyNoも受け取れるようにする) ---
+def save_action_log(action, game_no_or_daily_no, detail=""):
     conn = get_conn()
     try:
         df_log = conn.read(worksheet=SHEET_LOG, ttl=0)
@@ -171,10 +170,13 @@ def save_action_log(action, game_no, detail=""):
         df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
     
     jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
+    
+    # 既存の列名が "GameNo" なので、そこに DailyNo を入れる形をとる
+    # (シートの構造を変えずに中身を変えるアプローチ)
     new_log = pd.DataFrame([{
         "日時": jst_now,
         "操作": action,
-        "GameNo": game_no,
+        "GameNo": game_no_or_daily_no, # ここにDailyNoが入る
         "詳細": detail
     }])
     
@@ -521,7 +523,8 @@ def page_edit():
                 df.loc[idx, list(new_data.keys())] = list(new_data.values())
                 save_score_data(df)
                 
-                save_action_log("修正", row["GameNo"], diff_text)
+                # GameNoの代わりにDailyNoを保存する
+                save_action_log("修正", row["DailyNo"], diff_text)
                 
                 st.session_state["success_msg"] = "✅ 修正しました！"
                 st.session_state["page"] = "input"
@@ -533,7 +536,7 @@ def page_edit():
             save_score_data(df)
             
             del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']} (A:{row['Aさん']}, B:{row['Bさん']}, C:{row['Cさん']})"
-            save_action_log("削除", row["GameNo"], del_info)
+            save_action_log("削除", row["DailyNo"], del_info)
             
             st.session_state["success_msg"] = "🗑 削除しました"
             st.session_state["page"] = "input"
@@ -665,7 +668,7 @@ def page_input():
             save_score_data(df)
             
             log_detail = f"新規: {current_table}卓 No.{next_display_no}"
-            save_action_log("新規登録", next_internal_game_no, log_detail)
+            save_action_log("新規登録", next_display_no, log_detail)
             
             st.session_state["success_msg"] = f"✅ 記録しました！ (No.{next_display_no})"
             st.rerun()
@@ -952,6 +955,10 @@ def page_logs():
         target_actions = ["修正", "削除"]
         df_logs = df_logs[df_logs["操作"].isin(target_actions)]
     
+    # 項目名を "GameNo" -> "DailyNo" に変えて表示
+    if not df_logs.empty and "GameNo" in df_logs.columns:
+        df_logs = df_logs.rename(columns={"GameNo": "DailyNo"})
+
     if df_logs.empty:
         st.info("修正・削除の履歴はありません")
     else:
