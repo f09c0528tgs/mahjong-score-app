@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import altair as alt
-from datetime import date, timedelta
+from datetime import datetime, date, timedelta
 from streamlit_gsheets import GSheetsConnection
 
 # ==========================================
@@ -9,7 +9,6 @@ from streamlit_gsheets import GSheetsConnection
 # ==========================================
 st.set_page_config(page_title="ランキング表", layout="wide")
 
-# シンプルで綺麗なデザイン設定
 hide_style = """
     <style>
     #MainMenu {visibility: hidden;}
@@ -49,7 +48,6 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # ==========================================
 SHEET_SCORE = "score"
 
-# 期待する列定義
 EXPECTED_COLS = [
     "GameNo", "TableNo", "SetNo", "日時", "備考",
     "Aさん", "Aタイプ", "A着順",
@@ -60,7 +58,6 @@ EXPECTED_COLS = [
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-# 閲覧用なのでキャッシュを効かせて高速化 (TTL: 10分)
 @st.cache_data(ttl=600)
 def fetch_data_cached(_conn, sheet_name):
     return _conn.read(worksheet=sheet_name, ttl=0)
@@ -73,11 +70,7 @@ def process_score_df(df):
 
     missing_cols = [c for c in EXPECTED_COLS if c not in df.columns]
     if missing_cols:
-        for col in missing_cols:
-            if col in ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]:
-                df[col] = 0
-            else:
-                df[col] = ""
+        return None
 
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
@@ -98,18 +91,28 @@ def load_score_data():
     conn = get_conn()
     try:
         df = fetch_data_cached(conn, SHEET_SCORE)
+        processed_df = process_score_df(df)
+        if processed_df is None:
+            fetch_data_cached.clear()
+            df = fetch_data_cached(conn, SHEET_SCORE)
+            processed_df = process_score_df(df)
+        
+        if processed_df is None:
+            st.error("データの読み込みに失敗しました。")
+            st.stop()
+            
+        return processed_df
     except:
         return pd.DataFrame(columns=EXPECTED_COLS)
-    return process_score_df(df)
 
 # ==========================================
 # 3. ランキング表示ロジック
 # ==========================================
 def main():
     st.title("🏆 成績ランキング")
+    # ここでのエラー原因だった datetime.now() の import 漏れを修正済み
     st.caption("最終更新: " + datetime.now().strftime("%H:%M"))
 
-    # データ読み込み
     with st.spinner("データを読み込んでいます..."):
         df = load_score_data()
 
@@ -117,7 +120,6 @@ def main():
         st.info("データがまだありません。")
         return
 
-    # 日付範囲フィルター
     valid_dates = pd.to_datetime(df["論理日付"]).dropna()
     if not valid_dates.empty:
         min_date = valid_dates.min().date()
@@ -126,7 +128,6 @@ def main():
         min_date = date.today()
         max_date = date.today()
 
-    # 期間指定（デフォルトは全期間）
     c1, c2 = st.columns([1, 2])
     with c1:
         date_range = st.date_input(
@@ -136,7 +137,6 @@ def main():
             max_value=max_date
         )
     
-    # フィルタリング
     if len(date_range) == 2:
         start_d, end_d = date_range
         mask = (df["論理日付"] >= start_d) & (df["論理日付"] <= end_d)
@@ -148,7 +148,6 @@ def main():
         st.warning("指定された期間のデータはありません")
         return
 
-    # 集計処理
     records = []
     for _, row in df_filtered.iterrows():
         for seat in ["A", "B", "C"]:
@@ -176,7 +175,6 @@ def main():
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
-    # 規定打数フィルタ
     min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
     
     filtered_stats = stats[stats["games"] >= min_games].copy()
@@ -187,7 +185,6 @@ def main():
 
     st.write("---")
     
-    # タブ表示
     t1, t2, t3, t4 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率"])
     
     with t1:
@@ -229,6 +226,5 @@ def main():
             hide_index=True, use_container_width=True
         )
 
-# アプリ実行
 if __name__ == '__main__':
     main()
