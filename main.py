@@ -105,7 +105,7 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証 (2種類対応)
+# 2. パスワード認証
 # ==========================================
 def check_password():
     if "password_correct" not in st.session_state:
@@ -136,21 +136,27 @@ if not check_password():
     st.stop()
 
 # ==========================================
-# 3. データ管理関数
+# 3. データ管理関数 (安全装置付き)
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
 SHEET_LOG = "logs"
 
+# 期待する列定義
+EXPECTED_COLS = [
+    "GameNo", "TableNo", "SetNo", "日時", "備考",
+    "Aさん", "Aタイプ", "A着順",
+    "Bさん", "Bタイプ", "B着順",
+    "Cさん", "Cタイプ", "C着順"
+]
+
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-# --- キャッシュあり読み込み ---
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def fetch_data_cached(_conn, sheet_name):
     return _conn.read(worksheet=sheet_name, ttl=0)
 
-# --- キャッシュなし読み込み ---
 def fetch_data_fresh(conn, sheet_name):
     max_retries = 3
     for i in range(max_retries):
@@ -163,42 +169,59 @@ def fetch_data_fresh(conn, sheet_name):
             else:
                 raise
 
-# データ整理
+# --- 【修正版】安全なデータ処理ロジック ---
 def process_score_df(df):
+    # 1. データが空の場合
     if df.empty:
-        cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
-        return pd.DataFrame(columns=cols)
+        return pd.DataFrame(columns=EXPECTED_COLS)
 
+    # 2. 列名の空白除去（"TableNo "などを"TableNo"に自動修正）
+    # これにより、見えない空白によるエラーは撲滅されます。
+    df.columns = df.columns.astype(str).str.strip()
+
+    # 3. それでも必須列が足りない場合（列名変更などの致命的な状態）
+    # 勝手に0埋めせず、空のDataFrameを返して呼び出し元でエラー停止させる
+    missing_cols = [c for c in EXPECTED_COLS if c not in df.columns]
+    if missing_cols:
+        st.error(f"⚠️ スプレッドシートの形式が正しくありません。以下の列が見つかりません: {missing_cols}")
+        st.error("スプレッドシートの1行目を変更していませんか？確認してください。")
+        # 安全のため、処理を中断できる空データを返す（保存処理側でブロックされる）
+        return pd.DataFrame(columns=EXPECTED_COLS)
+
+    # 4. 数値変換
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
+        df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
     df = df.fillna("")
 
-    if "SetNo" not in df.columns: df["SetNo"] = []
-    if "TableNo" not in df.columns: df["TableNo"] = []
-    
+    # 5. 日付計算
     if "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
-        # 9時間を引いた日付を「論理日付(営業日)」とする
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
+        
         if not df.empty:
             df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
         else:
             df["DailyNo"] = []
     else:
         df["DailyNo"] = []
+        
     return df
 
 def load_score_data():
     conn = get_conn()
     try:
         df = fetch_data_cached(conn, SHEET_SCORE)
+        # キャッシュが古くて列がない場合のリトライ処理
+        if not df.empty and "TableNo" not in df.columns.astype(str).str.strip():
+            fetch_data_cached.clear()
+            df = fetch_data_cached(conn, SHEET_SCORE)
     except:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=EXPECTED_COLS)
+    
     return process_score_df(df)
 
 def load_score_data_fresh():
@@ -212,18 +235,22 @@ def load_score_data_fresh():
 
 def save_score_data(df):
     conn = get_conn()
-    save_cols = ["GameNo", "TableNo", "SetNo", "日時", "備考", "Aさん", "Aタイプ", "A着順", "Bさん", "Bタイプ", "B着順", "Cさん", "Cタイプ", "C着順"]
-    existing_cols = [c for c in save_cols if c in df.columns]
-    df_to_save = df[existing_cols]
     
-    # --- 修正点: 日時ではなく GameNo の昇順でソートして保存 ---
+    # 保存直前の最終チェック
+    missing_cols = [c for c in EXPECTED_COLS if c not in df.columns]
+    if missing_cols:
+        st.error("保存しようとしたデータに不備があります。処理を中止しました。")
+        st.stop()
+
+    df_to_save = df[EXPECTED_COLS]
+    
+    # GameNo順にソートして保存
     if "GameNo" in df_to_save.columns:
         df_to_save["GameNo"] = pd.to_numeric(df_to_save["GameNo"], errors='coerce').fillna(0)
         df_to_save = df_to_save.sort_values("GameNo")
-    # -----------------------------------------------------
     
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
-    time.sleep(1) # 少し待機
+    time.sleep(1)
     fetch_data_cached.clear()
 
 def save_action_log(action, game_no, detail=""):
@@ -243,7 +270,7 @@ def save_action_log(action, game_no, detail=""):
     
     df_log = pd.concat([df_log, new_log], ignore_index=True)
     conn.update(worksheet=SHEET_LOG, data=df_log)
-    # ログ保存時はキャッシュクリア不要
+    fetch_data_cached.clear()
 
 def load_log_data():
     conn = get_conn()
@@ -436,7 +463,7 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
     st.markdown("---")
     return name, type_, rank
 
-# --- ホーム画面 ---
+# --- ホーム画面 (Adminのみ) ---
 def page_home():
     st.title("🀄 ぱいん成績管理")
     st.write("")
@@ -552,6 +579,7 @@ def page_edit():
             st.rerun()
 
         if submit_update:
+            # 更新時は最新を取得
             fetch_data_cached.clear()
             df_latest = load_score_data_fresh()
             
@@ -647,6 +675,7 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
+    # 既存データの最大値を取得（表示用）
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -727,21 +756,26 @@ def page_input():
         else:
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
+                
+                # 安全にロード
                 try:
                     df_latest = load_score_data_fresh()
                 except:
                     st.error("データの読み込みに失敗しました。再試行してください。")
                     st.stop()
                 
+                # 【安全装置】
                 if not df.empty and df_latest.empty:
-                    st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。")
+                    st.error("🚨 エラー：最新データの取得に失敗しました（データが0件です）。データ消失を防ぐため保存を中止しました。もう一度ボタンを押してください。")
                     st.stop()
 
+                # ID計算
                 if not df_latest.empty and "GameNo" in df_latest.columns:
                     next_internal_game_no = df_latest["GameNo"].max() + 1
                 else:
                     next_internal_game_no = 1
                 
+                # 最新データからdf_todayを作り直してNoを正確にする
                 df_table_latest = df_latest[df_latest["TableNo"] == current_table]
                 mask_latest = df_table_latest["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
                 df_today_latest = df_table_latest[mask_latest]
@@ -752,11 +786,14 @@ def page_input():
                     next_display_no = 1
 
                 now_jst = datetime.now(JST)
+                
+                # 深夜(0:00〜8:59)の入力における日付ズレを補正
                 save_date_obj = input_date
                 if now_jst.hour < 9:
                     save_date_obj = input_date + timedelta(days=1)
                 
                 save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+                
                 final_set_no = current_set_no
                 if start_new_set: final_set_no += 1
                 
@@ -768,8 +805,10 @@ def page_input():
                     "Cさん": n3, "Cタイプ": t3, "C着順": r3
                 }
                 
+                # 最新データに対して結合
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
+                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -797,12 +836,13 @@ def page_input():
             except:
                 r_a, r_b, r_c = 0, 0, 0
 
-            # Winner & Self check
+            # トップ者のタイプ判定
             winner_type = None
             if r_a == 1: winner_type = row["Aタイプ"]
             elif r_b == 1: winner_type = row["Bタイプ"]
             elif r_c == 1: winner_type = row["Cタイプ"]
 
+            # 自分のタイプ判定
             if r_a == 1: w_type = row["Aタイプ"]
             elif r_b == 1: w_type = row["Bタイプ"]
             elif r_c == 1: w_type = row["Cタイプ"]
@@ -1024,6 +1064,7 @@ def page_ranking():
         st.info("データがありません")
         return
 
+    # 日付範囲フィルター
     valid_dates = pd.to_datetime(df["論理日付"]).dropna()
     if not valid_dates.empty:
         min_date = valid_dates.min().date()
@@ -1079,7 +1120,7 @@ def page_ranking():
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 500, 5)
     
     filtered_stats = stats[stats["games"] >= min_games].copy()
     
