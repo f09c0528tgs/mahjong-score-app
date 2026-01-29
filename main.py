@@ -283,14 +283,31 @@ def load_log_data():
         df = df.sort_values("日時", ascending=False)
     return df
 
+# --- 【修正】メンバーデータのロード（新項目対応） ---
 def load_member_data():
     conn = get_conn()
     try:
         df = fetch_data_cached(conn, SHEET_MEMBER).fillna("")
-        if df.empty: return pd.DataFrame({"名前": [], "登録日": []})
+        
+        # 必要な列がなければ追加（0で初期化）
+        if "名前" not in df.columns:
+            df["名前"] = []
+        if "登録日" not in df.columns:
+            df["登録日"] = []
+        
+        # ★追加箇所: 新しい項目がなければ作る
+        if "最大飜数" not in df.columns:
+            df["最大飜数"] = 0
+        if "役満回数" not in df.columns:
+            df["役満回数"] = 0
+            
+        # ★追加箇所: 必ず数値として扱うように変換
+        df["最大飜数"] = pd.to_numeric(df["最大飜数"], errors='coerce').fillna(0).astype(int)
+        df["役満回数"] = pd.to_numeric(df["役満回数"], errors='coerce').fillna(0).astype(int)
+        
         return df
     except:
-        return pd.DataFrame({"名前": [], "登録日": []})
+        return pd.DataFrame({"名前": [], "登録日": [], "最大飜数": [], "役満回数": []})
 
 def save_member_data(df):
     conn = get_conn()
@@ -1038,6 +1055,41 @@ def page_history():
                             tooltip=["着順", "回数"]
                         )
                         st.altair_chart(pie, use_container_width=True)
+                    # --- ★追加箇所: 個人記録の手動更新エリア ---
+                st.divider()
+                st.markdown("#### 🀄 個人記録の更新")
+                df_mem = load_member_data()
+                
+                # 該当プレイヤーの現在の値を取得
+                current_max = 0
+                current_yaku = 0
+                
+                # メンバー表にいるかチェック
+                target_idx = df_mem.index[df_mem["名前"] == sel_player].tolist()
+                
+                if target_idx:
+                    idx = target_idx[0]
+                    current_max = int(df_mem.at[idx, "最大飜数"])
+                    current_yaku = int(df_mem.at[idx, "役満回数"])
+                
+                # 入力フォーム
+                with st.form("update_personal_stats"):
+                    c_in1, c_in2 = st.columns(2)
+                    with c_in1:
+                        new_max = st.number_input("最大飜数", min_value=0, value=current_max)
+                    with c_in2:
+                        new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku)
+                    
+                    if st.form_submit_button("更新する"):
+                        if target_idx:
+                            df_mem.at[idx, "最大飜数"] = new_max
+                            df_mem.at[idx, "役満回数"] = new_yaku
+                            save_member_data(df_mem)
+                            st.success(f"{sel_player}さんの記録を更新しました！")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
 
                     with c_dates:
                         st.markdown("##### 📅 稼働日リスト")
