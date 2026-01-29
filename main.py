@@ -1182,7 +1182,7 @@ def page_ranking():
 
     st.write("---")
     
-    t1, t2, t3, t4 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率"])
+    t1, t2, t3, t4, t5, t6 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
     
     with t1:
         st.subheader("📊 打数ランキング (Top 5)")
@@ -1222,6 +1222,38 @@ def page_ranking():
             res[["順位", "name", "last_avoid_rate", "games"]].rename(columns={"name":"名前", "last_avoid_rate":"ラス回避率", "games":"打数"}),
             hide_index=True, use_container_width=True
         )
+    df_mem = load_member_data()
+    
+    with t5:
+        st.subheader("💥 最大飜数ランキング (Top 5)")
+        if not df_mem.empty:
+            # 降順ソートしてTop5を表示
+            res_max = df_mem.sort_values("最大飜数", ascending=False).reset_index(drop=True).head(5)
+            res_max = res_max[res_max["最大飜数"] > 0] # 0は表示しない
+            if not res_max.empty:
+                res_max["順位"] = res_max.index + 1
+                st.dataframe(
+                    res_max[["順位", "名前", "最大飜数"]],
+                    hide_index=True, use_container_width=True
+                )
+            else:
+                st.info("データがありません")
+        else:
+            st.info("データがありません")
+
+    with t6:
+        st.subheader("🀅 役満回数ランキング (Top 5)")
+        if not df_mem.empty:
+            res_yaku = df_mem.sort_values("役満回数", ascending=False).reset_index(drop=True).head(5)
+            res_yaku = res_yaku[res_yaku["役満回数"] > 0] # 0は表示しない
+            if not res_yaku.empty:
+                res_yaku["順位"] = res_yaku.index + 1
+                st.dataframe(
+                    res_yaku[["順位", "名前", "役満回数"]],
+                    hide_index=True, use_container_width=True
+                )
+            else:
+                st.info("データがありません")
 
 # --- ログ閲覧画面 ---
 def page_logs():
