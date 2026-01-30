@@ -140,33 +140,23 @@ def fetch_data_fresh(conn, sheet_name):
             else:
                 raise
 
-# --- 【修正版】安全なデータ処理ロジック ---
+# --- データ補正ロジック ---
 def process_score_df(df):
-    # 1. データが空の場合
     if df.empty:
         return pd.DataFrame(columns=EXPECTED_COLS)
 
-    # 2. 列名の空白除去（"TableNo "などを"TableNo"に自動修正）
-    # これにより、見えない空白によるエラーは撲滅されます。
     df.columns = df.columns.astype(str).str.strip()
 
-    # 3. それでも必須列が足りない場合（列名変更などの致命的な状態）
-    # 勝手に0埋めせず、空のDataFrameを返して呼び出し元でエラー停止させる
     missing_cols = [c for c in EXPECTED_COLS if c not in df.columns]
     if missing_cols:
-        st.error(f"⚠️ スプレッドシートの形式が正しくありません。以下の列が見つかりません: {missing_cols}")
-        st.error("スプレッドシートの1行目を変更していませんか？確認してください。")
-        # 安全のため、処理を中断できる空データを返す（保存処理側でブロックされる）
-        return pd.DataFrame(columns=EXPECTED_COLS)
+        return None 
 
-    # 4. 数値変換
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
 
     df = df.fillna("")
 
-    # 5. 日付計算
     if "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
@@ -186,14 +176,21 @@ def load_score_data():
     conn = get_conn()
     try:
         df = fetch_data_cached(conn, SHEET_SCORE)
-        # キャッシュが古くて列がない場合のリトライ処理
-        if not df.empty and "TableNo" not in df.columns.astype(str).str.strip():
+        processed_df = process_score_df(df)
+        
+        if processed_df is None:
             fetch_data_cached.clear()
             df = fetch_data_cached(conn, SHEET_SCORE)
-    except:
+            processed_df = process_score_df(df)
+            
+        if processed_df is None:
+            st.error("⚠️ データの読み込みエラー: スプレッドシートの列名が正しく認識できませんでした。")
+            st.stop()
+            
+        return processed_df
+
+    except Exception:
         return pd.DataFrame(columns=EXPECTED_COLS)
-    
-    return process_score_df(df)
 
 def load_score_data_fresh():
     conn = get_conn()
@@ -202,20 +199,23 @@ def load_score_data_fresh():
     except Exception as e:
         st.error(f"データの読み込みに失敗しました: {e}")
         st.stop()
-    return process_score_df(df)
+    
+    processed_df = process_score_df(df)
+    if processed_df is None:
+        st.error("⚠️ 保存エラー: 最新のスプレッドシート形式が不正です。保存を中止しました。")
+        st.stop()
+        
+    return processed_df
 
 def save_score_data(df):
     conn = get_conn()
-    
-    # 保存直前の最終チェック
     missing_cols = [c for c in EXPECTED_COLS if c not in df.columns]
     if missing_cols:
-        st.error("保存しようとしたデータに不備があります。処理を中止しました。")
+        st.error("保存データに不備があります。処理を中止しました。")
         st.stop()
 
     df_to_save = df[EXPECTED_COLS]
     
-    # GameNo順にソートして保存
     if "GameNo" in df_to_save.columns:
         df_to_save["GameNo"] = pd.to_numeric(df_to_save["GameNo"], errors='coerce').fillna(0)
         df_to_save = df_to_save.sort_values("GameNo")
@@ -254,25 +254,20 @@ def load_log_data():
         df = df.sort_values("日時", ascending=False)
     return df
 
-# --- 【修正】メンバーデータのロード（新項目対応） ---
 def load_member_data():
     conn = get_conn()
     try:
         df = fetch_data_cached(conn, SHEET_MEMBER).fillna("")
         
-        # 必要な列がなければ追加（0で初期化）
         if "名前" not in df.columns:
             df["名前"] = []
         if "登録日" not in df.columns:
             df["登録日"] = []
-        
-        # ★追加箇所: 新しい項目がなければ作る
         if "最大飜数" not in df.columns:
             df["最大飜数"] = 0
         if "役満回数" not in df.columns:
             df["役満回数"] = 0
             
-        # ★追加箇所: 必ず数値として扱うように変換
         df["最大飜数"] = pd.to_numeric(df["最大飜数"], errors='coerce').fillna(0).astype(int)
         df["役満回数"] = pd.to_numeric(df["役満回数"], errors='coerce').fillna(0).astype(int)
         
@@ -478,6 +473,19 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
+    # --- ★ここからQRコード表示機能 ---
+    st.divider()
+    st.subheader("🔗 ランキング共有用QR")
+    st.caption("参加者にこのQRコードを読み取ってもらうと、ランキング専用ページ（閲覧のみ）へアクセスできます。")
+    
+    ranking_app_url = "https://pineranking-view.streamlit.app/"
+    
+    c_qr, c_dummy = st.columns([1, 2])
+    with c_qr:
+        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={ranking_app_url}"
+        st.image(qr_api_url, caption="ランキング閲覧ページ")
+        st.text_input("URL", value=ranking_app_url, disabled=True)
+
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
@@ -493,7 +501,7 @@ def page_members():
             if new_name in df_mem["名前"].values:
                 st.error(f"「{new_name}」は既に登録されています")
             else:
-                new_row = {"名前": new_name, "登録日": date.today()}
+                new_row = {"名前": new_name, "登録日": date.today(), "最大飜数": 0, "役満回数": 0}
                 df_mem = pd.concat([df_mem, pd.DataFrame([new_row])], ignore_index=True)
                 save_member_data(df_mem)
                 st.success(f"「{new_name}」を追加しました")
@@ -567,7 +575,6 @@ def page_edit():
             st.rerun()
 
         if submit_update:
-            # 更新時は最新を取得
             fetch_data_cached.clear()
             df_latest = load_score_data_fresh()
             
@@ -663,7 +670,6 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
-    # 既存データの最大値を取得（表示用）
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -745,25 +751,21 @@ def page_input():
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
                 
-                # 安全にロード
                 try:
                     df_latest = load_score_data_fresh()
                 except:
                     st.error("データの読み込みに失敗しました。再試行してください。")
                     st.stop()
                 
-                # 【安全装置】
                 if not df.empty and df_latest.empty:
-                    st.error("🚨 エラー：最新データの取得に失敗しました（データが0件です）。データ消失を防ぐため保存を中止しました。もう一度ボタンを押してください。")
+                    st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。")
                     st.stop()
 
-                # ID計算
                 if not df_latest.empty and "GameNo" in df_latest.columns:
                     next_internal_game_no = df_latest["GameNo"].max() + 1
                 else:
                     next_internal_game_no = 1
                 
-                # 最新データからdf_todayを作り直してNoを正確にする
                 df_table_latest = df_latest[df_latest["TableNo"] == current_table]
                 mask_latest = df_table_latest["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
                 df_today_latest = df_table_latest[mask_latest]
@@ -774,14 +776,11 @@ def page_input():
                     next_display_no = 1
 
                 now_jst = datetime.now(JST)
-                
-                # 深夜(0:00〜8:59)の入力における日付ズレを補正
                 save_date_obj = input_date
                 if now_jst.hour < 9:
                     save_date_obj = input_date + timedelta(days=1)
                 
                 save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
-                
                 final_set_no = current_set_no
                 if start_new_set: final_set_no += 1
                 
@@ -793,10 +792,8 @@ def page_input():
                     "Cさん": n3, "Cタイプ": t3, "C着順": r3
                 }
                 
-                # 最新データに対して結合
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
-                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -979,6 +976,70 @@ def page_history():
         if df_filtered.empty:
             st.warning("条件に一致するデータが見つかりませんでした")
         else:
+            # === NEW CALCULATION BLOCK (Date Filtered) ===
+            if not df_filtered.empty:
+                st.markdown("### 📅 選択期間の集計")
+                total_games_day = len(df_filtered)
+                day_back_a = 0
+                day_back_b = 0
+                pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+
+                for _, row in df_filtered.iterrows():
+                    # Back Calc
+                    note = str(row["備考"])
+                    discount = 0
+                    if note == "東１終了": discount = 1
+                    elif note == "２人飛ばし": discount = 2
+                    elif note == "５連勝〜": discount = 5
+                    
+                    if discount > 0:
+                        winner_type = None
+                        try:
+                            r_a = int(float(row["A着順"]))
+                            r_b = int(float(row["B着順"]))
+                            r_c = int(float(row["C着順"]))
+                        except:
+                            r_a, r_b, r_c = 0, 0, 0
+                        
+                        if r_a == 1: winner_type = row["Aタイプ"]
+                        elif r_b == 1: winner_type = row["Bタイプ"]
+                        elif r_c == 1: winner_type = row["Cタイプ"]
+
+                        if winner_type == "A客": day_back_a += discount
+                        elif winner_type == "B客": day_back_b += discount
+                    
+                    # Pattern Calc
+                    # Count A side (A客 + AS)
+                    p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
+                    a_side = sum(1 for t in p_types if t in ["A客", "AS"])
+                    
+                    if a_side == 3: pattern_counts["A3人"] += 1
+                    elif a_side == 2: pattern_counts["A2人B1人"] += 1
+                    elif a_side == 1: pattern_counts["A1人B2人"] += 1
+                    elif a_side == 0: pattern_counts["B3人"] += 1
+                
+                c_s1, c_s2, c_s3 = st.columns(3)
+                c_s1.metric("ゲーム回数", f"{total_games_day} 回")
+                c_s2.metric("A客バック", f"{day_back_a} 枚")
+                c_s3.metric("B客バック", f"{day_back_b} 枚")
+                
+                # Chart
+                st.caption("卓組構成の割合")
+                source = pd.DataFrame({
+                    "構成": list(pattern_counts.keys()),
+                    "回数": list(pattern_counts.values())
+                })
+                base = alt.Chart(source).encode(
+                    theta=alt.Theta("回数", stack=True)
+                )
+                pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(
+                    color=alt.Color("構成"),
+                    order=alt.Order("回数", sort="descending"),
+                    tooltip=["構成", "回数"]
+                )
+                st.altair_chart(pie, use_container_width=True)
+                st.divider()
+
             if sel_player != "(指定なし)":
                 st.markdown(f"#### 👤 {sel_player} さんの成績")
                 ranks = []
@@ -1026,16 +1087,18 @@ def page_history():
                             tooltip=["着順", "回数"]
                         )
                         st.altair_chart(pie, use_container_width=True)
-                    # --- ★追加箇所: 個人記録の手動更新エリア ---
+
+                    with c_dates:
+                        st.markdown("##### 📅 稼働日リスト")
+                        date_list = sorted(list(played_dates), reverse=True)
+                        st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
+                
                 st.divider()
                 st.markdown("#### 🀄 個人記録の更新")
                 df_mem = load_member_data()
                 
-                # 該当プレイヤーの現在の値を取得
                 current_max = 0
                 current_yaku = 0
-                
-                # メンバー表にいるかチェック
                 target_idx = df_mem.index[df_mem["名前"] == sel_player].tolist()
                 
                 if target_idx:
@@ -1043,7 +1106,6 @@ def page_history():
                     current_max = int(df_mem.at[idx, "最大飜数"])
                     current_yaku = int(df_mem.at[idx, "役満回数"])
                 
-                # 入力フォーム
                 with st.form("update_personal_stats"):
                     c_in1, c_in2 = st.columns(2)
                     with c_in1:
@@ -1062,10 +1124,6 @@ def page_history():
                         else:
                             st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
 
-                    with c_dates:
-                        st.markdown("##### 📅 稼働日リスト")
-                        date_list = sorted(list(played_dates), reverse=True)
-                        st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
             else:
                 st.markdown(f"#### 📝 集計表")
                 render_paper_sheet(df_filtered)
@@ -1143,7 +1201,7 @@ def page_ranking():
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 500, 5)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
     
     filtered_stats = stats[stats["games"] >= min_games].copy()
     
@@ -1153,6 +1211,7 @@ def page_ranking():
 
     st.write("---")
     
+    # --- タブ追加 ---
     t1, t2, t3, t4, t5, t6 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
     
     with t1:
@@ -1193,14 +1252,15 @@ def page_ranking():
             res[["順位", "name", "last_avoid_rate", "games"]].rename(columns={"name":"名前", "last_avoid_rate":"ラス回避率", "games":"打数"}),
             hide_index=True, use_container_width=True
         )
+
+    # --- メンバーデータのランキング ---
     df_mem = load_member_data()
     
     with t5:
         st.subheader("💥 最大飜数ランキング (Top 5)")
         if not df_mem.empty:
-            # 降順ソートしてTop5を表示
             res_max = df_mem.sort_values("最大飜数", ascending=False).reset_index(drop=True).head(5)
-            res_max = res_max[res_max["最大飜数"] > 0] # 0は表示しない
+            res_max = res_max[res_max["最大飜数"] > 0]
             if not res_max.empty:
                 res_max["順位"] = res_max.index + 1
                 st.dataframe(
@@ -1216,7 +1276,7 @@ def page_ranking():
         st.subheader("🀅 役満回数ランキング (Top 5)")
         if not df_mem.empty:
             res_yaku = df_mem.sort_values("役満回数", ascending=False).reset_index(drop=True).head(5)
-            res_yaku = res_yaku[res_yaku["役満回数"] > 0] # 0は表示しない
+            res_yaku = res_yaku[res_yaku["役満回数"] > 0]
             if not res_yaku.empty:
                 res_yaku["順位"] = res_yaku.index + 1
                 st.dataframe(
@@ -1225,6 +1285,8 @@ def page_ranking():
                 )
             else:
                 st.info("データがありません")
+        else:
+            st.info("データがありません")
 
 # --- ログ閲覧画面 ---
 def page_logs():
