@@ -469,6 +469,8 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
+    # --- QRコード表示機能を削除しました ---
+
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
@@ -888,7 +890,11 @@ def page_history():
     total_back_a = 0
     total_back_b = 0
     
+    # --- 【修正】全期間の構成割合集計用変数 ---
+    all_pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+    
     for _, row in df.iterrows():
+        # バック計算
         note = str(row["備考"])
         discount = 0
         if note == "東１終了": discount = 1
@@ -910,6 +916,15 @@ def page_history():
             
             if winner_type == "A客": total_back_a += discount
             elif winner_type == "B客": total_back_b += discount
+        
+        # --- 【修正】卓組構成カウント ---
+        p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
+        a_side = sum(1 for t in p_types if t in ["A客", "AS"])
+        
+        if a_side == 3: all_pattern_counts["A3人"] += 1
+        elif a_side == 2: all_pattern_counts["A2人B1人"] += 1
+        elif a_side == 1: all_pattern_counts["A1人B2人"] += 1
+        elif a_side == 0: all_pattern_counts["B3人"] += 1
 
     avg_back_a = total_back_a / unique_days if unique_days > 0 else 0
     avg_back_b = total_back_b / unique_days if unique_days > 0 else 0
@@ -919,6 +934,20 @@ def page_history():
     c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
     c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
     c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
+
+    # --- 【修正】全期間の構成割合テーブル表示 ---
+    st.caption("卓組構成の割合（全期間）")
+    df_all_pattern = pd.DataFrame({
+        "構成": list(all_pattern_counts.keys()),
+        "回数": list(all_pattern_counts.values())
+    })
+    total_all = df_all_pattern["回数"].sum()
+    if total_all > 0:
+        df_all_pattern["割合"] = (df_all_pattern["回数"] / total_all * 100).map('{:.1f}%'.format)
+    else:
+        df_all_pattern["割合"] = "0.0%"
+    
+    st.dataframe(df_all_pattern, hide_index=True, use_container_width=True)
 
     st.divider()
 
@@ -959,7 +988,6 @@ def page_history():
         if df_filtered.empty:
             st.warning("条件に一致するデータが見つかりませんでした")
         else:
-            # === NEW CALCULATION BLOCK (Date Filtered) ===
             if not df_filtered.empty:
                 st.markdown("### 📅 選択期間の集計")
                 total_games_day = len(df_filtered)
@@ -968,7 +996,6 @@ def page_history():
                 pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
 
                 for _, row in df_filtered.iterrows():
-                    # Back Calc
                     note = str(row["備考"])
                     discount = 0
                     if note == "東１終了": discount = 1
@@ -991,9 +1018,7 @@ def page_history():
                         if winner_type == "A客": day_back_a += discount
                         elif winner_type == "B客": day_back_b += discount
                     
-                    # Pattern Calc (A客 + AS) vs (B客 + BS)
                     p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
-                    # A属性の人数を数える
                     a_side = sum(1 for t in p_types if t in ["A客", "AS"])
                     
                     if a_side == 3: pattern_counts["A3人"] += 1
@@ -1006,13 +1031,12 @@ def page_history():
                 c_s2.metric("A客バック", f"{day_back_a} 枚")
                 c_s3.metric("B客バック", f"{day_back_b} 枚")
                 
-                # Table for pattern counts (No Chart)
+                # --- 【修正】選択期間の構成割合（表のみ） ---
                 st.caption("卓組構成の割合")
                 df_pattern = pd.DataFrame({
                     "構成": list(pattern_counts.keys()),
                     "回数": list(pattern_counts.values())
                 })
-                # Calculate Percentage
                 total = df_pattern["回数"].sum()
                 if total > 0:
                     df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
