@@ -259,14 +259,10 @@ def load_member_data():
     try:
         df = fetch_data_cached(conn, SHEET_MEMBER).fillna("")
         
-        if "名前" not in df.columns:
-            df["名前"] = []
-        if "登録日" not in df.columns:
-            df["登録日"] = []
-        if "最大飜数" not in df.columns:
-            df["最大飜数"] = 0
-        if "役満回数" not in df.columns:
-            df["役満回数"] = 0
+        if "名前" not in df.columns: df["名前"] = []
+        if "登録日" not in df.columns: df["登録日"] = []
+        if "最大飜数" not in df.columns: df["最大飜数"] = 0
+        if "役満回数" not in df.columns: df["役満回数"] = 0
             
         df["最大飜数"] = pd.to_numeric(df["最大飜数"], errors='coerce').fillna(0).astype(int)
         df["役満回数"] = pd.to_numeric(df["役満回数"], errors='coerce').fillna(0).astype(int)
@@ -472,19 +468,6 @@ def page_home():
     if st.button("📜 操作ログ", use_container_width=True):
         st.session_state["page"] = "logs"
         st.rerun()
-
-    # --- ★ここからQRコード表示機能 ---
-    st.divider()
-    st.subheader("🔗 ランキング共有用QR")
-    st.caption("参加者にこのQRコードを読み取ってもらうと、ランキング専用ページ（閲覧のみ）へアクセスできます。")
-    
-    ranking_app_url = "https://pineranking-view.streamlit.app/"
-    
-    c_qr, c_dummy = st.columns([1, 2])
-    with c_qr:
-        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={ranking_app_url}"
-        st.image(qr_api_url, caption="ランキング閲覧ページ")
-        st.text_input("URL", value=ranking_app_url, disabled=True)
 
 # --- メンバー管理画面 ---
 def page_members():
@@ -1008,9 +991,9 @@ def page_history():
                         if winner_type == "A客": day_back_a += discount
                         elif winner_type == "B客": day_back_b += discount
                     
-                    # Pattern Calc
-                    # Count A side (A客 + AS)
+                    # Pattern Calc (A客 + AS) vs (B客 + BS)
                     p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
+                    # A属性の人数を数える
                     a_side = sum(1 for t in p_types if t in ["A客", "AS"])
                     
                     if a_side == 3: pattern_counts["A3人"] += 1
@@ -1023,21 +1006,20 @@ def page_history():
                 c_s2.metric("A客バック", f"{day_back_a} 枚")
                 c_s3.metric("B客バック", f"{day_back_b} 枚")
                 
-                # Chart
+                # Table for pattern counts (No Chart)
                 st.caption("卓組構成の割合")
-                source = pd.DataFrame({
+                df_pattern = pd.DataFrame({
                     "構成": list(pattern_counts.keys()),
                     "回数": list(pattern_counts.values())
                 })
-                base = alt.Chart(source).encode(
-                    theta=alt.Theta("回数", stack=True)
-                )
-                pie = base.mark_arc(outerRadius=80, innerRadius=40).encode(
-                    color=alt.Color("構成"),
-                    order=alt.Order("回数", sort="descending"),
-                    tooltip=["構成", "回数"]
-                )
-                st.altair_chart(pie, use_container_width=True)
+                # Calculate Percentage
+                total = df_pattern["回数"].sum()
+                if total > 0:
+                    df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
+                else:
+                    df_pattern["割合"] = "0.0%"
+                
+                st.dataframe(df_pattern, hide_index=True, use_container_width=True)
                 st.divider()
 
             if sel_player != "(指定なし)":
