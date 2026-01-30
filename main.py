@@ -107,12 +107,12 @@ st.markdown(hide_style, unsafe_allow_html=True)
 
 
 # ==========================================
-# 3. データ管理関数
+# 3. データ管理関数 (安全装置付き)
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
 SHEET_LOG = "logs"
-SHEET_PROFIT = "daily_profits" 
+SHEET_PROFIT = "daily_profits"
 
 # 期待する列定義
 EXPECTED_COLS = [
@@ -305,7 +305,7 @@ def get_all_member_names():
     sorted_data = sorted(formatted_list, key=lambda x: x["last_dt"], reverse=True)
     return [x["name"] for x in sorted_data]
 
-# ---  利益データ管理関数 ---
+# --- 利益データ管理関数 ---
 def load_profit_data():
     conn = get_conn()
     try:
@@ -486,18 +486,6 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
-    st.divider()
-    st.subheader("🔗 ランキング共有用QR")
-    st.caption("参加者にこのQRコードを読み取ってもらうと、ランキング専用ページ（閲覧のみ）へアクセスできます。")
-    
-    ranking_app_url = "https://pineranking-view.streamlit.app/"
-    
-    c_qr, c_dummy = st.columns([1, 2])
-    with c_qr:
-        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={ranking_app_url}"
-        st.image(qr_api_url, caption="ランキング閲覧ページ")
-        st.text_input("URL", value=ranking_app_url, disabled=True)
-
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
@@ -661,7 +649,6 @@ def page_input():
         st.session_state["page"] = "home"
         st.rerun()
 
-    # 画面表示はキャッシュを使う
     df = load_score_data()
     member_list = get_all_member_names()
     JST = timezone(timedelta(hours=9), 'JST')
@@ -683,7 +670,6 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
-    # 既存データの最大値を取得（表示用）
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -762,7 +748,6 @@ def page_input():
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
         else:
-            # --- 保存直前にキャッシュクリアして最新データ取得 ---
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
                 
@@ -821,28 +806,20 @@ def page_input():
 
     st.divider()
 
-    # --- ★追加エリア：本日の利益管理フォーム ---
+    # --- 利益管理フォーム ---
     st.markdown("### 💰 本日の利益管理")
     df_profit = load_profit_data()
-    
-    # 選択中の日付(input_date)のデータを検索
-    # Dateカラムは文字列として保存されている前提(YYYY-MM-DD)
     search_date_str = input_date.strftime("%Y-%m-%d")
     
-    # 初期値（データがなければ0）
-    init_day_mix = 0
-    init_day_real = 0
-    init_night_mix = 0
-    init_night_real = 0
+    init_day_mix, init_day_real = 0, 0
+    init_night_mix, init_night_real = 0, 0
     
     if not df_profit.empty:
-        # Day
         row_day = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Day")]
         if not row_day.empty:
             init_day_mix = int(row_day.iloc[0]["MixDiff"])
             init_day_real = int(row_day.iloc[0]["RealProfit"])
         
-        # Night
         row_night = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Night")]
         if not row_night.empty:
             init_night_mix = int(row_night.iloc[0]["MixDiff"])
@@ -850,7 +827,6 @@ def page_input():
 
     with st.form("daily_profit_form"):
         st.write(f"日付: **{input_date}**")
-        
         col_d, col_n = st.columns(2)
         
         with col_d:
@@ -864,18 +840,12 @@ def page_input():
             n_real = st.number_input("実利益", value=init_night_real, key="n_real")
             
         if st.form_submit_button("利益を保存"):
-            # データ更新ロジック:
-            # 1. 既存の同日データを削除（重複防止）
             df_new = df_profit[df_profit["Date"] != search_date_str].copy()
-            
-            # 2. 新しい行を追加
             new_rows = [
                 {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
                 {"Date": search_date_str, "TimeSlot": "Night", "MixDiff": n_mix, "RealProfit": n_real}
             ]
             df_new = pd.concat([df_new, pd.DataFrame(new_rows)], ignore_index=True)
-            
-            # 3. 保存
             save_profit_data(df_new)
             st.success("利益データを保存しました")
             time.sleep(1)
@@ -883,7 +853,6 @@ def page_input():
 
     st.divider()
 
-    # --- 本日の対局履歴表示 ---
     if not df_today.empty:
         st.markdown("### 📋 本日の履歴")
 
@@ -975,7 +944,7 @@ def page_history():
         st.info("データがありません")
         return
 
-    # --- 全期間/期間指定 統計 ---
+    # --- 期間別統計 (集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
     
     if "論理日付" in df.columns:
@@ -1055,6 +1024,36 @@ def page_history():
         c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
         c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
         c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
+
+        # --- 利益データの表示 ---
+        df_profit = load_profit_data()
+        if not df_profit.empty:
+            df_profit["MixDiff"] = pd.to_numeric(df_profit["MixDiff"], errors='coerce').fillna(0)
+            df_profit["RealProfit"] = pd.to_numeric(df_profit["RealProfit"], errors='coerce').fillna(0)
+            df_profit["DateObj"] = pd.to_datetime(df_profit["Date"]).dt.date
+
+            # 日付フィルタ
+            df_p_target = df_profit.copy()
+            if isinstance(stats_range, tuple) and len(stats_range) == 2:
+                start, end = stats_range
+                df_p_target = df_p_target[(df_p_target["DateObj"] >= start) & (df_p_target["DateObj"] <= end)]
+            elif isinstance(stats_range, tuple) and len(stats_range) == 1:
+                start = stats_range[0]
+                df_p_target = df_p_target[df_p_target["DateObj"] == start]
+            
+            # 時間帯フィルタ
+            if stats_time_range == "9:00-21:00":
+                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Day"]
+            elif stats_time_range == "21:00-33:00(翌9:00)":
+                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Night"]
+                
+            sum_mix = int(df_p_target["MixDiff"].sum())
+            sum_real = int(df_p_target["RealProfit"].sum())
+            
+            st.markdown("##### 💰 利益集計")
+            cp1, cp2 = st.columns(2)
+            cp1.metric("MIX差 (合計)", f"{sum_mix:,}")
+            cp2.metric("実利益 (合計)", f"{sum_real:,}")
 
         st.caption(f"卓組構成の割合 ({start} 〜 {end if isinstance(stats_range, tuple) and len(stats_range) == 2 else start})")
         df_pattern = pd.DataFrame({
