@@ -469,8 +469,6 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
-    # --- QRコード表示機能を削除しました ---
-
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
@@ -881,76 +879,102 @@ def page_history():
         st.info("データがありません")
         return
 
-    # 全期間統計
-    st.markdown("### 📈 全期間の統計")
-    total_games = len(df)
-    unique_days = df["論理日付"].nunique()
-    avg_games_day = total_games / unique_days if unique_days > 0 else 0
-
-    total_back_a = 0
-    total_back_b = 0
+    # --- 全期間/期間指定 統計 ---
+    st.markdown("### 📈 期間別統計 (集計)")
     
-    # --- 【修正】全期間の構成割合集計用変数 ---
-    all_pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
-    
-    for _, row in df.iterrows():
-        # バック計算
-        note = str(row["備考"])
-        discount = 0
-        if note == "東１終了": discount = 1
-        elif note == "２人飛ばし": discount = 2
-        elif note == "５連勝〜": discount = 5
-
-        if discount > 0:
-            winner_type = None
-            try:
-                r_a = int(float(row["A着順"]))
-                r_b = int(float(row["B着順"]))
-                r_c = int(float(row["C着順"]))
-            except:
-                r_a, r_b, r_c = 0, 0, 0
-                
-            if r_a == 1: winner_type = row["Aタイプ"]
-            elif r_b == 1: winner_type = row["Bタイプ"]
-            elif r_c == 1: winner_type = row["Cタイプ"]
-            
-            if winner_type == "A客": total_back_a += discount
-            elif winner_type == "B客": total_back_b += discount
-        
-        # --- 【修正】卓組構成カウント ---
-        p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
-        a_side = sum(1 for t in p_types if t in ["A客", "AS"])
-        
-        if a_side == 3: all_pattern_counts["A3人"] += 1
-        elif a_side == 2: all_pattern_counts["A2人B1人"] += 1
-        elif a_side == 1: all_pattern_counts["A1人B2人"] += 1
-        elif a_side == 0: all_pattern_counts["B3人"] += 1
-
-    avg_back_a = total_back_a / unique_days if unique_days > 0 else 0
-    avg_back_b = total_back_b / unique_days if unique_days > 0 else 0
-
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("総ゲーム数", f"{total_games} 回")
-    c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
-    c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
-    c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
-
-    # --- 【修正】全期間の構成割合テーブル表示 ---
-    st.caption("卓組構成の割合（全期間）")
-    df_all_pattern = pd.DataFrame({
-        "構成": list(all_pattern_counts.keys()),
-        "回数": list(all_pattern_counts.values())
-    })
-    total_all = df_all_pattern["回数"].sum()
-    if total_all > 0:
-        df_all_pattern["割合"] = (df_all_pattern["回数"] / total_all * 100).map('{:.1f}%'.format)
+    # 期間指定
+    if "論理日付" in df.columns:
+        min_date = df["論理日付"].min()
+        max_date = df["論理日付"].max()
     else:
-        df_all_pattern["割合"] = "0.0%"
+        min_date = date.today()
+        max_date = date.today()
+
+    stats_range = st.date_input("集計期間", value=(min_date, max_date))
     
-    st.dataframe(df_all_pattern, hide_index=True, use_container_width=True)
+    # 期間フィルタリング
+    if isinstance(stats_range, tuple) and len(stats_range) == 2:
+        start, end = stats_range
+        df_target = df[(df["論理日付"] >= start) & (df["論理日付"] <= end)]
+    elif isinstance(stats_range, tuple) and len(stats_range) == 1:
+        # 開始日だけ選ばれた状態
+        start = stats_range[0]
+        df_target = df[df["論理日付"] == start]
+    else:
+        df_target = df
+
+    if df_target.empty:
+        st.warning("指定期間のデータはありません")
+    else:
+        # 集計計算
+        total_games = len(df_target)
+        unique_days = df_target["論理日付"].nunique()
+        avg_games_day = total_games / unique_days if unique_days > 0 else 0
+
+        total_back_a = 0
+        total_back_b = 0
+        pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+        
+        for _, row in df_target.iterrows():
+            # バック計算
+            note = str(row["備考"])
+            discount = 0
+            if note == "東１終了": discount = 1
+            elif note == "２人飛ばし": discount = 2
+            elif note == "５連勝〜": discount = 5
+
+            if discount > 0:
+                winner_type = None
+                try:
+                    r_a = int(float(row["A着順"]))
+                    r_b = int(float(row["B着順"]))
+                    r_c = int(float(row["C着順"]))
+                except:
+                    r_a, r_b, r_c = 0, 0, 0
+                    
+                if r_a == 1: winner_type = row["Aタイプ"]
+                elif r_b == 1: winner_type = row["Bタイプ"]
+                elif r_c == 1: winner_type = row["Cタイプ"]
+                
+                if winner_type == "A客": total_back_a += discount
+                elif winner_type == "B客": total_back_b += discount
+            
+            # 卓組構成カウント
+            p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
+            a_side = sum(1 for t in p_types if t in ["A客", "AS"])
+            
+            if a_side == 3: pattern_counts["A3人"] += 1
+            elif a_side == 2: pattern_counts["A2人B1人"] += 1
+            elif a_side == 1: pattern_counts["A1人B2人"] += 1
+            elif a_side == 0: pattern_counts["B3人"] += 1
+
+        avg_back_a = total_back_a / unique_days if unique_days > 0 else 0
+        avg_back_b = total_back_b / unique_days if unique_days > 0 else 0
+
+        # メトリクス表示
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("総ゲーム数", f"{total_games} 回")
+        c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
+        c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
+        c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
+
+        # --- 卓組構成テーブル表示 (円グラフ廃止) ---
+        st.caption(f"卓組構成の割合 ({start} 〜 {end if isinstance(stats_range, tuple) and len(stats_range) == 2 else start})")
+        df_pattern = pd.DataFrame({
+            "構成": list(pattern_counts.keys()),
+            "回数": list(pattern_counts.values())
+        })
+        total_p = df_pattern["回数"].sum()
+        if total_p > 0:
+            df_pattern["割合"] = (df_pattern["回数"] / total_p * 100).map('{:.1f}%'.format)
+        else:
+            df_pattern["割合"] = "0.0%"
+        
+        st.dataframe(df_pattern, hide_index=True, use_container_width=True)
 
     st.divider()
 
+    # --- 以下、詳細検索 ---
     if "論理日付" in df.columns:
         valid_dates = [d for d in df["論理日付"].unique() if pd.notnull(d) and d != pd.Timestamp("1900-01-01").date()]
         unique_dates = sorted(valid_dates, reverse=True)
@@ -959,7 +983,7 @@ def page_history():
 
     all_players = get_all_member_names()
 
-    st.markdown("### 🔍 日付と人物で絞り込み")
+    st.markdown("### 🔍 日付・人物ごとの詳細")
     with st.form("history_search_form"):
         c1, c2 = st.columns(2)
         with c1: 
@@ -988,64 +1012,6 @@ def page_history():
         if df_filtered.empty:
             st.warning("条件に一致するデータが見つかりませんでした")
         else:
-            if not df_filtered.empty:
-                st.markdown("### 📅 選択期間の集計")
-                total_games_day = len(df_filtered)
-                day_back_a = 0
-                day_back_b = 0
-                pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
-
-                for _, row in df_filtered.iterrows():
-                    note = str(row["備考"])
-                    discount = 0
-                    if note == "東１終了": discount = 1
-                    elif note == "２人飛ばし": discount = 2
-                    elif note == "５連勝〜": discount = 5
-                    
-                    if discount > 0:
-                        winner_type = None
-                        try:
-                            r_a = int(float(row["A着順"]))
-                            r_b = int(float(row["B着順"]))
-                            r_c = int(float(row["C着順"]))
-                        except:
-                            r_a, r_b, r_c = 0, 0, 0
-                        
-                        if r_a == 1: winner_type = row["Aタイプ"]
-                        elif r_b == 1: winner_type = row["Bタイプ"]
-                        elif r_c == 1: winner_type = row["Cタイプ"]
-
-                        if winner_type == "A客": day_back_a += discount
-                        elif winner_type == "B客": day_back_b += discount
-                    
-                    p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
-                    a_side = sum(1 for t in p_types if t in ["A客", "AS"])
-                    
-                    if a_side == 3: pattern_counts["A3人"] += 1
-                    elif a_side == 2: pattern_counts["A2人B1人"] += 1
-                    elif a_side == 1: pattern_counts["A1人B2人"] += 1
-                    elif a_side == 0: pattern_counts["B3人"] += 1
-                
-                c_s1, c_s2, c_s3 = st.columns(3)
-                c_s1.metric("ゲーム回数", f"{total_games_day} 回")
-                c_s2.metric("A客バック", f"{day_back_a} 枚")
-                c_s3.metric("B客バック", f"{day_back_b} 枚")
-                
-                # --- 【修正】選択期間の構成割合（表のみ） ---
-                st.caption("卓組構成の割合")
-                df_pattern = pd.DataFrame({
-                    "構成": list(pattern_counts.keys()),
-                    "回数": list(pattern_counts.values())
-                })
-                total = df_pattern["回数"].sum()
-                if total > 0:
-                    df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
-                else:
-                    df_pattern["割合"] = "0.0%"
-                
-                st.dataframe(df_pattern, hide_index=True, use_container_width=True)
-                st.divider()
-
             if sel_player != "(指定なし)":
                 st.markdown(f"#### 👤 {sel_player} さんの成績")
                 ranks = []
