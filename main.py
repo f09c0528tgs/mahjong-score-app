@@ -104,14 +104,15 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-   
+
 
 # ==========================================
-# 3. データ管理関数 (安全装置付き)
+# 3. データ管理関数
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
 SHEET_LOG = "logs"
+SHEET_PROFIT = "daily_profits" 
 
 # 期待する列定義
 EXPECTED_COLS = [
@@ -304,6 +305,22 @@ def get_all_member_names():
     sorted_data = sorted(formatted_list, key=lambda x: x["last_dt"], reverse=True)
     return [x["name"] for x in sorted_data]
 
+# ---  利益データ管理関数 ---
+def load_profit_data():
+    conn = get_conn()
+    try:
+        df = fetch_data_cached(conn, SHEET_PROFIT)
+        if "Date" not in df.columns: df = pd.DataFrame(columns=["Date", "TimeSlot", "MixDiff", "RealProfit"])
+    except:
+        df = pd.DataFrame(columns=["Date", "TimeSlot", "MixDiff", "RealProfit"])
+    return df
+
+def save_profit_data(df):
+    conn = get_conn()
+    conn.update(worksheet=SHEET_PROFIT, data=df)
+    time.sleep(1)
+    fetch_data_cached.clear()
+
 # ==========================================
 # 4. 集計 & レンダリングロジック
 # ==========================================
@@ -469,6 +486,18 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
+    st.divider()
+    st.subheader("🔗 ランキング共有用QR")
+    st.caption("参加者にこのQRコードを読み取ってもらうと、ランキング専用ページ（閲覧のみ）へアクセスできます。")
+    
+    ranking_app_url = "https://pineranking-view.streamlit.app/"
+    
+    c_qr, c_dummy = st.columns([1, 2])
+    with c_qr:
+        qr_api_url = f"https://api.qrserver.com/v1/create-qr-code/?size=150x150&data={ranking_app_url}"
+        st.image(qr_api_url, caption="ランキング閲覧ページ")
+        st.text_input("URL", value=ranking_app_url, disabled=True)
+
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
@@ -632,6 +661,7 @@ def page_input():
         st.session_state["page"] = "home"
         st.rerun()
 
+    # 画面表示はキャッシュを使う
     df = load_score_data()
     member_list = get_all_member_names()
     JST = timezone(timedelta(hours=9), 'JST')
@@ -653,6 +683,7 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
+    # 既存データの最大値を取得（表示用）
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -731,6 +762,7 @@ def page_input():
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
         else:
+            # --- 保存直前にキャッシュクリアして最新データ取得 ---
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
                 
@@ -759,11 +791,13 @@ def page_input():
                     next_display_no = 1
 
                 now_jst = datetime.now(JST)
+                
                 save_date_obj = input_date
                 if now_jst.hour < 9:
                     save_date_obj = input_date + timedelta(days=1)
                 
                 save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+                
                 final_set_no = current_set_no
                 if start_new_set: final_set_no += 1
                 
@@ -777,6 +811,7 @@ def page_input():
                 
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
+                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -786,6 +821,69 @@ def page_input():
 
     st.divider()
 
+    # --- ★追加エリア：本日の利益管理フォーム ---
+    st.markdown("### 💰 本日の利益管理")
+    df_profit = load_profit_data()
+    
+    # 選択中の日付(input_date)のデータを検索
+    # Dateカラムは文字列として保存されている前提(YYYY-MM-DD)
+    search_date_str = input_date.strftime("%Y-%m-%d")
+    
+    # 初期値（データがなければ0）
+    init_day_mix = 0
+    init_day_real = 0
+    init_night_mix = 0
+    init_night_real = 0
+    
+    if not df_profit.empty:
+        # Day
+        row_day = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Day")]
+        if not row_day.empty:
+            init_day_mix = int(row_day.iloc[0]["MixDiff"])
+            init_day_real = int(row_day.iloc[0]["RealProfit"])
+        
+        # Night
+        row_night = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Night")]
+        if not row_night.empty:
+            init_night_mix = int(row_night.iloc[0]["MixDiff"])
+            init_night_real = int(row_night.iloc[0]["RealProfit"])
+
+    with st.form("daily_profit_form"):
+        st.write(f"日付: **{input_date}**")
+        
+        col_d, col_n = st.columns(2)
+        
+        with col_d:
+            st.info("🌞 9:00 - 21:00")
+            d_mix = st.number_input("MIX差", value=init_day_mix, key="d_mix")
+            d_real = st.number_input("実利益", value=init_day_real, key="d_real")
+            
+        with col_n:
+            st.success("🌙 21:00 - 33:00")
+            n_mix = st.number_input("MIX差", value=init_night_mix, key="n_mix")
+            n_real = st.number_input("実利益", value=init_night_real, key="n_real")
+            
+        if st.form_submit_button("利益を保存"):
+            # データ更新ロジック:
+            # 1. 既存の同日データを削除（重複防止）
+            df_new = df_profit[df_profit["Date"] != search_date_str].copy()
+            
+            # 2. 新しい行を追加
+            new_rows = [
+                {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
+                {"Date": search_date_str, "TimeSlot": "Night", "MixDiff": n_mix, "RealProfit": n_real}
+            ]
+            df_new = pd.concat([df_new, pd.DataFrame(new_rows)], ignore_index=True)
+            
+            # 3. 保存
+            save_profit_data(df_new)
+            st.success("利益データを保存しました")
+            time.sleep(1)
+            st.rerun()
+
+    st.divider()
+
+    # --- 本日の対局履歴表示 ---
     if not df_today.empty:
         st.markdown("### 📋 本日の履歴")
 
@@ -804,13 +902,11 @@ def page_input():
             except:
                 r_a, r_b, r_c = 0, 0, 0
 
-            # トップ者のタイプ判定
             winner_type = None
             if r_a == 1: winner_type = row["Aタイプ"]
             elif r_b == 1: winner_type = row["Bタイプ"]
             elif r_c == 1: winner_type = row["Cタイプ"]
 
-            # 自分のタイプ判定
             if r_a == 1: w_type = row["Aタイプ"]
             elif r_b == 1: w_type = row["Bタイプ"]
             elif r_c == 1: w_type = row["Cタイプ"]
@@ -879,10 +975,9 @@ def page_history():
         st.info("データがありません")
         return
 
-    # --- 期間別統計 (集計) ---
+    # --- 全期間/期間指定 統計 ---
     st.markdown("### 📈 期間別統計 (集計)")
     
-    # 期間指定 & 時間帯指定
     if "論理日付" in df.columns:
         min_date = df["論理日付"].min()
         max_date = df["論理日付"].max()
@@ -896,10 +991,8 @@ def page_history():
     with c2:
         stats_time_range = st.selectbox("時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="stats_time")
     
-    # フィルタリング
     df_target = df.copy()
     
-    # 日付フィルタ
     if isinstance(stats_range, tuple) and len(stats_range) == 2:
         start, end = stats_range
         df_target = df_target[(df_target["論理日付"] >= start) & (df_target["論理日付"] <= end)]
@@ -907,7 +1000,6 @@ def page_history():
         start = stats_range[0]
         df_target = df_target[df_target["論理日付"] == start]
     
-    # 時間帯フィルタ
     if stats_time_range == "9:00-21:00":
         df_target = df_target[df_target["日時Obj"].dt.hour.between(9, 20)]
     elif stats_time_range == "21:00-33:00(翌9:00)":
@@ -917,7 +1009,6 @@ def page_history():
         st.warning("指定期間のデータはありません")
     else:
         total_games = len(df_target)
-        # 日数は論理日付の種類数
         unique_days = df_target["論理日付"].nunique()
         avg_games_day = total_games / unique_days if unique_days > 0 else 0
 
@@ -959,14 +1050,13 @@ def page_history():
         avg_back_a = total_back_a / unique_days if unique_days > 0 else 0
         avg_back_b = total_back_b / unique_days if unique_days > 0 else 0
 
-        c_m1, c_m2, c_m3, c_m4 = st.columns(4)
-        c_m1.metric("総ゲーム数", f"{total_games} 回")
-        c_m2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
-        c_m3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
-        c_m4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("総ゲーム数", f"{total_games} 回")
+        c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
+        c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
+        c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
 
-        # 卓組構成テーブル
-        st.caption("卓組構成の割合")
+        st.caption(f"卓組構成の割合 ({start} 〜 {end if isinstance(stats_range, tuple) and len(stats_range) == 2 else start})")
         df_pattern = pd.DataFrame({
             "構成": list(pattern_counts.keys()),
             "回数": list(pattern_counts.values())
@@ -1010,7 +1100,6 @@ def page_history():
 
         df_filtered = df.copy()
         
-        # フィルタリング
         if sel_date != "(指定なし)":
             df_filtered = df_filtered[df_filtered["論理日付"] == sel_date]
         if sel_player != "(指定なし)":
