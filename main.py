@@ -317,9 +317,17 @@ def load_profit_data():
 
 def save_profit_data(df):
     conn = get_conn()
-    conn.update(worksheet=SHEET_PROFIT, data=df)
-    time.sleep(1)
-    fetch_data_cached.clear()
+    try:
+        conn.update(worksheet=SHEET_PROFIT, data=df)
+        time.sleep(1)
+        fetch_data_cached.clear()
+    except Exception as e:
+        if "WorksheetNotFound" in str(e):
+            st.error(f"エラー: スプレッドシートに '{SHEET_PROFIT}' という名前のシートが見つかりません。")
+            st.info("スプレッドシートの下にある「＋」ボタンで新しいシートを追加し、名前を 'daily_profits' に変更してください。")
+        else:
+            st.error(f"保存エラー: {e}")
+        st.stop()
 
 # ==========================================
 # 4. 集計 & レンダリングロジック
@@ -485,6 +493,8 @@ def page_home():
     if st.button("📜 操作ログ", use_container_width=True):
         st.session_state["page"] = "logs"
         st.rerun()
+
+    # QRコード表示削除
 
 # --- メンバー管理画面 ---
 def page_members():
@@ -776,13 +786,11 @@ def page_input():
                     next_display_no = 1
 
                 now_jst = datetime.now(JST)
-                
                 save_date_obj = input_date
                 if now_jst.hour < 9:
                     save_date_obj = input_date + timedelta(days=1)
                 
                 save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
-                
                 final_set_no = current_set_no
                 if start_new_set: final_set_no += 1
                 
@@ -796,7 +804,6 @@ def page_input():
                 
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
-                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -839,17 +846,23 @@ def page_input():
             n_mix = st.number_input("MIX差", value=init_night_mix, key="n_mix")
             n_real = st.number_input("実利益", value=init_night_real, key="n_real")
             
+        st.markdown("---")
+        profit_pass = st.text_input("🔒 保存用パスワード", type="password", help="利益データを更新するにはパスワードが必要です")
+        
         if st.form_submit_button("利益を保存"):
-            df_new = df_profit[df_profit["Date"] != search_date_str].copy()
-            new_rows = [
-                {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
-                {"Date": search_date_str, "TimeSlot": "Night", "MixDiff": n_mix, "RealProfit": n_real}
-            ]
-            df_new = pd.concat([df_new, pd.DataFrame(new_rows)], ignore_index=True)
-            save_profit_data(df_new)
-            st.success("利益データを保存しました")
-            time.sleep(1)
-            st.rerun()
+            if profit_pass == "7777":
+                df_new = df_profit[df_profit["Date"] != search_date_str].copy()
+                new_rows = [
+                    {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
+                    {"Date": search_date_str, "TimeSlot": "Night", "MixDiff": n_mix, "RealProfit": n_real}
+                ]
+                df_new = pd.concat([df_new, pd.DataFrame(new_rows)], ignore_index=True)
+                save_profit_data(df_new)
+                st.success("利益データを保存しました")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("パスワードが違います。権限がありません。")
 
     st.divider()
 
@@ -960,6 +973,7 @@ def page_history():
     with c2:
         stats_time_range = st.selectbox("時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="stats_time")
     
+    # フィルタリング
     df_target = df.copy()
     
     if isinstance(stats_range, tuple) and len(stats_range) == 2:
@@ -967,7 +981,10 @@ def page_history():
         df_target = df_target[(df_target["論理日付"] >= start) & (df_target["論理日付"] <= end)]
     elif isinstance(stats_range, tuple) and len(stats_range) == 1:
         start = stats_range[0]
+        end = start 
         df_target = df_target[df_target["論理日付"] == start]
+    else:
+        start, end = min_date, max_date
     
     if stats_time_range == "9:00-21:00":
         df_target = df_target[df_target["日時Obj"].dt.hour.between(9, 20)]
@@ -984,6 +1001,7 @@ def page_history():
         total_back_a = 0
         total_back_b = 0
         pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+        pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
         
         for _, row in df_target.iterrows():
             note = str(row["備考"])
@@ -992,29 +1010,37 @@ def page_history():
             elif note == "２人飛ばし": discount = 2
             elif note == "５連勝〜": discount = 5
 
-            if discount > 0:
-                winner_type = None
-                try:
-                    r_a = int(float(row["A着順"]))
-                    r_b = int(float(row["B着順"]))
-                    r_c = int(float(row["C着順"]))
-                except:
-                    r_a, r_b, r_c = 0, 0, 0
-                    
+            winner_is_a = False
+            winner_type = None
+            try:
+                r_a = int(float(row["A着順"]))
+                r_b = int(float(row["B着順"]))
+                r_c = int(float(row["C着順"]))
+                
                 if r_a == 1: winner_type = row["Aタイプ"]
                 elif r_b == 1: winner_type = row["Bタイプ"]
                 elif r_c == 1: winner_type = row["Cタイプ"]
                 
+                if winner_type in ["A客", "AS"]: winner_is_a = True
+            except:
+                pass
+                
+            if discount > 0 and winner_type:
                 if winner_type == "A客": total_back_a += discount
                 elif winner_type == "B客": total_back_b += discount
             
             p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
             a_side = sum(1 for t in p_types if t in ["A客", "AS"])
             
-            if a_side == 3: pattern_counts["A3人"] += 1
-            elif a_side == 2: pattern_counts["A2人B1人"] += 1
-            elif a_side == 1: pattern_counts["A1人B2人"] += 1
-            elif a_side == 0: pattern_counts["B3人"] += 1
+            key = None
+            if a_side == 3: key = "A3人"
+            elif a_side == 2: key = "A2人B1人"
+            elif a_side == 1: key = "A1人B2人"
+            elif a_side == 0: key = "B3人"
+            
+            if key:
+                pattern_counts[key] += 1
+                if winner_is_a: pattern_wins_a[key] += 1
 
         avg_back_a = total_back_a / unique_days if unique_days > 0 else 0
         avg_back_b = total_back_b / unique_days if unique_days > 0 else 0
@@ -1025,7 +1051,7 @@ def page_history():
         c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
         c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
 
-        # --- 利益データの表示 ---
+        # --- 利益データの表示 (New!) ---
         df_profit = load_profit_data()
         if not df_profit.empty:
             df_profit["MixDiff"] = pd.to_numeric(df_profit["MixDiff"], errors='coerce').fillna(0)
@@ -1035,10 +1061,8 @@ def page_history():
             # 日付フィルタ
             df_p_target = df_profit.copy()
             if isinstance(stats_range, tuple) and len(stats_range) == 2:
-                start, end = stats_range
                 df_p_target = df_p_target[(df_p_target["DateObj"] >= start) & (df_p_target["DateObj"] <= end)]
             elif isinstance(stats_range, tuple) and len(stats_range) == 1:
-                start = stats_range[0]
                 df_p_target = df_p_target[df_p_target["DateObj"] == start]
             
             # 時間帯フィルタ
@@ -1055,7 +1079,7 @@ def page_history():
             cp1.metric("MIX差 (合計)", f"{sum_mix:,}")
             cp2.metric("実利益 (合計)", f"{sum_real:,}")
 
-        st.caption(f"卓組構成の割合 ({start} 〜 {end if isinstance(stats_range, tuple) and len(stats_range) == 2 else start})")
+        st.caption(f"卓組構成の割合 ({start} 〜 {end})")
         df_pattern = pd.DataFrame({
             "構成": list(pattern_counts.keys()),
             "回数": list(pattern_counts.values())
@@ -1065,6 +1089,22 @@ def page_history():
             df_pattern["割合"] = (df_pattern["回数"] / total_p * 100).map('{:.1f}%'.format)
         else:
             df_pattern["割合"] = "0.0%"
+
+        # 勝率データ追加
+        win_rates = []
+        for k in df_pattern["構成"]:
+            cnt = pattern_counts[k]
+            wins_a = pattern_wins_a[k]
+            wins_b = cnt - wins_a
+            
+            if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
+                rate_a = (wins_a / cnt) * 100
+                rate_b = (wins_b / cnt) * 100
+                win_rates.append(f"A: {rate_a:.0f}% / B: {rate_b:.0f}%")
+            else:
+                win_rates.append("-")
+        
+        df_pattern["勝率データ"] = win_rates
         
         st.dataframe(df_pattern, hide_index=True, use_container_width=True)
 
@@ -1122,6 +1162,7 @@ def page_history():
                 day_back_a = 0
                 day_back_b = 0
                 pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+                pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
 
                 for _, row in df_filtered.iterrows():
                     note = str(row["備考"])
@@ -1130,29 +1171,37 @@ def page_history():
                     elif note == "２人飛ばし": discount = 2
                     elif note == "５連勝〜": discount = 5
                     
-                    if discount > 0:
-                        winner_type = None
-                        try:
-                            r_a = int(float(row["A着順"]))
-                            r_b = int(float(row["B着順"]))
-                            r_c = int(float(row["C着順"]))
-                        except:
-                            r_a, r_b, r_c = 0, 0, 0
+                    winner_is_a = False
+                    winner_type = None
+                    try:
+                        r_a = int(float(row["A着順"]))
+                        r_b = int(float(row["B着順"]))
+                        r_c = int(float(row["C着順"]))
                         
                         if r_a == 1: winner_type = row["Aタイプ"]
                         elif r_b == 1: winner_type = row["Bタイプ"]
                         elif r_c == 1: winner_type = row["Cタイプ"]
+                        
+                        if winner_type in ["A客", "AS"]: winner_is_a = True
+                    except:
+                        pass
 
+                    if discount > 0 and winner_type:
                         if winner_type == "A客": day_back_a += discount
                         elif winner_type == "B客": day_back_b += discount
                     
                     p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
                     a_side = sum(1 for t in p_types if t in ["A客", "AS"])
                     
-                    if a_side == 3: pattern_counts["A3人"] += 1
-                    elif a_side == 2: pattern_counts["A2人B1人"] += 1
-                    elif a_side == 1: pattern_counts["A1人B2人"] += 1
-                    elif a_side == 0: pattern_counts["B3人"] += 1
+                    key = None
+                    if a_side == 3: key = "A3人"
+                    elif a_side == 2: key = "A2人B1人"
+                    elif a_side == 1: key = "A1人B2人"
+                    elif a_side == 0: key = "B3人"
+                    
+                    if key:
+                        pattern_counts[key] += 1
+                        if winner_is_a: pattern_wins_a[key] += 1
                 
                 c_s1, c_s2, c_s3 = st.columns(3)
                 c_s1.metric("ゲーム回数", f"{total_games_day} 回")
@@ -1169,6 +1218,20 @@ def page_history():
                     df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
                 else:
                     df_pattern["割合"] = "0.0%"
+
+                win_rates = []
+                for k in df_pattern["構成"]:
+                    cnt = pattern_counts[k]
+                    wins_a = pattern_wins_a[k]
+                    wins_b = cnt - wins_a
+                    if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
+                        rate_a = (wins_a / cnt) * 100
+                        rate_b = (wins_b / cnt) * 100
+                        win_rates.append(f"A: {rate_a:.0f}% / B: {rate_b:.0f}%")
+                    else:
+                        win_rates.append("-")
+                
+                df_pattern["勝率データ"] = win_rates
                 
                 st.dataframe(df_pattern, hide_index=True, use_container_width=True)
                 st.divider()
