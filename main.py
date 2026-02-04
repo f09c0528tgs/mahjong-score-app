@@ -106,6 +106,7 @@ st.markdown(hide_style, unsafe_allow_html=True)
 
 
 
+
 # ==========================================
 # 3. データ管理関数 (安全装置付き)
 # ==========================================
@@ -494,8 +495,6 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
-    # QRコード表示削除
-
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
@@ -680,6 +679,7 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
+    # 既存データの最大値を取得（表示用）
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -786,11 +786,13 @@ def page_input():
                     next_display_no = 1
 
                 now_jst = datetime.now(JST)
+                
                 save_date_obj = input_date
                 if now_jst.hour < 9:
                     save_date_obj = input_date + timedelta(days=1)
                 
                 save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+                
                 final_set_no = current_set_no
                 if start_new_set: final_set_no += 1
                 
@@ -804,6 +806,7 @@ def page_input():
                 
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
+                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -850,7 +853,7 @@ def page_input():
         profit_pass = st.text_input("🔒 保存用パスワード", type="password", help="利益データを更新するにはパスワードが必要です")
         
         if st.form_submit_button("利益を保存"):
-            if profit_pass == "7777":
+            if profit_pass == "7777": # ここでパスワードを設定
                 df_new = df_profit[df_profit["Date"] != search_date_str].copy()
                 new_rows = [
                     {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
@@ -981,7 +984,7 @@ def page_history():
         df_target = df_target[(df_target["論理日付"] >= start) & (df_target["論理日付"] <= end)]
     elif isinstance(stats_range, tuple) and len(stats_range) == 1:
         start = stats_range[0]
-        end = start 
+        end = start # fix end not defined
         df_target = df_target[df_target["論理日付"] == start]
     else:
         start, end = min_date, max_date
@@ -1051,7 +1054,7 @@ def page_history():
         c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
         c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
 
-        # --- 利益データの表示 (New!) ---
+        # --- 利益データの表示 ---
         df_profit = load_profit_data()
         if not df_profit.empty:
             df_profit["MixDiff"] = pd.to_numeric(df_profit["MixDiff"], errors='coerce').fillna(0)
@@ -1090,7 +1093,6 @@ def page_history():
         else:
             df_pattern["割合"] = "0.0%"
 
-        # 勝率データ追加
         win_rates = []
         for k in df_pattern["構成"]:
             cnt = pattern_counts[k]
@@ -1397,92 +1399,106 @@ def page_ranking():
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
+    # ゲスト/スタッフ分類
+    stats["type"] = stats["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+    stats_guest = stats[stats["type"] == "guest"]
+    stats_staff = stats[stats["type"] == "staff"]
+    
     min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
     
-    filtered_stats = stats[stats["games"] >= min_games].copy()
+    # フィルタリング
+    stats_guest = stats_guest[stats_guest["games"] >= min_games]
+    stats_staff = stats_staff[stats_staff["games"] >= min_games]
     
-    if filtered_stats.empty:
+    if stats_guest.empty and stats_staff.empty:
         st.warning(f"打数が {min_games} 回以上のプレイヤーがいません。")
         return
 
     st.write("---")
     
-    # --- タブ追加 ---
     t1, t2, t3, t4, t5, t6 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
     
+    # 共通表示関数
+    def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
+            if not df_g.empty:
+                res = df_g.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
+                res["順位"] = res.index + 1
+                if format_func and val_col:
+                    res[val_col] = res[val_col].map(format_func)
+                
+                cols = ["順位", "name", val_col, "games"] if val_col != "games" else ["順位", "name", "games"]
+                rename_map = {"name":"名前", "games":"打数"}
+                if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
+                elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
+                elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
+                
+                st.dataframe(res[cols].rename(columns=rename_map), hide_index=True, use_container_width=True)
+            else:
+                st.info("データなし")
+
+        with c2:
+            st.markdown("### 👔 スタッフ Top10")
+            if not df_s.empty:
+                res = df_s.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
+                res["順位"] = res.index + 1
+                if format_func and val_col:
+                    res[val_col] = res[val_col].map(format_func)
+                
+                cols = ["順位", "name", val_col, "games"] if val_col != "games" else ["順位", "name", "games"]
+                rename_map = {"name":"名前", "games":"打数"}
+                if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
+                elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
+                elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
+                
+                st.dataframe(res[cols].rename(columns=rename_map), hide_index=True, use_container_width=True)
+            else:
+                st.info("データなし")
+
     with t1:
-        st.subheader("📊 打数ランキング (Top 5)")
-        res = filtered_stats.sort_values("games", ascending=False).reset_index(drop=True).head(5)
-        res["順位"] = res.index + 1
-        st.dataframe(
-            res[["順位", "name", "games"]].rename(columns={"name":"名前", "games":"打数"}),
-            hide_index=True, use_container_width=True
-        )
-
+        show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
     with t2:
-        st.subheader("🥇 平均着順ランキング (Top 5)")
-        res = filtered_stats.sort_values("avg_rank", ascending=True).reset_index(drop=True).head(5)
-        res["順位"] = res.index + 1
-        res["avg_rank"] = res["avg_rank"].map('{:.2f}'.format)
-        st.dataframe(
-            res[["順位", "name", "avg_rank", "games"]].rename(columns={"name":"名前", "avg_rank":"平均着順", "games":"打数"}),
-            hide_index=True, use_container_width=True
-        )
-
+        show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.2f}'.format, "avg_rank")
     with t3:
-        st.subheader("👑 トップ率ランキング (Top 5)")
-        res = filtered_stats.sort_values("top_rate", ascending=False).reset_index(drop=True).head(5)
-        res["順位"] = res.index + 1
-        res["top_rate"] = res["top_rate"].map('{:.1f}%'.format)
-        st.dataframe(
-            res[["順位", "name", "top_rate", "first_count", "games"]].rename(columns={"name":"名前", "top_rate":"トップ率", "first_count":"トップ回数", "games":"打数"}),
-            hide_index=True, use_container_width=True
-        )
-
+        show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.1f}%'.format, "top_rate")
     with t4:
-        st.subheader("🛡 ラス回避率ランキング (Top 5)")
-        res = filtered_stats.sort_values("last_avoid_rate", ascending=False).reset_index(drop=True).head(5)
-        res["順位"] = res.index + 1
-        res["last_avoid_rate"] = res["last_avoid_rate"].map('{:.1f}%'.format)
-        st.dataframe(
-            res[["順位", "name", "last_avoid_rate", "games"]].rename(columns={"name":"名前", "last_avoid_rate":"ラス回避率", "games":"打数"}),
-            hide_index=True, use_container_width=True
-        )
+        show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.1f}%'.format, "last_avoid_rate")
 
     # --- メンバーデータのランキング ---
     df_mem = load_member_data()
+    df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+    mem_g = df_mem[df_mem["type"] == "guest"]
+    mem_s = df_mem[df_mem["type"] == "staff"]
     
-    with t5:
-        st.subheader("💥 最大飜数ランキング (Top 5)")
-        if not df_mem.empty:
-            res_max = df_mem.sort_values("最大飜数", ascending=False).reset_index(drop=True).head(5)
-            res_max = res_max[res_max["最大飜数"] > 0]
-            if not res_max.empty:
-                res_max["順位"] = res_max.index + 1
-                st.dataframe(
-                    res_max[["順位", "名前", "最大飜数"]],
-                    hide_index=True, use_container_width=True
-                )
-            else:
-                st.info("データがありません")
-        else:
-            st.info("データがありません")
+    def show_mem_ranking(df_g, df_s, col, label):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
+            if not df_g.empty:
+                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = res[res[col] > 0]
+                if not res.empty:
+                    res["順位"] = res.index + 1
+                    st.dataframe(res[["順位", "名前", col]], hide_index=True, use_container_width=True)
+                else: st.info("データなし")
+            else: st.info("データなし")
+        with c2:
+            st.markdown("### 👔 スタッフ Top10")
+            if not df_s.empty:
+                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = res[res[col] > 0]
+                if not res.empty:
+                    res["順位"] = res.index + 1
+                    st.dataframe(res[["順位", "名前", col]], hide_index=True, use_container_width=True)
+                else: st.info("データなし")
+            else: st.info("データなし")
 
+    with t5:
+        show_mem_ranking(mem_g, mem_s, "最大飜数", "最大飜数")
     with t6:
-        st.subheader("🀅 役満回数ランキング (Top 5)")
-        if not df_mem.empty:
-            res_yaku = df_mem.sort_values("役満回数", ascending=False).reset_index(drop=True).head(5)
-            res_yaku = res_yaku[res_yaku["役満回数"] > 0]
-            if not res_yaku.empty:
-                res_yaku["順位"] = res_yaku.index + 1
-                st.dataframe(
-                    res_yaku[["順位", "名前", "役満回数"]],
-                    hide_index=True, use_container_width=True
-                )
-            else:
-                st.info("データがありません")
-        else:
-            st.info("データがありません")
+        show_mem_ranking(mem_g, mem_s, "役満回数", "役満回数")
 
 # --- ログ閲覧画面 ---
 def page_logs():
