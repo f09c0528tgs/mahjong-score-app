@@ -104,8 +104,6 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-
-
 # ==========================================
 # 3. データ管理関数 (安全装置付き)
 # ==========================================
@@ -852,7 +850,7 @@ def page_input():
         profit_pass = st.text_input("🔒 保存用パスワード", type="password", help="利益データを更新するにはパスワードが必要です")
         
         if st.form_submit_button("利益を保存"):
-            if profit_pass == "7777": # ここでパスワードを設定
+            if profit_pass == "7777":
                 df_new = df_profit[df_profit["Date"] != search_date_str].copy()
                 new_rows = [
                     {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
@@ -983,7 +981,7 @@ def page_history():
         df_target = df_target[(df_target["論理日付"] >= start) & (df_target["論理日付"] <= end)]
     elif isinstance(stats_range, tuple) and len(stats_range) == 1:
         start = stats_range[0]
-        end = start # fix end not defined
+        end = start 
         df_target = df_target[df_target["論理日付"] == start]
     else:
         start, end = min_date, max_date
@@ -1091,13 +1089,12 @@ def page_history():
             df_pattern["割合"] = (df_pattern["回数"] / total_p * 100).map('{:.1f}%'.format)
         else:
             df_pattern["割合"] = "0.0%"
-
+        
         win_rates = []
         for k in df_pattern["構成"]:
             cnt = pattern_counts[k]
             wins_a = pattern_wins_a[k]
             wins_b = cnt - wins_a
-            
             if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
                 rate_a = (wins_a / cnt) * 100
                 rate_b = (wins_b / cnt) * 100
@@ -1219,7 +1216,7 @@ def page_history():
                     df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
                 else:
                     df_pattern["割合"] = "0.0%"
-
+                
                 win_rates = []
                 for k in df_pattern["構成"]:
                     cnt = pattern_counts[k]
@@ -1233,25 +1230,71 @@ def page_history():
                         win_rates.append("-")
                 
                 df_pattern["勝率データ"] = win_rates
-                
                 st.dataframe(df_pattern, hide_index=True, use_container_width=True)
                 st.divider()
 
             if sel_player != "(指定なし)":
                 st.markdown(f"#### 👤 {sel_player} さんの成績")
+                
+                # ------------------------------
+                # 1. 既存の個人成績計算
+                # ------------------------------
                 ranks = []
                 played_dates = set()
-                for _, row in df_filtered.iterrows():
-                    rank = None
-                    try:
-                        if row["Aさん"] == sel_player: rank = int(float(row["A着順"]))
-                        elif row["Bさん"] == sel_player: rank = int(float(row["B着順"]))
-                        elif row["Cさん"] == sel_player: rank = int(float(row["C着順"]))
-                    except: rank = None
-                    if rank:
-                        ranks.append(rank)
-                        played_dates.add(row["論理日付"])
                 
+                # ★追加：相性計算用辞書
+                # opp_name: {"count": 0, "score": 0}
+                # score logic: OppRank - MyRank
+                # (Opp=2, My=1 -> +1), (Opp=3, My=1 -> +2), (Opp=2, My=3 -> -1)
+                compatibility = {}
+
+                for _, row in df_filtered.iterrows():
+                    my_rank = None
+                    my_seat = None
+                    seats = ["A", "B", "C"]
+                    
+                    # 自分の着順・席を特定
+                    for s in seats:
+                        if row[f"{s}さん"] == sel_player:
+                            try:
+                                my_rank = int(float(row[f"{s}着順"]))
+                                my_seat = s
+                            except: pass
+                            break
+                    
+                    if my_rank:
+                        ranks.append(my_rank)
+                        played_dates.add(row["論理日付"])
+                        
+                        # 同卓者ループ
+                        for s in seats:
+                            if s == my_seat: continue
+                            
+                            opp_name = row[f"{s}さん"]
+                            if not opp_name: continue
+                            
+                            try:
+                                opp_rank = int(float(row[f"{s}着順"]))
+                            except:
+                                opp_rank = 0
+                            
+                            if opp_rank == 0: continue
+                            
+                            if opp_name not in compatibility:
+                                compatibility[opp_name] = {"count": 0, "score": 0}
+                            
+                            # カウント
+                            compatibility[opp_name]["count"] += 1
+                            
+                            # 相性スコア計算 (相手の着順 - 自分の着順)
+                            # 例: 自分1着(1), 相手2着(2) -> 2 - 1 = +1 (良)
+                            # 例: 自分3着(3), 相手2着(2) -> 2 - 3 = -1 (悪)
+                            score = opp_rank - my_rank
+                            compatibility[opp_name]["score"] += score
+
+                # ------------------------------
+                # 2. 既存のグラフ表示
+                # ------------------------------
                 if ranks:
                     games = len(ranks)
                     avg = sum(ranks)/games
@@ -1290,6 +1333,40 @@ def page_history():
                         date_list = sorted(list(played_dates), reverse=True)
                         st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
                 
+                # ------------------------------
+                # 3. ★追加：相性・同卓ランキング表示
+                # ------------------------------
+                if compatibility:
+                    st.divider()
+                    st.subheader("🤝 対戦相手データ (TOP3)")
+                    
+                    # DataFrame化
+                    comp_data = []
+                    for name, data in compatibility.items():
+                        comp_data.append({"名前": name, "同卓回数": data["count"], "相性スコア": data["score"]})
+                    
+                    df_comp = pd.DataFrame(comp_data)
+                    
+                    # カラム分割
+                    c_freq, c_good, c_bad = st.columns(3)
+                    
+                    with c_freq:
+                        st.markdown("**👬 同卓回数が多い**")
+                        df_freq = df_comp.sort_values("同卓回数", ascending=False).head(3).reset_index(drop=True)
+                        st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
+                    
+                    with c_good:
+                        st.markdown("**💖 相性が良い (カモ)**")
+                        # スコアが大きい順
+                        df_good = df_comp.sort_values("相性スコア", ascending=False).head(3).reset_index(drop=True)
+                        st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+                        
+                    with c_bad:
+                        st.markdown("**💀 相性が悪い (天敵)**")
+                        # スコアが小さい順
+                        df_bad = df_comp.sort_values("相性スコア", ascending=True).head(3).reset_index(drop=True)
+                        st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+
                 st.divider()
                 st.markdown("#### 🀄 個人記録の更新")
                 df_mem = load_member_data()
