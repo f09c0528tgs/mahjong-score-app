@@ -104,7 +104,7 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
-# ==========================================
+
 
 # ==========================================
 # 3. データ管理関数 (安全装置付き)
@@ -1007,7 +1007,9 @@ def page_history():
         pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
         pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
         
-        # --- ★追加: タイプ別成績集計 ---
+        # --- ★追加: 席別集計 (全体) ---
+        seat_counts = {s: {"1":0, "2":0, "3":0, "sum":0, "count":0} for s in ["A", "B", "C"]}
+        
         type_data = []
 
         for _, row in df_target.iterrows():
@@ -1049,14 +1051,17 @@ def page_history():
                 pattern_counts[key] += 1
                 if winner_is_a: pattern_wins_a[key] += 1
             
-            # --- タイプ別データの収集 ---
+            # --- タイプ別・席別データ収集 ---
             for seat in ["A", "B", "C"]:
                 t = row[f"{seat}タイプ"]
-                r = row[f"{seat}着順"]
+                r_str = row[f"{seat}着順"]
                 try:
-                    r_int = int(float(r))
-                    if r_int > 0:
-                        type_data.append({"Type": t, "Rank": r_int})
+                    r = int(float(r_str))
+                    if r in [1, 2, 3]:
+                        type_data.append({"Type": t, "Rank": r})
+                        seat_counts[seat][str(r)] += 1
+                        seat_counts[seat]["sum"] += r
+                        seat_counts[seat]["count"] += 1
                 except: pass
 
         avg_back_a = total_back_a / unique_days if unique_days > 0 else 0
@@ -1122,7 +1127,7 @@ def page_history():
         df_pattern["勝率データ"] = win_rates
         st.dataframe(df_pattern, hide_index=True, use_container_width=True)
 
-        # --- ★追加: タイプ別成績テーブル表示 ---
+        # --- タイプ別成績 ---
         if type_data:
             st.markdown("##### 📊 タイプ別成績")
             df_type_raw = pd.DataFrame(type_data)
@@ -1143,13 +1148,35 @@ def page_history():
                 "Type": "タイプ", "games": "打数", "avg": "平均着順",
                 "r1_rate": "トップ率", "r2_rate": "2着率", "r3_rate": "ラス率"
             }
-            # 並び順を固定 (A客, B客, AS, BS)
             type_order = {"A客": 0, "B客": 1, "AS": 2, "BS": 3}
             stats_by_type["order"] = stats_by_type["Type"].map(lambda x: type_order.get(x, 99))
             stats_by_type = stats_by_type.sort_values("order").drop("order", axis=1)
 
             st.dataframe(stats_by_type.rename(columns=display_cols)[["タイプ", "打数", "平均着順", "トップ率", "2着率", "ラス率"]],
                          hide_index=True, use_container_width=True)
+        
+        # --- ★追加: 席別成績テーブル ---
+        seat_rows = []
+        for s in ["A", "B", "C"]:
+            d = seat_counts[s]
+            c = d["count"]
+            if c > 0:
+                avg = d["sum"] / c
+                r1_r = d["1"]/c*100
+                r2_r = d["2"]/c*100
+                r3_r = d["3"]/c*100
+                seat_rows.append({
+                    "席": f"{s}席",
+                    "打数": c,
+                    "平均着順": f"{avg:.2f}",
+                    "1着": f"{d['1']} ({r1_r:.1f}%)",
+                    "2着": f"{d['2']} ({r2_r:.1f}%)",
+                    "3着": f"{d['3']} ({r3_r:.1f}%)"
+                })
+        
+        if seat_rows:
+            st.markdown("##### 🪑 席別成績")
+            st.dataframe(pd.DataFrame(seat_rows), hide_index=True, use_container_width=True)
 
     st.divider()
 
@@ -1283,6 +1310,9 @@ def page_history():
                 ranks = []
                 played_dates = set()
                 compatibility = {}
+                
+                # ★追加: 個人用席別集計
+                player_seat_ranks = {"A": [], "B": [], "C": []}
 
                 for _, row in df_filtered.iterrows():
                     my_rank = None
@@ -1300,6 +1330,10 @@ def page_history():
                     if my_rank:
                         ranks.append(my_rank)
                         played_dates.add(row["論理日付"])
+                        
+                        # ★追加: 席別リストに追加
+                        if my_seat in player_seat_ranks:
+                            player_seat_ranks[my_seat].append(my_rank)
                         
                         for s in seats:
                             if s == my_seat: continue
@@ -1332,6 +1366,31 @@ def page_history():
                     """
                     st.markdown(stats_html, unsafe_allow_html=True)
                     st.divider()
+                    
+                    # --- ★追加: 個人席別成績表示 ---
+                    p_seat_rows = []
+                    for s in ["A", "B", "C"]:
+                        rs = player_seat_ranks[s]
+                        c = len(rs)
+                        if c > 0:
+                            r1 = rs.count(1)
+                            r2 = rs.count(2)
+                            r3 = rs.count(3)
+                            avg = sum(rs)/c
+                            p_seat_rows.append({
+                                "席": f"{s}席",
+                                "打数": c,
+                                "平均着順": f"{avg:.2f}",
+                                "1着": f"{r1} ({r1/c*100:.1f}%)",
+                                "2着": f"{r2} ({r2/c*100:.1f}%)",
+                                "3着": f"{r3} ({r3/c*100:.1f}%)"
+                            })
+                    if p_seat_rows:
+                        st.markdown("##### 🪑 席別成績")
+                        st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
+                    
+                    st.divider()
+                    
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
                         st.markdown("##### 📊 着順分布")
