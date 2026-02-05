@@ -104,6 +104,9 @@ hide_style = """
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
+# ==========================================
+# 2. パスワード認証
+# ==========================================
 
 
 # ==========================================
@@ -493,8 +496,6 @@ def page_home():
     if st.button("📜 操作ログ", use_container_width=True):
         st.session_state["page"] = "logs"
         st.rerun()
-
-    # QRコード表示削除
 
 # --- メンバー管理画面 ---
 def page_members():
@@ -1393,20 +1394,18 @@ def page_history():
                     
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
-                        st.markdown("##### 📊 着順分布")
-                        source = pd.DataFrame({
-                            "着順": ["1着", "2着", "3着"],
-                            "回数": [c1, c2_cnt, c3]
+                        st.markdown("##### 📈 直近50戦の着順推移")
+                        recent_ranks = ranks[-50:]
+                        df_trend = pd.DataFrame({
+                            "戦数": range(1, len(recent_ranks) + 1),
+                            "着順": recent_ranks
                         })
-                        base = alt.Chart(source).encode(
-                            theta=alt.Theta("回数", stack=True)
-                        )
-                        pie = base.mark_arc(outerRadius=100).encode(
-                            color=alt.Color("着順"),
-                            order=alt.Order("着順"),
-                            tooltip=["着順", "回数"]
-                        )
-                        st.altair_chart(pie, use_container_width=True)
+                        line_chart = alt.Chart(df_trend).mark_line(point=True).encode(
+                            x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
+                            y=alt.Y("着順", scale=alt.Scale(domain=[3, 1]), title="着順"),
+                            tooltip=["戦数", "着順"]
+                        ).properties(height=300)
+                        st.altair_chart(line_chart, use_container_width=True)
 
                     with c_dates:
                         st.markdown("##### 📅 稼働日リスト")
