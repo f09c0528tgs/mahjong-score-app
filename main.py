@@ -100,6 +100,10 @@ hide_style = """
         display: block;
         margin-top: 4px;
     }
+    /* メンバー一覧のボタンスタイル */
+    .stButton button {
+        text-align: left !important;
+    }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
@@ -497,39 +501,88 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
-    # QRコード表示削除
-
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
-    st.info("同姓同名の場合は「田中（A）」「田中（B）」のように区別して登録してください。")
+        
     df_mem = load_member_data()
-    with st.form("add_member_form"):
-        new_name = st.text_input("新しいメンバーの名前を入力")
-        submitted = st.form_submit_button("追加する")
-        if submitted and new_name:
-            if new_name in df_mem["名前"].values:
-                st.error(f"「{new_name}」は既に登録されています")
-            else:
-                new_row = {"名前": new_name, "登録日": date.today(), "最大飜数": 0, "役満回数": 0}
-                df_mem = pd.concat([df_mem, pd.DataFrame([new_row])], ignore_index=True)
-                save_member_data(df_mem)
-                st.success(f"「{new_name}」を追加しました")
-                st.rerun()
+
+    # --- メンバー追加フォーム ---
+    with st.expander("➕ 新しいメンバーを追加する"):
+        with st.form("add_member_form"):
+            new_name = st.text_input("名前を入力 (スタッフは末尾に's'をつける)")
+            submitted = st.form_submit_button("追加する")
+            if submitted and new_name:
+                if new_name in df_mem["名前"].values:
+                    st.error(f"「{new_name}」は既に登録されています")
+                else:
+                    new_row = {"名前": new_name, "登録日": date.today(), "最大飜数": 0, "役満回数": 0}
+                    df_mem = pd.concat([df_mem, pd.DataFrame([new_row])], ignore_index=True)
+                    save_member_data(df_mem)
+                    st.success(f"「{new_name}」を追加しました")
+                    st.rerun()
+
     st.divider()
+    
+    # --- メンバー一覧表示 (スタッフ/ゲスト分割) ---
     st.markdown("### 登録済みメンバー一覧")
+    st.caption("名前をクリックすると、その人の詳細データへ移動します。")
+
     if not df_mem.empty:
-        for i, row in df_mem.iterrows():
-            c1, c2 = st.columns([4, 1])
-            c1.write(f"👤 **{row['名前']}**")
-            if c2.button("削除", key=f"del_{i}"):
-                df_mem = df_mem.drop(i)
-                save_member_data(df_mem)
-                st.warning(f"「{row['名前']}」を削除しました")
-                st.rerun()
+        # 分類
+        df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+        guests = df_mem[df_mem["type"] == "guest"].reset_index(drop=False) # keep original index
+        staffs = df_mem[df_mem["type"] == "staff"].reset_index(drop=False)
+
+        c1, c2 = st.columns(2)
+        
+        with c1:
+            st.subheader("🧑‍🤝‍🧑 お客さん")
+            if not guests.empty:
+                for _, row in guests.iterrows():
+                    orig_idx = row["index"]
+                    name = row["名前"]
+                    
+                    col_btn, col_del = st.columns([3, 1])
+                    with col_btn:
+                        # 名前ボタン: 押すとhistoryへ遷移
+                        if st.button(f"👤 {name}", key=f"btn_go_{orig_idx}", use_container_width=True):
+                            st.session_state["page"] = "history"
+                            st.session_state["jump_to_player"] = name # 遷移先の指定
+                            st.rerun()
+                    with col_del:
+                        if st.button("削除", key=f"del_{orig_idx}"):
+                            df_mem = df_mem.drop(orig_idx)
+                            save_member_data(df_mem)
+                            st.warning(f"「{name}」を削除しました")
+                            st.rerun()
+            else:
+                st.info("登録なし")
+
+        with c2:
+            st.subheader("👔 スタッフ")
+            if not staffs.empty:
+                for _, row in staffs.iterrows():
+                    orig_idx = row["index"]
+                    name = row["名前"]
+                    
+                    col_btn, col_del = st.columns([3, 1])
+                    with col_btn:
+                        if st.button(f"👔 {name}", key=f"btn_go_{orig_idx}", use_container_width=True):
+                            st.session_state["page"] = "history"
+                            st.session_state["jump_to_player"] = name
+                            st.rerun()
+                    with col_del:
+                        if st.button("削除", key=f"del_{orig_idx}"):
+                            df_mem = df_mem.drop(orig_idx)
+                            save_member_data(df_mem)
+                            st.warning(f"「{name}」を削除しました")
+                            st.rerun()
+            else:
+                st.info("登録なし")
     else:
         st.write("登録メンバーはいません")
 
@@ -1193,6 +1246,15 @@ def page_history():
     all_players = get_all_member_names()
 
     st.markdown("### 🔍 日付・人物ごとの詳細")
+    
+    # 遷移してきた場合のプリセット
+    default_player_idx = 0
+    if "jump_to_player" in st.session_state:
+        target_p = st.session_state["jump_to_player"]
+        if target_p in all_players:
+            default_player_idx = all_players.index(target_p)
+        del st.session_state["jump_to_player"] # 1回使ったら消す
+
     with st.form("history_search_form"):
         c1, c2, c3 = st.columns(3)
         with c1: 
@@ -1200,10 +1262,17 @@ def page_history():
         with c2:
             sel_time = st.selectbox("⏰ 時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="search_time")
         with c3: 
-            sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players))
+            sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players), index=default_player_idx + 1) # +1 because "(指定なし)" is at 0
         submitted = st.form_submit_button("🔍 絞り込み表示")
     
     st.divider()
+
+    # 自動表示 (遷移してきた時用)
+    if default_player_idx > 0 and not submitted:
+        submitted = True
+        sel_player = all_players[default_player_idx]
+        sel_date = "(指定なし)"
+        sel_time = "全日"
 
     if submitted:
         if sel_date == "(指定なし)" and sel_player == "(指定なし)":
@@ -1396,8 +1465,8 @@ def page_history():
                     
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
-                        st.markdown("##### 📈 直近50戦の着順推移")
-                        recent_ranks = ranks[-10:]
+                        st.markdown("##### 📈 直近10戦の着順推移")
+                        recent_ranks = ranks[-10:] # ★修正：直近10戦
                         df_trend = pd.DataFrame({
                             "戦数": range(1, len(recent_ranks) + 1),
                             "着順": recent_ranks
@@ -1476,7 +1545,7 @@ def page_history():
 # --- ランキング画面 ---
 def page_ranking():
     st.title("🏆 ランキング (通算)")
-
+    
     is_admin = (st.session_state.get("user_role") == "admin")
     if is_admin:
         if st.button("🏠 ホームに戻る"):
@@ -1534,13 +1603,12 @@ def page_ranking():
 
     df_raw = pd.DataFrame(records)
     
-    # 統計計算 (1日あたりの打数を追加)
     stats = df_raw.groupby("name").agg(
         games=("rank", "count"),
         avg_rank=("rank", "mean"),
         first_count=("rank", lambda x: (x==1).sum()),
         third_count=("rank", lambda x: (x==3).sum()),
-        days=("date", "nunique") # ユニークな日付数
+        days=("date", "nunique") 
     ).reset_index()
 
     stats["games_per_day"] = stats["games"] / stats["days"]
@@ -1566,7 +1634,6 @@ def page_ranking():
     
     t1, t2, t3, t4, t5, t6 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
     
-    # 共通表示関数 (修正版)
     def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None):
         c1, c2 = st.columns(2)
         with c1:
@@ -1577,7 +1644,6 @@ def page_ranking():
                 if format_func and val_col and val_col != "games":
                     res[val_col] = res[val_col].map(format_func)
                 
-                # 表示カラムの調整
                 cols = ["順位", "name"]
                 if val_col == "games":
                     cols.extend(["games", "games_per_day"])
@@ -1602,7 +1668,6 @@ def page_ranking():
                 if format_func and val_col and val_col != "games":
                     res[val_col] = res[val_col].map(format_func)
                 
-                # 表示カラムの調整
                 cols = ["順位", "name"]
                 if val_col == "games":
                     cols.extend(["games", "games_per_day"])
