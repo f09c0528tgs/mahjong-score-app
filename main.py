@@ -497,6 +497,8 @@ def page_home():
         st.session_state["page"] = "logs"
         st.rerun()
 
+    # QRコード表示削除
+
 # --- メンバー管理画面 ---
 def page_members():
     st.title("👥 メンバー管理")
@@ -1426,11 +1428,11 @@ def page_history():
                         df_freq = df_comp.sort_values("同卓回数", ascending=False).head(3).reset_index(drop=True)
                         st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                     with c_good:
-                        st.markdown("**💖 相性が良い**")
+                        st.markdown("**💖 相性が良い (カモ)**")
                         df_good = df_comp.sort_values("相性スコア", ascending=False).head(3).reset_index(drop=True)
                         st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
                     with c_bad:
-                        st.markdown("**💀 相性が悪い**")
+                        st.markdown("**💀 相性が悪い (天敵)**")
                         df_bad = df_comp.sort_values("相性スコア", ascending=True).head(3).reset_index(drop=True)
                         st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
@@ -1524,7 +1526,7 @@ def page_ranking():
                 try: r = int(float(rank))
                 except: r = 0
                 if r > 0:
-                    records.append({"name": name, "rank": r})
+                    records.append({"name": name, "rank": r, "date": row["論理日付"]})
     
     if not records:
         st.warning("集計できるデータがありません")
@@ -1532,13 +1534,16 @@ def page_ranking():
 
     df_raw = pd.DataFrame(records)
     
-    stats = df_raw.groupby("name")["rank"].agg(
-        games="count",
-        avg_rank="mean",
-        first_count=lambda x: (x==1).sum(),
-        third_count=lambda x: (x==3).sum()
+    # 統計計算 (1日あたりの打数を追加)
+    stats = df_raw.groupby("name").agg(
+        games=("rank", "count"),
+        avg_rank=("rank", "mean"),
+        first_count=("rank", lambda x: (x==1).sum()),
+        third_count=("rank", lambda x: (x==3).sum()),
+        days=("date", "nunique") # ユニークな日付数
     ).reset_index()
 
+    stats["games_per_day"] = stats["games"] / stats["days"]
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
@@ -1561,7 +1566,7 @@ def page_ranking():
     
     t1, t2, t3, t4, t5, t6 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
     
-    # 共通表示関数
+    # 共通表示関数 (修正版)
     def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None):
         c1, c2 = st.columns(2)
         with c1:
@@ -1569,14 +1574,21 @@ def page_ranking():
             if not df_g.empty:
                 res = df_g.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
                 res["順位"] = res.index + 1
-                if format_func and val_col:
+                if format_func and val_col and val_col != "games":
                     res[val_col] = res[val_col].map(format_func)
                 
-                cols = ["順位", "name", val_col, "games"] if val_col != "games" else ["順位", "name", "games"]
-                rename_map = {"name":"名前", "games":"打数"}
-                if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
-                elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
-                elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
+                # 表示カラムの調整
+                cols = ["順位", "name"]
+                if val_col == "games":
+                    cols.extend(["games", "games_per_day"])
+                    rename_map = {"name":"名前", "games":"打数", "games_per_day":"平均打数/日"}
+                    res["games_per_day"] = res["games_per_day"].map('{:.1f}'.format)
+                else:
+                    cols.extend([val_col, "games"])
+                    rename_map = {"name":"名前", "games":"打数"}
+                    if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
+                    elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
+                    elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
                 
                 st.dataframe(res[cols].rename(columns=rename_map), hide_index=True, use_container_width=True)
             else:
@@ -1587,14 +1599,21 @@ def page_ranking():
             if not df_s.empty:
                 res = df_s.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
                 res["順位"] = res.index + 1
-                if format_func and val_col:
+                if format_func and val_col and val_col != "games":
                     res[val_col] = res[val_col].map(format_func)
                 
-                cols = ["順位", "name", val_col, "games"] if val_col != "games" else ["順位", "name", "games"]
-                rename_map = {"name":"名前", "games":"打数"}
-                if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
-                elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
-                elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
+                # 表示カラムの調整
+                cols = ["順位", "name"]
+                if val_col == "games":
+                    cols.extend(["games", "games_per_day"])
+                    rename_map = {"name":"名前", "games":"打数", "games_per_day":"平均打数/日"}
+                    res["games_per_day"] = res["games_per_day"].map('{:.1f}'.format)
+                else:
+                    cols.extend([val_col, "games"])
+                    rename_map = {"name":"名前", "games":"打数"}
+                    if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
+                    elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
+                    elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
                 
                 st.dataframe(res[cols].rename(columns=rename_map), hide_index=True, use_container_width=True)
             else:
