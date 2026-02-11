@@ -1397,7 +1397,7 @@ def page_history():
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
                         st.markdown("##### 📈 直近50戦の着順推移")
-                        recent_ranks = ranks[-50:]
+                        recent_ranks = ranks[-10:]
                         df_trend = pd.DataFrame({
                             "戦数": range(1, len(recent_ranks) + 1),
                             "着順": recent_ranks
@@ -1476,7 +1476,8 @@ def page_history():
 # --- ランキング画面 ---
 def page_ranking():
     st.title("🏆 ランキング (通算)")
-    
+
+     is_admin = (st.session_state.get("user_role") == "admin")
     if is_admin:
         if st.button("🏠 ホームに戻る"):
             st.session_state["page"] = "home"
