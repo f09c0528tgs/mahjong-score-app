@@ -1477,7 +1477,7 @@ def page_history():
 def page_ranking():
     st.title("🏆 ランキング (通算)")
 
-     is_admin = (st.session_state.get("user_role") == "admin")
+    is_admin = (st.session_state.get("user_role") == "admin")
     if is_admin:
         if st.button("🏠 ホームに戻る"):
             st.session_state["page"] = "home"
