@@ -109,11 +109,11 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証
+# 2. パスワード認証 (全員共通)
 # ==========================================
 
 # ==========================================
-# 3. データ管理関数 (安全装置付き)
+# 3. データ管理関数
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
@@ -477,41 +477,31 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
 def page_home():
     st.title("🀄 ぱいん成績管理")
     st.write("")
-    user_role = st.session_state.get("user_role")
-
+    
     c1, c2 = st.columns(2)
     with c1:
-        # 管理者のみ入力可能
-        if user_role == "admin":
-            if st.button("📝 成績をつける", type="primary", use_container_width=True):
-                st.session_state["page"] = "input"
-                st.rerun()
-        else:
-            st.info("🔒 成績入力 (管理者のみ)")
-            
+        if st.button("📝 成績をつける", type="primary", use_container_width=True):
+            st.session_state["page"] = "input"
+            st.rerun()
         st.write("")
         if st.button("🏆 ランキング", use_container_width=True):
             st.session_state["page"] = "ranking"
             st.rerun()
-            
     with c2:
         if st.button("📊 データを見る", use_container_width=True):
             st.session_state["page"] = "history"
             st.rerun()
-            
         st.write("")
-        if user_role == "admin":
-            if st.button("👥 メンバー管理", use_container_width=True):
-                st.session_state["page"] = "members"
-                st.rerun()
-        else:
-            st.info("🔒 メンバー管理 (管理者のみ)")
+        if st.button("👥 メンバー管理", use_container_width=True):
+            st.session_state["page"] = "members"
+            st.rerun()
     
     st.write("")
-    if user_role == "admin":
-        if st.button("📜 操作ログ", use_container_width=True):
-            st.session_state["page"] = "logs"
-            st.rerun()
+    if st.button("📜 操作ログ", use_container_width=True):
+        st.session_state["page"] = "logs"
+        st.rerun()
+
+    # QRコード表示削除
 
 # --- メンバー管理画面 ---
 def page_members():
@@ -520,11 +510,6 @@ def page_members():
         st.session_state["page"] = "home"
         st.rerun()
         
-    # ガード
-    if st.session_state.get("user_role") != "admin":
-        st.error("権限がありません")
-        st.stop()
-
     df_mem = load_member_data()
 
     with st.expander("➕ 新しいメンバーを追加する"):
@@ -598,14 +583,6 @@ def page_members():
 # --- 編集専用画面 ---
 def page_edit():
     st.title("🔧 データの修正・削除")
-    
-    # ガード
-    if st.session_state.get("user_role") != "admin":
-        st.error("権限がありません")
-        if st.button("ホームに戻る"):
-            st.session_state["page"] = "home"
-            st.rerun()
-        st.stop()
     
     edit_id = st.session_state.get("editing_game_id")
     if not edit_id:
@@ -724,15 +701,6 @@ def page_edit():
 # --- 入力画面 ---
 def page_input():
     st.title("📝 成績入力")
-    
-    # ガード
-    if st.session_state.get("user_role") != "admin":
-        st.error("権限がありません")
-        if st.button("ホームに戻る"):
-            st.session_state["page"] = "home"
-            st.rerun()
-        st.stop()
-
     if "success_msg" in st.session_state and st.session_state.get("success_msg"):
         st.success(st.session_state["success_msg"])
         components.html("""<script>try{var main=window.parent.document.querySelector('section.main');if(main){main.scrollTo(0,0);}window.parent.scrollTo(0,0);}catch(e){console.log(e);}</script>""", height=0)
@@ -843,6 +811,7 @@ def page_input():
         else:
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
+                
                 try:
                     df_latest = load_score_data_fresh()
                 except:
@@ -886,6 +855,7 @@ def page_input():
                 
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
+                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -1039,7 +1009,6 @@ def page_history():
         st.info("データがありません")
         return
     
-    # 遷移してきた場合のプリセット
     default_player_idx = 0
     all_players = get_all_member_names()
     
@@ -1049,7 +1018,6 @@ def page_history():
             default_player_idx = all_players.index(target_p)
         del st.session_state["jump_to_player"]
 
-    # --- 期間別統計 (集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
     
     if "論理日付" in df.columns:
@@ -1065,7 +1033,6 @@ def page_history():
     with c2:
         stats_time_range = st.selectbox("時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="stats_time")
     
-    # フィルタリング
     df_target = df.copy()
     
     if isinstance(stats_range, tuple) and len(stats_range) == 2:
@@ -1095,7 +1062,6 @@ def page_history():
         pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
         pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
         
-        # --- ★追加: 席別集計 (全体) ---
         seat_counts = {s: {"1":0, "2":0, "3":0, "sum":0, "count":0} for s in ["A", "B", "C"]}
         type_data = []
 
@@ -1138,7 +1104,6 @@ def page_history():
                 pattern_counts[key] += 1
                 if winner_is_a: pattern_wins_a[key] += 1
             
-            # --- タイプ別・席別データ収集 ---
             for seat in ["A", "B", "C"]:
                 t = row[f"{seat}タイプ"]
                 r_str = row[f"{seat}着順"]
@@ -1160,21 +1125,18 @@ def page_history():
         c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
         c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
 
-        # --- 利益データの表示 ---
         df_profit = load_profit_data()
         if not df_profit.empty:
             df_profit["MixDiff"] = pd.to_numeric(df_profit["MixDiff"], errors='coerce').fillna(0)
             df_profit["RealProfit"] = pd.to_numeric(df_profit["RealProfit"], errors='coerce').fillna(0)
             df_profit["DateObj"] = pd.to_datetime(df_profit["Date"]).dt.date
 
-            # 日付フィルタ
             df_p_target = df_profit.copy()
             if isinstance(stats_range, tuple) and len(stats_range) == 2:
                 df_p_target = df_p_target[(df_p_target["DateObj"] >= start) & (df_p_target["DateObj"] <= end)]
             elif isinstance(stats_range, tuple) and len(stats_range) == 1:
                 df_p_target = df_p_target[df_p_target["DateObj"] == start]
             
-            # 時間帯フィルタ
             if stats_time_range == "9:00-21:00":
                 df_p_target = df_p_target[df_p_target["TimeSlot"] == "Day"]
             elif stats_time_range == "21:00-33:00(翌9:00)":
@@ -1226,7 +1188,7 @@ def page_history():
                 r3=lambda x: (x==3).sum()
             ).reset_index()
 
-            # 書式整形関数
+            # フォーマット関数
             def fmt(row, col):
                 return f"{row[col]} ({row[col]/row['games']*100:.1f}%)"
 
@@ -1285,14 +1247,12 @@ def page_history():
         with c2:
             sel_time = st.selectbox("⏰ 時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="search_time")
         with c3: 
-            # プリセットがある場合は選択状態にする
             idx = default_player_idx + 1 if default_player_idx >= 0 else 0
             sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players), index=idx)
         submitted = st.form_submit_button("🔍 絞り込み表示")
     
     st.divider()
 
-    # 遷移直後の自動実行
     if default_player_idx >= 0 and not submitted:
         submitted = True
         sel_player = all_players[default_player_idx]
@@ -1461,7 +1421,6 @@ def page_history():
                     st.markdown(stats_html, unsafe_allow_html=True)
                     st.divider()
                     
-                    # --- 個人席別成績表示 ---
                     p_seat_rows = []
                     for s in ["A", "B", "C"]:
                         rs = player_seat_ranks[s]
@@ -1515,7 +1474,7 @@ def page_history():
                     df_comp = pd.DataFrame(comp_data)
                     c_freq, c_good, c_bad = st.columns(3)
                     with c_freq:
-                        st.markdown("**同卓回数が多い**")
+                        st.markdown("**👬 同卓回数が多い**")
                         df_freq = df_comp.sort_values("同卓回数", ascending=False).head(3).reset_index(drop=True)
                         st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                     with c_good:
@@ -1751,14 +1710,6 @@ def page_ranking():
 # --- ログ閲覧画面 ---
 def page_logs():
     st.title("📜 修正・削除ログ")
-    # ガード
-    if st.session_state.get("user_role") != "admin":
-        st.error("権限がありません")
-        if st.button("ホームに戻る"):
-            st.session_state["page"] = "home"
-            st.rerun()
-        st.stop()
-
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
@@ -1785,20 +1736,24 @@ if "page" not in st.session_state:
 
 user_role = st.session_state.get("user_role")
 
-# ルーティング分岐
-if st.session_state["page"] == "home":
-    page_home()
-elif st.session_state["page"] == "members":
-    page_members()
-elif st.session_state["page"] == "input":
-    page_input()
-elif st.session_state["page"] == "history":
-    page_history()
-elif st.session_state["page"] == "edit":
-    page_edit()
-elif st.session_state["page"] == "ranking":
-    page_ranking()
-elif st.session_state["page"] == "logs":
-    page_logs()
+if user_role == "guest":
+    # ゲスト用：もしhomeにいたらそのまま。それ以外はrankingからスタート
+    if st.session_state["page"] == "home":
+        page_home()
+    else:
+        page_ranking()
 else:
-    page_home()
+    if st.session_state["page"] == "home":
+        page_home()
+    elif st.session_state["page"] == "members":
+        page_members()
+    elif st.session_state["page"] == "input":
+        page_input()
+    elif st.session_state["page"] == "history":
+        page_history()
+    elif st.session_state["page"] == "edit":
+        page_edit()
+    elif st.session_state["page"] == "ranking":
+        page_ranking()
+    elif st.session_state["page"] == "logs":
+        page_logs()
