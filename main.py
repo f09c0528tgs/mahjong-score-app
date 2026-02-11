@@ -112,7 +112,6 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証
 # ==========================================
 
-
 # ==========================================
 # 3. データ管理関数 (安全装置付き)
 # ==========================================
@@ -474,32 +473,45 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
     st.markdown("---")
     return name, type_, rank
 
-# --- ホーム画面 (Adminのみ) ---
+# --- ホーム画面 ---
 def page_home():
     st.title("🀄 ぱいん成績管理")
     st.write("")
+    user_role = st.session_state.get("user_role")
+
     c1, c2 = st.columns(2)
     with c1:
-        if st.button("📝 成績をつける", type="primary", use_container_width=True):
-            st.session_state["page"] = "input"
-            st.rerun()
+        # 管理者のみ入力可能
+        if user_role == "admin":
+            if st.button("📝 成績をつける", type="primary", use_container_width=True):
+                st.session_state["page"] = "input"
+                st.rerun()
+        else:
+            st.info("🔒 成績入力 (管理者のみ)")
+            
         st.write("")
         if st.button("🏆 ランキング", use_container_width=True):
             st.session_state["page"] = "ranking"
             st.rerun()
+            
     with c2:
         if st.button("📊 データを見る", use_container_width=True):
             st.session_state["page"] = "history"
             st.rerun()
+            
         st.write("")
-        if st.button("👥 メンバー管理", use_container_width=True):
-            st.session_state["page"] = "members"
-            st.rerun()
+        if user_role == "admin":
+            if st.button("👥 メンバー管理", use_container_width=True):
+                st.session_state["page"] = "members"
+                st.rerun()
+        else:
+            st.info("🔒 メンバー管理 (管理者のみ)")
     
     st.write("")
-    if st.button("📜 操作ログ", use_container_width=True):
-        st.session_state["page"] = "logs"
-        st.rerun()
+    if user_role == "admin":
+        if st.button("📜 操作ログ", use_container_width=True):
+            st.session_state["page"] = "logs"
+            st.rerun()
 
 # --- メンバー管理画面 ---
 def page_members():
@@ -508,9 +520,13 @@ def page_members():
         st.session_state["page"] = "home"
         st.rerun()
         
+    # ガード
+    if st.session_state.get("user_role") != "admin":
+        st.error("権限がありません")
+        st.stop()
+
     df_mem = load_member_data()
 
-    # --- メンバー追加フォーム ---
     with st.expander("➕ 新しいメンバーを追加する"):
         with st.form("add_member_form"):
             new_name = st.text_input("名前を入力 (スタッフは末尾に's'をつける)")
@@ -526,32 +542,26 @@ def page_members():
                     st.rerun()
 
     st.divider()
-    
-    # --- メンバー一覧表示 (スタッフ/ゲスト分割) ---
     st.markdown("### 登録済みメンバー一覧")
     st.caption("名前をクリックすると、その人の詳細データへ移動します。")
 
     if not df_mem.empty:
-        # 分類
         df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
-        guests = df_mem[df_mem["type"] == "guest"].reset_index(drop=False) # keep original index
+        guests = df_mem[df_mem["type"] == "guest"].reset_index(drop=False)
         staffs = df_mem[df_mem["type"] == "staff"].reset_index(drop=False)
 
         c1, c2 = st.columns(2)
-        
         with c1:
             st.subheader("🧑‍🤝‍🧑 お客さん")
             if not guests.empty:
                 for _, row in guests.iterrows():
                     orig_idx = row["index"]
                     name = row["名前"]
-                    
                     col_btn, col_del = st.columns([3, 1])
                     with col_btn:
-                        # 名前ボタン: 押すとhistoryへ遷移
                         if st.button(f"👤 {name}", key=f"btn_go_{orig_idx}", use_container_width=True):
                             st.session_state["page"] = "history"
-                            st.session_state["jump_to_player"] = name # 遷移先の指定
+                            st.session_state["jump_to_player"] = name
                             st.rerun()
                     with col_del:
                         if st.button("削除", key=f"del_{orig_idx}"):
@@ -568,7 +578,6 @@ def page_members():
                 for _, row in staffs.iterrows():
                     orig_idx = row["index"]
                     name = row["名前"]
-                    
                     col_btn, col_del = st.columns([3, 1])
                     with col_btn:
                         if st.button(f"👔 {name}", key=f"btn_go_{orig_idx}", use_container_width=True):
@@ -589,6 +598,14 @@ def page_members():
 # --- 編集専用画面 ---
 def page_edit():
     st.title("🔧 データの修正・削除")
+    
+    # ガード
+    if st.session_state.get("user_role") != "admin":
+        st.error("権限がありません")
+        if st.button("ホームに戻る"):
+            st.session_state["page"] = "home"
+            st.rerun()
+        st.stop()
     
     edit_id = st.session_state.get("editing_game_id")
     if not edit_id:
@@ -707,6 +724,15 @@ def page_edit():
 # --- 入力画面 ---
 def page_input():
     st.title("📝 成績入力")
+    
+    # ガード
+    if st.session_state.get("user_role") != "admin":
+        st.error("権限がありません")
+        if st.button("ホームに戻る"):
+            st.session_state["page"] = "home"
+            st.rerun()
+        st.stop()
+
     if "success_msg" in st.session_state and st.session_state.get("success_msg"):
         st.success(st.session_state["success_msg"])
         components.html("""<script>try{var main=window.parent.document.querySelector('section.main');if(main){main.scrollTo(0,0);}window.parent.scrollTo(0,0);}catch(e){console.log(e);}</script>""", height=0)
@@ -817,7 +843,6 @@ def page_input():
         else:
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
-                
                 try:
                     df_latest = load_score_data_fresh()
                 except:
@@ -843,13 +868,11 @@ def page_input():
                     next_display_no = 1
 
                 now_jst = datetime.now(JST)
-                
                 save_date_obj = input_date
                 if now_jst.hour < 9:
                     save_date_obj = input_date + timedelta(days=1)
                 
                 save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
-                
                 final_set_no = current_set_no
                 if start_new_set: final_set_no += 1
                 
@@ -863,7 +886,6 @@ def page_input():
                 
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
-                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -1016,6 +1038,16 @@ def page_history():
     if df.empty:
         st.info("データがありません")
         return
+    
+    # 遷移してきた場合のプリセット
+    default_player_idx = 0
+    all_players = get_all_member_names()
+    
+    if "jump_to_player" in st.session_state:
+        target_p = st.session_state["jump_to_player"]
+        if target_p in all_players:
+            default_player_idx = all_players.index(target_p)
+        del st.session_state["jump_to_player"]
 
     # --- 期間別統計 (集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
@@ -1065,7 +1097,6 @@ def page_history():
         
         # --- ★追加: 席別集計 (全体) ---
         seat_counts = {s: {"1":0, "2":0, "3":0, "sum":0, "count":0} for s in ["A", "B", "C"]}
-        
         type_data = []
 
         for _, row in df_target.iterrows():
@@ -1183,7 +1214,7 @@ def page_history():
         df_pattern["勝率データ"] = win_rates
         st.dataframe(df_pattern, hide_index=True, use_container_width=True)
 
-        # --- タイプ別成績 ---
+        # --- ★修正: タイプ別成績 (フォーマット統一) ---
         if type_data:
             st.markdown("##### 📊 タイプ別成績")
             df_type_raw = pd.DataFrame(type_data)
@@ -1195,23 +1226,26 @@ def page_history():
                 r3=lambda x: (x==3).sum()
             ).reset_index()
 
+            # 書式整形関数
+            def fmt(row, col):
+                return f"{row[col]} ({row[col]/row['games']*100:.1f}%)"
+
             stats_by_type["avg"] = stats_by_type["avg"].map('{:.2f}'.format)
-            stats_by_type["r1_rate"] = (stats_by_type["r1"] / stats_by_type["games"] * 100).map('{:.1f}%'.format)
-            stats_by_type["r2_rate"] = (stats_by_type["r2"] / stats_by_type["games"] * 100).map('{:.1f}%'.format)
-            stats_by_type["r3_rate"] = (stats_by_type["r3"] / stats_by_type["games"] * 100).map('{:.1f}%'.format)
+            stats_by_type["1着"] = stats_by_type.apply(lambda x: fmt(x, "r1"), axis=1)
+            stats_by_type["2着"] = stats_by_type.apply(lambda x: fmt(x, "r2"), axis=1)
+            stats_by_type["3着"] = stats_by_type.apply(lambda x: fmt(x, "r3"), axis=1)
 
             display_cols = {
-                "Type": "タイプ", "games": "打数", "avg": "平均着順",
-                "r1_rate": "トップ率", "r2_rate": "2着率", "r3_rate": "ラス率"
+                "Type": "タイプ", "games": "打数", "avg": "平均着順"
             }
             type_order = {"A客": 0, "B客": 1, "AS": 2, "BS": 3}
             stats_by_type["order"] = stats_by_type["Type"].map(lambda x: type_order.get(x, 99))
             stats_by_type = stats_by_type.sort_values("order").drop("order", axis=1)
 
-            st.dataframe(stats_by_type.rename(columns=display_cols)[["タイプ", "打数", "平均着順", "トップ率", "2着率", "ラス率"]],
+            st.dataframe(stats_by_type.rename(columns=display_cols)[["タイプ", "打数", "平均着順", "1着", "2着", "3着"]],
                          hide_index=True, use_container_width=True)
         
-        # --- ★追加: 席別成績テーブル ---
+        # --- 席別成績テーブル ---
         seat_rows = []
         for s in ["A", "B", "C"]:
             d = seat_counts[s]
@@ -1243,18 +1277,7 @@ def page_history():
     else:
         unique_dates = []
 
-    all_players = get_all_member_names()
-
     st.markdown("### 🔍 日付・人物ごとの詳細")
-    
-    # 遷移してきた場合のプリセット
-    default_player_idx = 0
-    if "jump_to_player" in st.session_state:
-        target_p = st.session_state["jump_to_player"]
-        if target_p in all_players:
-            default_player_idx = all_players.index(target_p)
-        del st.session_state["jump_to_player"] # 1回使ったら消す
-
     with st.form("history_search_form"):
         c1, c2, c3 = st.columns(3)
         with c1: 
@@ -1262,13 +1285,15 @@ def page_history():
         with c2:
             sel_time = st.selectbox("⏰ 時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="search_time")
         with c3: 
-            sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players), index=default_player_idx + 1) # +1 because "(指定なし)" is at 0
+            # プリセットがある場合は選択状態にする
+            idx = default_player_idx + 1 if default_player_idx >= 0 else 0
+            sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players), index=idx)
         submitted = st.form_submit_button("🔍 絞り込み表示")
     
     st.divider()
 
-    # 自動表示 (遷移してきた時用)
-    if default_player_idx > 0 and not submitted:
+    # 遷移直後の自動実行
+    if default_player_idx >= 0 and not submitted:
         submitted = True
         sel_player = all_players[default_player_idx]
         sel_date = "(指定なし)"
@@ -1382,8 +1407,6 @@ def page_history():
                 ranks = []
                 played_dates = set()
                 compatibility = {}
-                
-                # ★追加: 個人用席別集計
                 player_seat_ranks = {"A": [], "B": [], "C": []}
 
                 for _, row in df_filtered.iterrows():
@@ -1403,7 +1426,6 @@ def page_history():
                         ranks.append(my_rank)
                         played_dates.add(row["論理日付"])
                         
-                        # ★追加: 席別リストに追加
                         if my_seat in player_seat_ranks:
                             player_seat_ranks[my_seat].append(my_rank)
                         
@@ -1439,7 +1461,7 @@ def page_history():
                     st.markdown(stats_html, unsafe_allow_html=True)
                     st.divider()
                     
-                    # --- ★追加: 個人席別成績表示 ---
+                    # --- 個人席別成績表示 ---
                     p_seat_rows = []
                     for s in ["A", "B", "C"]:
                         rs = player_seat_ranks[s]
@@ -1466,7 +1488,7 @@ def page_history():
                     c_graph, c_dates = st.columns([2, 1])
                     with c_graph:
                         st.markdown("##### 📈 直近10戦の着順推移")
-                        recent_ranks = ranks[-10:] # ★修正：直近10戦
+                        recent_ranks = ranks[-10:]
                         df_trend = pd.DataFrame({
                             "戦数": range(1, len(recent_ranks) + 1),
                             "着順": recent_ranks
@@ -1546,11 +1568,10 @@ def page_history():
 def page_ranking():
     st.title("🏆 ランキング (通算)")
     
-    is_admin = (st.session_state.get("user_role") == "admin")
-    if is_admin:
-        if st.button("🏠 ホームに戻る"):
-            st.session_state["page"] = "home"
-            st.rerun()
+    # 修正: 全員に表示
+    if st.button("🏠 ホームに戻る"):
+        st.session_state["page"] = "home"
+        st.rerun()
 
     df = load_score_data()
     if df.empty:
@@ -1730,6 +1751,14 @@ def page_ranking():
 # --- ログ閲覧画面 ---
 def page_logs():
     st.title("📜 修正・削除ログ")
+    # ガード
+    if st.session_state.get("user_role") != "admin":
+        st.error("権限がありません")
+        if st.button("ホームに戻る"):
+            st.session_state["page"] = "home"
+            st.rerun()
+        st.stop()
+
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
@@ -1756,20 +1785,20 @@ if "page" not in st.session_state:
 
 user_role = st.session_state.get("user_role")
 
-if user_role == "guest":
+# ルーティング分岐
+if st.session_state["page"] == "home":
+    page_home()
+elif st.session_state["page"] == "members":
+    page_members()
+elif st.session_state["page"] == "input":
+    page_input()
+elif st.session_state["page"] == "history":
+    page_history()
+elif st.session_state["page"] == "edit":
+    page_edit()
+elif st.session_state["page"] == "ranking":
     page_ranking()
+elif st.session_state["page"] == "logs":
+    page_logs()
 else:
-    if st.session_state["page"] == "home":
-        page_home()
-    elif st.session_state["page"] == "members":
-        page_members()
-    elif st.session_state["page"] == "input":
-        page_input()
-    elif st.session_state["page"] == "history":
-        page_history()
-    elif st.session_state["page"] == "edit":
-        page_edit()
-    elif st.session_state["page"] == "ranking":
-        page_ranking()
-    elif st.session_state["page"] == "logs":
-        page_logs()
+    page_home()
