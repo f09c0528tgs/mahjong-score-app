@@ -112,7 +112,6 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -262,7 +261,6 @@ def load_log_data():
         df = df.sort_values("日時", ascending=False)
     return df
 
-# --- 【修正】メンバーデータロード（タイプ列追加） ---
 def load_member_data():
     conn = get_conn()
     try:
@@ -272,7 +270,7 @@ def load_member_data():
         if "登録日" not in df.columns: df["登録日"] = []
         if "最大飜数" not in df.columns: df["最大飜数"] = 0
         if "役満回数" not in df.columns: df["役満回数"] = 0
-        if "タイプ" not in df.columns: df["タイプ"] = "A客" # ★追加
+        if "タイプ" not in df.columns: df["タイプ"] = "A客"
             
         df["最大飜数"] = pd.to_numeric(df["最大飜数"], errors='coerce').fillna(0).astype(int)
         df["役満回数"] = pd.to_numeric(df["役満回数"], errors='coerce').fillna(0).astype(int)
@@ -454,7 +452,7 @@ def render_paper_sheet(df):
 # 5. 各ページ画面
 # ==========================================
 
-# ★コールバック関数: 名前変更時にタイプを自動設定
+# コールバック関数: 名前変更時にタイプを自動設定
 def update_type_by_name(key_name, key_type, type_map):
     name = st.session_state[key_name]
     if name in type_map:
@@ -487,9 +485,11 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
         
         rank = st.radio("着順", available_ranks, index=final_idx, horizontal=True, key=f"r_{label}{key_suffix}")
         
-        # タイプ選択 (keyを明示してcallbackから更新可能に)
-        t_idx = get_idx_in_opts(TYPE_OPTS, def_t)
-        type_ = st.radio("タイプ", TYPE_OPTS, index=t_idx, horizontal=True, key=k_type)
+        # ★修正：セッションステートに初期値を事前セット（エラー回避）
+        if k_type not in st.session_state:
+             st.session_state[k_type] = def_t if def_t in TYPE_OPTS else TYPE_OPTS[0]
+        
+        type_ = st.radio("タイプ", TYPE_OPTS, horizontal=True, key=k_type)
     
     st.markdown("---")
     return name, type_, rank
@@ -538,8 +538,6 @@ def page_members():
         st.markdown("### メンバー情報の編集")
         st.caption("ここで「タイプ」を設定すると、成績入力時に自動で反映されます。")
         
-        # データエディタで直接編集可能にする
-        # 名前, タイプ, その他を表示
         if not df_mem.empty:
             edited_df = st.data_editor(
                 df_mem[["名前", "タイプ", "最大飜数", "役満回数"]],
@@ -554,20 +552,12 @@ def page_members():
                 },
                 hide_index=True,
                 use_container_width=True,
-                num_rows="dynamic" # 行の追加削除も許可
+                num_rows="dynamic"
             )
             
             if st.button("💾 変更を保存する"):
-                # 元のデータとマージして保存 (登録日などを保持するため)
-                # ここでは簡易的に、名前をキーにして更新、または全上書き
-                # 安全のため、edited_dfをベースに保存する（登録日は消える可能性あるが、今回は許容）
-                # 本当はID管理すべきだが、名前ユニーク前提
-                
-                # 登録日が消えないようにマージ
                 df_merged = pd.merge(edited_df, df_mem[["名前", "登録日"]], on="名前", how="left")
-                # 新規追加分の登録日を今日に
                 df_merged["登録日"] = df_merged["登録日"].fillna(date.today())
-                
                 save_member_data(df_merged)
                 st.success("メンバー情報を更新しました！")
                 time.sleep(1)
@@ -598,13 +588,7 @@ def page_members():
     st.divider()
     st.markdown("### リンク用リスト")
     if not df_mem.empty:
-        # 簡易リンク集
         st.caption("名前をクリックすると詳細データへ飛びます")
-        
-        # スタッフ/ゲスト分類 (表示用のみ。編集は上のエディタで)
-        # 末尾s判定は廃止し、登録されたタイプで分けるか、単に一覧にする
-        # ここでは以前の要望通りs判定のまま表示だけしておく（あるいはTypeで分ける）
-        # Typeで分けましょう
         
         guests = df_mem[df_mem["タイプ"].isin(["A客", "B客"])].reset_index(drop=True)
         staffs = df_mem[df_mem["タイプ"].isin(["AS", "BS"])].reset_index(drop=True)
@@ -648,8 +632,6 @@ def page_edit():
         return
 
     row = target_row.iloc[0]
-    
-    # メンバーデータ取得してMap作成
     df_mem = load_member_data()
     member_list = get_all_member_names()
     type_map = dict(zip(df_mem["名前"], df_mem["タイプ"]))
@@ -657,7 +639,6 @@ def page_edit():
     st.info(f"編集中: No.{row['DailyNo']} (卓: {row['TableNo']}, セット: {row['SetNo']})")
 
     with st.form("edit_form"):
-        # callback付きの関数を使用
         p1_n, p1_t, p1_r = player_input_row_dynamic("A席", member_list, row["Aさん"], row["Aタイプ"], int(float(row["A着順"])), [1, 2, 3], "_edit", type_map)
         p2_n, p2_t, p2_r = player_input_row_dynamic("B席", member_list, row["Bさん"], row["Bタイプ"], int(float(row["B着順"])), [1, 2, 3], "_edit", type_map)
         p3_n, p3_t, p3_r = player_input_row_dynamic("C席", member_list, row["Cさん"], row["Cタイプ"], int(float(row["C着順"])), [1, 2, 3], "_edit", type_map)
@@ -762,7 +743,6 @@ def page_input():
     df = load_score_data()
     df_mem = load_member_data()
     member_list = get_all_member_names()
-    # Name to Type map
     type_map = dict(zip(df_mem["名前"], df_mem["タイプ"]))
     
     JST = timezone(timedelta(hours=9), 'JST')
@@ -784,7 +764,6 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
-    # ID計算
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -813,8 +792,6 @@ def page_input():
         last_n3 = last_game["Cさん"]
         last_t3 = last_game["Cタイプ"]
 
-    # ここでコールバック付き関数を使うことで、名前選択→タイプ自動更新を実現
-    # key_suffix="_input" をつけて識別
     n1, t1, r1 = player_input_row_dynamic("A席", member_list, last_n1, last_t1, 1, [1, 2, 3], "_input", type_map)
     
     ranks_for_2 = [x for x in [1, 2, 3] if x != r1]
@@ -841,7 +818,6 @@ def page_input():
         else:
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
-                
                 try:
                     df_latest = load_score_data_fresh()
                 except:
@@ -885,7 +861,6 @@ def page_input():
                 
                 df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
                 save_score_data(df_final)
-                
                 log_detail = f"新規: {current_table}卓 No.{next_display_no}"
                 save_action_log("新規登録", next_internal_game_no, log_detail)
                 
@@ -1048,7 +1023,6 @@ def page_history():
             default_player_idx = all_players.index(target_p)
         del st.session_state["jump_to_player"]
 
-    # --- 期間別統計 (集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
     
     if "論理日付" in df.columns:
@@ -1452,7 +1426,6 @@ def page_history():
                     st.markdown(stats_html, unsafe_allow_html=True)
                     st.divider()
                     
-                    # --- 個人席別成績表示 ---
                     p_seat_rows = []
                     for s in ["A", "B", "C"]:
                         rs = player_seat_ranks[s]
@@ -1768,20 +1741,19 @@ if "page" not in st.session_state:
 
 user_role = st.session_state.get("user_role")
 
-if user_role == "guest":
+if st.session_state["page"] == "home":
+    page_home()
+elif st.session_state["page"] == "members":
+    page_members()
+elif st.session_state["page"] == "input":
+    page_input()
+elif st.session_state["page"] == "history":
+    page_history()
+elif st.session_state["page"] == "edit":
+    page_edit()
+elif st.session_state["page"] == "ranking":
     page_ranking()
+elif st.session_state["page"] == "logs":
+    page_logs()
 else:
-    if st.session_state["page"] == "home":
-        page_home()
-    elif st.session_state["page"] == "members":
-        page_members()
-    elif st.session_state["page"] == "input":
-        page_input()
-    elif st.session_state["page"] == "history":
-        page_history()
-    elif st.session_state["page"] == "edit":
-        page_edit()
-    elif st.session_state["page"] == "ranking":
-        page_ranking()
-    elif st.session_state["page"] == "logs":
-        page_logs()
+    page_home()
