@@ -112,6 +112,7 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
+
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -485,7 +486,7 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
         
         rank = st.radio("着順", available_ranks, index=final_idx, horizontal=True, key=f"r_{label}{key_suffix}")
         
-        # ★修正：セッションステートに初期値を事前セット（エラー回避）
+        # セッションステートに初期値を事前セット（エラー回避）
         if k_type not in st.session_state:
              st.session_state[k_type] = def_t if def_t in TYPE_OPTS else TYPE_OPTS[0]
         
@@ -764,6 +765,7 @@ def page_input():
 
     st.subheader("🆕 新しい対局の入力")
     
+    # ID計算
     if not df_today.empty and "SetNo" in df_today.columns:
         current_set_no = int(df_today["SetNo"].max())
     else:
@@ -818,6 +820,7 @@ def page_input():
         else:
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
+                
                 try:
                     df_latest = load_score_data_fresh()
                 except:
@@ -1023,6 +1026,7 @@ def page_history():
             default_player_idx = all_players.index(target_p)
         del st.session_state["jump_to_player"]
 
+    # --- 期間別統計 (集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
     
     if "論理日付" in df.columns:
@@ -1193,7 +1197,7 @@ def page_history():
                 r3=lambda x: (x==3).sum()
             ).reset_index()
 
-            # 書式整形関数
+            # フォーマット関数
             def fmt(row, col):
                 return f"{row[col]} ({row[col]/row['games']*100:.1f}%)"
 
@@ -1602,6 +1606,10 @@ def page_ranking():
     
     # ゲスト/スタッフ分類
     stats["type"] = stats["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+    
+    # ★★★★ NEW: 名前整形 (（）の中身を削除) ★★★★
+    stats["name"] = stats["name"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+
     stats_guest = stats[stats["type"] == "guest"]
     stats_staff = stats[stats["type"] == "staff"]
     
@@ -1681,6 +1689,10 @@ def page_ranking():
     # --- メンバーデータのランキング ---
     df_mem = load_member_data()
     df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+    
+    # ★★★★ NEW: 名前整形 ★★★★
+    df_mem["名前"] = df_mem["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+    
     mem_g = df_mem[df_mem["type"] == "guest"]
     mem_s = df_mem[df_mem["type"] == "staff"]
     
