@@ -242,16 +242,16 @@ def main():
             st.info("データなし")
 
     with t1:
-        st.subheader("📊 打数ランキング (Top 10)")
+        st.subheader("📊 打数ランキング (Top 5)")
         show_ranking_guest(stats_guest, "games", False, None, "games")
     with t2:
-        st.subheader("🥇 平均着順ランキング (Top 10)")
+        st.subheader("🥇 平均着順ランキング (Top 5)")
         show_ranking_guest(stats_guest, "avg_rank", True, '{:.2f}'.format, "avg_rank")
     with t3:
-        st.subheader("👑 トップ率ランキング (Top 10)")
+        st.subheader("👑 トップ率ランキング (Top 5)")
         show_ranking_guest(stats_guest, "top_rate", False, '{:.1f}%'.format, "top_rate")
     with t4:
-        st.subheader("🛡 ラス回避率ランキング (Top 10)")
+        st.subheader("🛡 ラス回避率ランキング (Top 5)")
         show_ranking_guest(stats_guest, "last_avoid_rate", False, '{:.1f}%'.format, "last_avoid_rate")
 
     # --- メンバーデータのランキング ---
@@ -272,10 +272,10 @@ def main():
         else: st.info("データなし")
 
     with t5:
-        st.subheader("💥 最大飜数ランキング (Top 10)")
+        st.subheader("💥 最大飜数ランキング (Top 5)")
         show_mem_ranking_guest(mem_g, "最大飜数")
     with t6:
-        st.subheader("🀅 役満回数ランキング (Top 10)")
+        st.subheader("🀅 役満回数ランキング (Top 5)")
         show_mem_ranking_guest(mem_g, "役満回数")
 
 if __name__ == '__main__':
