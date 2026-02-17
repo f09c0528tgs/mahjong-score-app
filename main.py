@@ -1613,7 +1613,7 @@ def page_ranking():
     stats_guest = stats[stats["type"] == "guest"]
     stats_staff = stats[stats["type"] == "staff"]
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 50, 300, 5)
     
     # フィルタリング
     stats_guest = stats_guest[stats_guest["games"] >= min_games]
