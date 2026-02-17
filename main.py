@@ -1632,7 +1632,7 @@ def page_ranking():
         with c1:
             st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
             if not df_g.empty:
-                res = df_g.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
+                res = df_g.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
                 res["順位"] = res.index + 1
                 if format_func and val_col and val_col != "games":
                     res[val_col] = res[val_col].map(format_func)
@@ -1656,7 +1656,7 @@ def page_ranking():
         with c2:
             st.markdown("### 👔 スタッフ Top10")
             if not df_s.empty:
-                res = df_s.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
+                res = df_s.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
                 res["順位"] = res.index + 1
                 if format_func and val_col and val_col != "games":
                     res[val_col] = res[val_col].map(format_func)
