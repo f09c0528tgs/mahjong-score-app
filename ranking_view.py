@@ -204,7 +204,7 @@ def main():
     # ゲストのみ抽出
     stats_guest = stats[stats["type"] == "guest"]
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 350, 50)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 50, 350, 50)
     
     # 規定打数フィルタ
     stats_guest = stats_guest[stats_guest["games"] >= min_games]
