@@ -112,7 +112,6 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -262,6 +261,7 @@ def load_log_data():
         df = df.sort_values("日時", ascending=False)
     return df
 
+# --- 【修正】メンバーデータロード（最大飜数詳細を追加） ---
 def load_member_data():
     conn = get_conn()
     try:
@@ -272,13 +272,14 @@ def load_member_data():
         if "最大飜数" not in df.columns: df["最大飜数"] = 0
         if "役満回数" not in df.columns: df["役満回数"] = 0
         if "タイプ" not in df.columns: df["タイプ"] = "A客"
+        if "最大飜数詳細" not in df.columns: df["最大飜数詳細"] = "" # ★追加
             
         df["最大飜数"] = pd.to_numeric(df["最大飜数"], errors='coerce').fillna(0).astype(int)
         df["役満回数"] = pd.to_numeric(df["役満回数"], errors='coerce').fillna(0).astype(int)
         
         return df
     except:
-        return pd.DataFrame({"名前": [], "登録日": [], "最大飜数": [], "役満回数": [], "タイプ": []})
+        return pd.DataFrame({"名前": [], "登録日": [], "最大飜数": [], "役満回数": [], "タイプ": [], "最大飜数詳細": []})
 
 def save_member_data(df):
     conn = get_conn()
@@ -540,8 +541,9 @@ def page_members():
         st.caption("ここで「タイプ」を設定すると、成績入力時に自動で反映されます。")
         
         if not df_mem.empty:
+            # ★修正: data_editorに「最大飜数詳細」を追加
             edited_df = st.data_editor(
-                df_mem[["名前", "タイプ", "最大飜数", "役満回数"]],
+                df_mem[["名前", "タイプ", "最大飜数", "最大飜数詳細", "役満回数"]],
                 column_config={
                     "タイプ": st.column_config.SelectboxColumn(
                         "タイプ",
@@ -549,6 +551,11 @@ def page_members():
                         width="medium",
                         options=["A客", "B客", "AS", "BS"],
                         required=True,
+                    ),
+                    "最大飜数詳細": st.column_config.TextColumn(
+                        "最大飜数詳細",
+                        help="役名などを記入",
+                        width="large"
                     )
                 },
                 hide_index=True,
@@ -580,7 +587,7 @@ def page_members():
                 if new_name in df_mem["名前"].values:
                     st.error(f"「{new_name}」は既に登録されています")
                 else:
-                    new_row = {"名前": new_name, "登録日": date.today(), "タイプ": new_type, "最大飜数": 0, "役満回数": 0}
+                    new_row = {"名前": new_name, "登録日": date.today(), "タイプ": new_type, "最大飜数": 0, "最大飜数詳細": "", "役満回数": 0}
                     df_mem = pd.concat([df_mem, pd.DataFrame([new_row])], ignore_index=True)
                     save_member_data(df_mem)
                     st.success(f"「{new_name}」を追加しました")
@@ -820,7 +827,6 @@ def page_input():
         else:
             with st.spinner("サーバーに書き込み中..."):
                 fetch_data_cached.clear()
-                
                 try:
                     df_latest = load_score_data_fresh()
                 except:
@@ -1475,15 +1481,15 @@ def page_history():
                 
                 if compatibility:
                     st.divider()
-                    st.subheader("🤝 対戦相手データ (TOP3)")
+                    st.subheader("🤝 対戦相手データ (TOP5)")
                     comp_data = []
                     for name, data in compatibility.items():
                         comp_data.append({"名前": name, "同卓回数": data["count"], "相性スコア": data["score"]})
                     
                     df_comp = pd.DataFrame(comp_data)
-                    c_freq, c_good, c_bad = st.columns(3)
+                    c_freq, c_good, c_bad = st.columns(5)
                     with c_freq:
-                        st.markdown("**同卓回数が多い**")
+                        st.markdown("**👬 同卓回数が多い**")
                         df_freq = df_comp.sort_values("同卓回数", ascending=False).head(3).reset_index(drop=True)
                         st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                     with c_good:
@@ -1507,11 +1513,17 @@ def page_history():
                     idx = target_idx[0]
                     current_max = int(df_mem.at[idx, "最大飜数"])
                     current_yaku = int(df_mem.at[idx, "役満回数"])
+                    # ★修正: 詳細も取得
+                    current_detail = ""
+                    if "最大飜数詳細" in df_mem.columns:
+                        current_detail = df_mem.at[idx, "最大飜数詳細"]
                 
                 with st.form("update_personal_stats"):
                     c_in1, c_in2 = st.columns(2)
                     with c_in1:
                         new_max = st.number_input("最大飜数", min_value=0, value=current_max)
+                        # ★修正: 詳細入力欄を追加
+                        new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail)
                     with c_in2:
                         new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku)
                     
@@ -1519,6 +1531,10 @@ def page_history():
                         if target_idx:
                             df_mem.at[idx, "最大飜数"] = new_max
                             df_mem.at[idx, "役満回数"] = new_yaku
+                            # ★修正: 詳細を保存
+                            if "最大飜数詳細" in df_mem.columns:
+                                df_mem.at[idx, "最大飜数詳細"] = new_detail
+                            
                             save_member_data(df_mem)
                             st.success(f"{sel_player}さんの記録を更新しました！")
                             time.sleep(1)
@@ -1613,7 +1629,7 @@ def page_ranking():
     stats_guest = stats[stats["type"] == "guest"]
     stats_staff = stats[stats["type"] == "staff"]
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 50, 300, 50)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 50, 500, 50)
     
     # フィルタリング
     stats_guest = stats_guest[stats_guest["games"] >= min_games]
@@ -1630,7 +1646,7 @@ def page_ranking():
     def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
             if not df_g.empty:
                 res = df_g.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
                 res["順位"] = res.index + 1
@@ -1654,7 +1670,7 @@ def page_ranking():
                 st.info("データなし")
 
         with c2:
-            st.markdown("### 👔 スタッフ Top10")
+            st.markdown("### 👔 スタッフ Top20")
             if not df_s.empty:
                 res = df_s.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
                 res["順位"] = res.index + 1
@@ -1705,7 +1721,12 @@ def page_ranking():
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
-                    st.dataframe(res[["順位", "名前", col]], hide_index=True, use_container_width=True)
+                    # ★修正: 最大飜数詳細も表示
+                    cols = ["順位", "名前", col]
+                    if col == "最大飜数" and "最大飜数詳細" in res.columns:
+                        cols.append("最大飜数詳細")
+                        
+                    st.dataframe(res[cols], hide_index=True, use_container_width=True)
                 else: st.info("データなし")
             else: st.info("データなし")
         with c2:
@@ -1715,7 +1736,10 @@ def page_ranking():
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
-                    st.dataframe(res[["順位", "名前", col]], hide_index=True, use_container_width=True)
+                    cols = ["順位", "名前", col]
+                    if col == "最大飜数" and "最大飜数詳細" in res.columns:
+                        cols.append("最大飜数詳細")
+                    st.dataframe(res[cols], hide_index=True, use_container_width=True)
                 else: st.info("データなし")
             else: st.info("データなし")
 
