@@ -1490,15 +1490,15 @@ def page_history():
                     c_freq, c_good, c_bad = st.columns(5)
                     with c_freq:
                         st.markdown("**👬 同卓回数が多い**")
-                        df_freq = df_comp.sort_values("同卓回数", ascending=False).head(3).reset_index(drop=True)
+                        df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
                         st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                     with c_good:
                         st.markdown("**相性が良い**")
-                        df_good = df_comp.sort_values("相性スコア", ascending=False).head(3).reset_index(drop=True)
+                        df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
                         st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
                     with c_bad:
                         st.markdown("**相性が悪い**")
-                        df_bad = df_comp.sort_values("相性スコア", ascending=True).head(3).reset_index(drop=True)
+                        df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
                         st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
                 st.divider()
