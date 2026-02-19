@@ -112,6 +112,7 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
+
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -272,7 +273,7 @@ def load_member_data():
         if "役満回数" not in df.columns: df["役満回数"] = 0
         if "タイプ" not in df.columns: df["タイプ"] = "A客"
         if "最大飜数詳細" not in df.columns: df["最大飜数詳細"] = ""
-        if "最大飜数記録日" not in df.columns: df["最大飜数記録日"] = "" # ★追加
+        if "最大飜数記録日" not in df.columns: df["最大飜数記録日"] = ""
             
         df["最大飜数"] = pd.to_numeric(df["最大飜数"], errors='coerce').fillna(0).astype(int)
         df["役満回数"] = pd.to_numeric(df["役満回数"], errors='coerce').fillna(0).astype(int)
@@ -454,6 +455,7 @@ def render_paper_sheet(df):
 # 5. 各ページ画面
 # ==========================================
 
+# コールバック関数: 名前変更時にタイプを自動設定
 def update_type_by_name(key_name, key_type, type_map):
     name = st.session_state[key_name]
     if name in type_map:
@@ -469,9 +471,11 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
     c1, c2 = st.columns([1, 2])
     with c1:
         idx_val = get_idx_in_list(member_list, def_n) if def_n else None
+        # key作成
         k_name = f"n_{label}{key_suffix}"
         k_type = f"t_{label}{key_suffix}"
         
+        # 名前選択 (callbackでタイプ更新)
         name = st.selectbox(
             "名前", member_list, index=idx_val, key=k_name,
             on_change=update_type_by_name if type_map else None,
@@ -506,6 +510,11 @@ def page_home():
         if st.button("🏆 ランキング", use_container_width=True):
             st.session_state["page"] = "ranking"
             st.rerun()
+        st.write("")
+        # ★追加: ホームに利益管理ボタン
+        if st.button("💰 利益管理", use_container_width=True):
+            st.session_state["page"] = "profit"
+            st.rerun()
     with c2:
         if st.button("📊 データを見る", use_container_width=True):
             st.session_state["page"] = "history"
@@ -514,11 +523,74 @@ def page_home():
         if st.button("👥 メンバー管理", use_container_width=True):
             st.session_state["page"] = "members"
             st.rerun()
-    
-    st.write("")
-    if st.button("📜 操作ログ", use_container_width=True):
-        st.session_state["page"] = "logs"
+        st.write("")
+        if st.button("📜 操作ログ", use_container_width=True):
+            st.session_state["page"] = "logs"
+            st.rerun()
+
+# --- ★追加: 利益管理専用ページ ---
+def page_profit():
+    st.title("💰 利益管理")
+    if st.button("🏠 ホームに戻る"):
+        st.session_state["page"] = "home"
         st.rerun()
+
+    st.write("対象の日付を選択して、利益データを登録・更新してください。")
+    
+    JST = timezone(timedelta(hours=9), 'JST')
+    current_dt = datetime.now(JST)
+    default_date_obj = (current_dt - timedelta(hours=9)).date()
+    
+    input_date = st.date_input("日付を選択 (朝9時切替)", value=default_date_obj)
+
+    df_profit = load_profit_data()
+    search_date_str = input_date.strftime("%Y-%m-%d")
+    
+    init_day_mix, init_day_real = 0, 0
+    init_night_mix, init_night_real = 0, 0
+    
+    if not df_profit.empty:
+        row_day = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Day")]
+        if not row_day.empty:
+            init_day_mix = int(row_day.iloc[0]["MixDiff"])
+            init_day_real = int(row_day.iloc[0]["RealProfit"])
+        
+        row_night = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Night")]
+        if not row_night.empty:
+            init_night_mix = int(row_night.iloc[0]["MixDiff"])
+            init_night_real = int(row_night.iloc[0]["RealProfit"])
+
+    with st.form("daily_profit_form"):
+        st.markdown(f"### 対象日: **{input_date}**")
+        col_d, col_n = st.columns(2)
+        
+        with col_d:
+            st.info("🌞 9:00 - 21:00")
+            d_mix = st.number_input("MIX差", value=init_day_mix, key="d_mix")
+            d_real = st.number_input("実利益", value=init_day_real, key="d_real")
+            
+        with col_n:
+            st.success("🌙 21:00 - 33:00")
+            n_mix = st.number_input("MIX差", value=init_night_mix, key="n_mix")
+            n_real = st.number_input("実利益", value=init_night_real, key="n_real")
+            
+        st.markdown("---")
+        profit_pass = st.text_input("🔒 保存用パスワード", type="password", help="利益データを更新するにはパスワードが必要です")
+        
+        if st.form_submit_button("利益を保存"):
+            if profit_pass == "7777":
+                df_new = df_profit[df_profit["Date"] != search_date_str].copy()
+                new_rows = [
+                    {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
+                    {"Date": search_date_str, "TimeSlot": "Night", "MixDiff": n_mix, "RealProfit": n_real}
+                ]
+                df_new = pd.concat([df_new, pd.DataFrame(new_rows)], ignore_index=True)
+                save_profit_data(df_new)
+                st.success(f"{input_date} の利益データを保存しました！")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("パスワードが違います。権限がありません。")
 
 # --- メンバー管理画面 ---
 def page_members():
@@ -535,7 +607,7 @@ def page_members():
         
         if not df_mem.empty:
             edited_df = st.data_editor(
-                df_mem[["名前", "タイプ", "最大飜数", "最大飜数詳細", "最大飜数記録日", "役満回数"]], # ★記録日追加
+                df_mem[["名前", "タイプ", "最大飜数", "最大飜数詳細", "最大飜数記録日", "役満回数"]],
                 column_config={
                     "タイプ": st.column_config.SelectboxColumn(
                         "タイプ",
@@ -763,11 +835,11 @@ def page_input():
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
 
-    # ★全卓の本日データ
+    # 全卓の本日データ
     mask_all = df["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
     df_all_today = df[mask_all]
     
-    # ★選択中の卓の本日データ
+    # 選択中の卓の本日データ
     df_table_today = df_all_today[df_all_today["TableNo"] == current_table]
 
     st.subheader("🆕 新しい対局の入力")
@@ -878,60 +950,7 @@ def page_input():
 
     st.divider()
 
-    # --- 利益管理フォーム ---
-    st.markdown("### 💰 本日の利益管理")
-    df_profit = load_profit_data()
-    search_date_str = input_date.strftime("%Y-%m-%d")
-    
-    init_day_mix, init_day_real = 0, 0
-    init_night_mix, init_night_real = 0, 0
-    
-    if not df_profit.empty:
-        row_day = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Day")]
-        if not row_day.empty:
-            init_day_mix = int(row_day.iloc[0]["MixDiff"])
-            init_day_real = int(row_day.iloc[0]["RealProfit"])
-        
-        row_night = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Night")]
-        if not row_night.empty:
-            init_night_mix = int(row_night.iloc[0]["MixDiff"])
-            init_night_real = int(row_night.iloc[0]["RealProfit"])
-
-    with st.form("daily_profit_form"):
-        st.write(f"日付: **{input_date}**")
-        col_d, col_n = st.columns(2)
-        
-        with col_d:
-            st.info("🌞 9:00 - 21:00")
-            d_mix = st.number_input("MIX差", value=init_day_mix, key="d_mix")
-            d_real = st.number_input("実利益", value=init_day_real, key="d_real")
-            
-        with col_n:
-            st.success("🌙 21:00 - 33:00")
-            n_mix = st.number_input("MIX差", value=init_night_mix, key="n_mix")
-            n_real = st.number_input("実利益", value=init_night_real, key="n_real")
-            
-        st.markdown("---")
-        profit_pass = st.text_input("🔒 保存用パスワード", type="password", help="利益データを更新するにはパスワードが必要です")
-        
-        if st.form_submit_button("利益を保存"):
-            if profit_pass == "7777":
-                df_new = df_profit[df_profit["Date"] != search_date_str].copy()
-                new_rows = [
-                    {"Date": search_date_str, "TimeSlot": "Day", "MixDiff": d_mix, "RealProfit": d_real},
-                    {"Date": search_date_str, "TimeSlot": "Night", "MixDiff": n_mix, "RealProfit": n_real}
-                ]
-                df_new = pd.concat([df_new, pd.DataFrame(new_rows)], ignore_index=True)
-                save_profit_data(df_new)
-                st.success("利益データを保存しました")
-                time.sleep(1)
-                st.rerun()
-            else:
-                st.error("パスワードが違います。権限がありません。")
-
-    st.divider()
-
-    # ★変更: 本日の履歴を全卓対象にする
+    # 本日の履歴 (全卓)
     if not df_all_today.empty:
         st.markdown("### 📋 本日の履歴 (全卓)")
 
@@ -1035,7 +1054,6 @@ def page_history():
             default_player_idx = all_players.index(target_p)
         del st.session_state["jump_to_player"]
 
-    # --- 期間別統計 (集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
     
     if "論理日付" in df.columns:
@@ -1051,7 +1069,6 @@ def page_history():
     with c2:
         stats_time_range = st.selectbox("時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="stats_time")
     
-    # フィルタリング
     df_target = df.copy()
     
     if isinstance(stats_range, tuple) and len(stats_range) == 2:
@@ -1143,31 +1160,6 @@ def page_history():
         c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
         c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
         c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
-
-        df_profit = load_profit_data()
-        if not df_profit.empty:
-            df_profit["MixDiff"] = pd.to_numeric(df_profit["MixDiff"], errors='coerce').fillna(0)
-            df_profit["RealProfit"] = pd.to_numeric(df_profit["RealProfit"], errors='coerce').fillna(0)
-            df_profit["DateObj"] = pd.to_datetime(df_profit["Date"]).dt.date
-
-            df_p_target = df_profit.copy()
-            if isinstance(stats_range, tuple) and len(stats_range) == 2:
-                df_p_target = df_p_target[(df_p_target["DateObj"] >= start) & (df_p_target["DateObj"] <= end)]
-            elif isinstance(stats_range, tuple) and len(stats_range) == 1:
-                df_p_target = df_p_target[df_p_target["DateObj"] == start]
-            
-            if stats_time_range == "9:00-21:00":
-                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Day"]
-            elif stats_time_range == "21:00-33:00(翌9:00)":
-                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Night"]
-                
-            sum_mix = int(df_p_target["MixDiff"].sum())
-            sum_real = int(df_p_target["RealProfit"].sum())
-            
-            st.markdown("##### 💰 利益集計")
-            cp1, cp2 = st.columns(2)
-            cp1.metric("MIX差 (合計)", f"{sum_mix:,}")
-            cp2.metric("実利益 (合計)", f"{sum_real:,}")
 
         st.caption(f"卓組構成の割合 ({start} 〜 {end})")
         df_pattern = pd.DataFrame({
@@ -1489,15 +1481,15 @@ def page_history():
                     df_comp = pd.DataFrame(comp_data)
                     c_freq, c_good, c_bad = st.columns(3)
                     with c_freq:
-                        st.markdown("**同卓回数が多い**")
+                        st.markdown("** 同卓回数が多い**")
                         df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
                         st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                     with c_good:
-                        st.markdown("**相性が良い**")
+                        st.markdown("** 相性が良い **")
                         df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
                         st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
                     with c_bad:
-                        st.markdown("**相性が悪い**")
+                        st.markdown("** 相性が悪い )**")
                         df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
                         st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
@@ -1518,7 +1510,6 @@ def page_history():
                     current_date = ""
                     if "最大飜数詳細" in df_mem.columns:
                         current_detail = df_mem.at[idx, "最大飜数詳細"]
-                    # ★追加: 記録日を取得
                     if "最大飜数記録日" in df_mem.columns:
                         current_date = df_mem.at[idx, "最大飜数記録日"]
                 
@@ -1527,7 +1518,6 @@ def page_history():
                     with c_in1:
                         new_max = st.number_input("最大飜数", min_value=0, value=current_max)
                         new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail)
-                        # ★追加: 記録日入力欄
                         new_date = st.text_input("記録日 (例: 2026/02/20)", value=current_date)
                     with c_in2:
                         new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku)
@@ -1543,7 +1533,6 @@ def page_history():
                                 df_mem["最大飜数詳細"] = ""
                                 df_mem.at[idx, "最大飜数詳細"] = new_detail
                                 
-                            # ★追加: 記録日保存
                             if "最大飜数記録日" in df_mem.columns:
                                 df_mem.at[idx, "最大飜数記録日"] = new_date
                             else:
@@ -1567,7 +1556,6 @@ def page_history():
 def page_ranking():
     st.title("🏆 ランキング (通算)")
     
-    # 修正: 全員に表示
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
         st.rerun()
@@ -1738,7 +1726,6 @@ def page_ranking():
                     cols = ["順位", "名前", col]
                     if col == "最大飜数" and "最大飜数詳細" in res.columns:
                         cols.append("最大飜数詳細")
-                    # ★追加: 記録日を表示列に追加
                     if col == "最大飜数" and "最大飜数記録日" in res.columns:
                         cols.append("最大飜数記録日")
                         
@@ -1755,7 +1742,6 @@ def page_ranking():
                     cols = ["順位", "名前", col]
                     if col == "最大飜数" and "最大飜数詳細" in res.columns:
                         cols.append("最大飜数詳細")
-                    # ★追加: 記録日を表示列に追加
                     if col == "最大飜数" and "最大飜数記録日" in res.columns:
                         cols.append("最大飜数記録日")
                         
@@ -1807,6 +1793,8 @@ elif st.session_state["page"] == "edit":
     page_edit()
 elif st.session_state["page"] == "ranking":
     page_ranking()
+elif st.session_state["page"] == "profit":
+    page_profit()
 elif st.session_state["page"] == "logs":
     page_logs()
 else:
