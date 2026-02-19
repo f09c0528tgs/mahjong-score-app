@@ -1715,9 +1715,9 @@ def page_ranking():
     def show_mem_ranking(df_g, df_s, col, label):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
             if not df_g.empty:
-                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(20)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
@@ -1730,9 +1730,9 @@ def page_ranking():
                 else: st.info("データなし")
             else: st.info("データなし")
         with c2:
-            st.markdown("### 👔 スタッフ Top10")
+            st.markdown("### 👔 スタッフ Top20")
             if not df_s.empty:
-                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(20)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
