@@ -112,7 +112,6 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -121,7 +120,6 @@ SHEET_MEMBER = "members"
 SHEET_LOG = "logs"
 SHEET_PROFIT = "daily_profits"
 
-# 期待する列定義
 EXPECTED_COLS = [
     "GameNo", "TableNo", "SetNo", "日時", "備考",
     "Aさん", "Aタイプ", "A着順",
@@ -148,7 +146,6 @@ def fetch_data_fresh(conn, sheet_name):
             else:
                 raise
 
-# --- データ補正ロジック ---
 def process_score_df(df):
     if df.empty:
         return pd.DataFrame(columns=EXPECTED_COLS)
@@ -315,7 +312,6 @@ def get_all_member_names():
     sorted_data = sorted(formatted_list, key=lambda x: x["last_dt"], reverse=True)
     return [x["name"] for x in sorted_data]
 
-# --- 利益データ管理関数 ---
 def load_profit_data():
     conn = get_conn()
     try:
@@ -455,7 +451,6 @@ def render_paper_sheet(df):
 # 5. 各ページ画面
 # ==========================================
 
-# コールバック関数: 名前変更時にタイプを自動設定
 def update_type_by_name(key_name, key_type, type_map):
     name = st.session_state[key_name]
     if name in type_map:
@@ -471,11 +466,9 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
     c1, c2 = st.columns([1, 2])
     with c1:
         idx_val = get_idx_in_list(member_list, def_n) if def_n else None
-        # key作成
         k_name = f"n_{label}{key_suffix}"
         k_type = f"t_{label}{key_suffix}"
         
-        # 名前選択 (callbackでタイプ更新)
         name = st.selectbox(
             "名前", member_list, index=idx_val, key=k_name,
             on_change=update_type_by_name if type_map else None,
@@ -511,7 +504,6 @@ def page_home():
             st.session_state["page"] = "ranking"
             st.rerun()
         st.write("")
-        # ★追加: ホームに利益管理ボタン
         if st.button("💰 利益管理", use_container_width=True):
             st.session_state["page"] = "profit"
             st.rerun()
@@ -528,7 +520,7 @@ def page_home():
             st.session_state["page"] = "logs"
             st.rerun()
 
-# --- ★追加: 利益管理専用ページ ---
+# --- 利益管理専用ページ ---
 def page_profit():
     st.title("💰 利益管理")
     if st.button("🏠 ホームに戻る"):
@@ -835,11 +827,9 @@ def page_input():
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
 
-    # 全卓の本日データ
     mask_all = df["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
     df_all_today = df[mask_all]
     
-    # 選択中の卓の本日データ
     df_table_today = df_all_today[df_all_today["TableNo"] == current_table]
 
     st.subheader("🆕 新しい対局の入力")
@@ -950,7 +940,6 @@ def page_input():
 
     st.divider()
 
-    # 本日の履歴 (全卓)
     if not df_all_today.empty:
         st.markdown("### 📋 本日の履歴 (全卓)")
 
@@ -1044,16 +1033,22 @@ def page_history():
     if df.empty:
         st.info("データがありません")
         return
-    
-    default_player_idx = 0
-    all_players = get_all_member_names()
-    
+
+    # --- セッションステート初期化 (状態維持用) ---
+    if "hist_sel_date" not in st.session_state:
+        st.session_state.hist_sel_date = "(指定なし)"
+    if "hist_sel_time" not in st.session_state:
+        st.session_state.hist_sel_time = "全日"
+    if "hist_sel_player" not in st.session_state:
+        st.session_state.hist_sel_player = "(指定なし)"
+
     if "jump_to_player" in st.session_state:
-        target_p = st.session_state["jump_to_player"]
-        if target_p in all_players:
-            default_player_idx = all_players.index(target_p)
+        st.session_state.hist_sel_player = st.session_state["jump_to_player"]
+        st.session_state.hist_sel_date = "(指定なし)"
+        st.session_state.hist_sel_time = "全日"
         del st.session_state["jump_to_player"]
 
+    # --- 期間別統計 (集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
     
     if "論理日付" in df.columns:
@@ -1069,6 +1064,7 @@ def page_history():
     with c2:
         stats_time_range = st.selectbox("時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="stats_time")
     
+    # フィルタリング
     df_target = df.copy()
     
     if isinstance(stats_range, tuple) and len(stats_range) == 2:
@@ -1161,6 +1157,31 @@ def page_history():
         c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
         c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
 
+        df_profit = load_profit_data()
+        if not df_profit.empty:
+            df_profit["MixDiff"] = pd.to_numeric(df_profit["MixDiff"], errors='coerce').fillna(0)
+            df_profit["RealProfit"] = pd.to_numeric(df_profit["RealProfit"], errors='coerce').fillna(0)
+            df_profit["DateObj"] = pd.to_datetime(df_profit["Date"]).dt.date
+
+            df_p_target = df_profit.copy()
+            if isinstance(stats_range, tuple) and len(stats_range) == 2:
+                df_p_target = df_p_target[(df_p_target["DateObj"] >= start) & (df_p_target["DateObj"] <= end)]
+            elif isinstance(stats_range, tuple) and len(stats_range) == 1:
+                df_p_target = df_p_target[df_p_target["DateObj"] == start]
+            
+            if stats_time_range == "9:00-21:00":
+                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Day"]
+            elif stats_time_range == "21:00-33:00(翌9:00)":
+                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Night"]
+                
+            sum_mix = int(df_p_target["MixDiff"].sum())
+            sum_real = int(df_p_target["RealProfit"].sum())
+            
+            st.markdown("##### 💰 利益集計")
+            cp1, cp2 = st.columns(2)
+            cp1.metric("MIX差 (合計)", f"{sum_mix:,}")
+            cp2.metric("実利益 (合計)", f"{sum_real:,}")
+
         st.caption(f"卓組構成の割合 ({start} 〜 {end})")
         df_pattern = pd.DataFrame({
             "構成": list(pattern_counts.keys()),
@@ -1240,317 +1261,326 @@ def page_history():
 
     st.divider()
 
+    # --- 詳細検索 ---
     if "論理日付" in df.columns:
         valid_dates = [d for d in df["論理日付"].unique() if pd.notnull(d) and d != pd.Timestamp("1900-01-01").date()]
         unique_dates = sorted(valid_dates, reverse=True)
     else:
         unique_dates = []
 
+    all_players = get_all_member_names()
+    
+    date_options = ["(指定なし)"] + list(unique_dates)
+    time_options = ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"]
+    player_options = ["(指定なし)"] + list(all_players)
+
+    def get_idx(lst, val):
+        return lst.index(val) if val in lst else 0
+
     st.markdown("### 🔍 日付・人物ごとの詳細")
     with st.form("history_search_form"):
         c1, c2, c3 = st.columns(3)
         with c1: 
-            sel_date = st.selectbox("📅 日付を選択", ["(指定なし)"] + list(unique_dates))
+            sel_date = st.selectbox("📅 日付を選択", date_options, index=get_idx(date_options, st.session_state.hist_sel_date))
         with c2:
-            sel_time = st.selectbox("⏰ 時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="search_time")
+            sel_time = st.selectbox("⏰ 時間帯", time_options, index=get_idx(time_options, st.session_state.hist_sel_time))
         with c3: 
-            idx = default_player_idx + 1 if default_player_idx >= 0 else 0
-            sel_player = st.selectbox("👤 プレイヤーを選択", ["(指定なし)"] + list(all_players), index=idx)
+            sel_player = st.selectbox("👤 プレイヤーを選択", player_options, index=get_idx(player_options, st.session_state.hist_sel_player))
         submitted = st.form_submit_button("🔍 絞り込み表示")
     
     st.divider()
 
-    if default_player_idx >= 0 and not submitted:
-        submitted = True
-        sel_player = all_players[default_player_idx]
-        sel_date = "(指定なし)"
-        sel_time = "全日"
-
     if submitted:
-        if sel_date == "(指定なし)" and sel_player == "(指定なし)":
-            st.warning("⚠️ 日付またはプレイヤーを選択して「絞り込み表示」ボタンを押してください")
-            return
+        st.session_state.hist_sel_date = sel_date
+        st.session_state.hist_sel_time = sel_time
+        st.session_state.hist_sel_player = sel_player
 
-        df_filtered = df.copy()
-        
-        if sel_date != "(指定なし)":
-            df_filtered = df_filtered[df_filtered["論理日付"] == sel_date]
-        if sel_player != "(指定なし)":
-            df_filtered = df_filtered[
-                (df_filtered["Aさん"] == sel_player) | 
-                (df_filtered["Bさん"] == sel_player) | 
-                (df_filtered["Cさん"] == sel_player)
-            ]
-        
-        if sel_time == "9:00-21:00":
-            df_filtered = df_filtered[df_filtered["日時Obj"].dt.hour.between(9, 20)]
-        elif sel_time == "21:00-33:00(翌9:00)":
-            df_filtered = df_filtered[~df_filtered["日時Obj"].dt.hour.between(9, 20)]
+    active_date = st.session_state.hist_sel_date
+    active_time = st.session_state.hist_sel_time
+    active_player = st.session_state.hist_sel_player
 
-        if df_filtered.empty:
-            st.warning("条件に一致するデータが見つかりませんでした")
-        else:
-            if not df_filtered.empty:
-                st.markdown("### 📅 選択期間の集計")
-                total_games_day = len(df_filtered)
-                day_back_a = 0
-                day_back_b = 0
-                pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
-                pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+    if active_date == "(指定なし)" and active_player == "(指定なし)":
+        st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
+        return
 
-                for _, row in df_filtered.iterrows():
-                    note = str(row["備考"])
-                    discount = 0
-                    if note == "東１終了": discount = 1
-                    elif note == "２人飛ばし": discount = 2
-                    elif note == "５連勝〜": discount = 5
-                    
-                    winner_is_a = False
-                    winner_type = None
-                    try:
-                        r_a = int(float(row["A着順"]))
-                        r_b = int(float(row["B着順"]))
-                        r_c = int(float(row["C着順"]))
-                        
-                        if r_a == 1: winner_type = row["Aタイプ"]
-                        elif r_b == 1: winner_type = row["Bタイプ"]
-                        elif r_c == 1: winner_type = row["Cタイプ"]
-                        
-                        if winner_type in ["A客", "AS"]: winner_is_a = True
-                    except:
-                        pass
+    df_filtered = df.copy()
+    
+    if active_date != "(指定なし)":
+        df_filtered = df_filtered[df_filtered["論理日付"] == active_date]
+    if active_player != "(指定なし)":
+        df_filtered = df_filtered[
+            (df_filtered["Aさん"] == active_player) | 
+            (df_filtered["Bさん"] == active_player) | 
+            (df_filtered["Cさん"] == active_player)
+        ]
+    
+    if active_time == "9:00-21:00":
+        df_filtered = df_filtered[df_filtered["日時Obj"].dt.hour.between(9, 20)]
+    elif active_time == "21:00-33:00(翌9:00)":
+        df_filtered = df_filtered[~df_filtered["日時Obj"].dt.hour.between(9, 20)]
 
-                    if discount > 0 and winner_type:
-                        if winner_type == "A客": day_back_a += discount
-                        elif winner_type == "B客": day_back_b += discount
-                    
-                    p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
-                    a_side = sum(1 for t in p_types if t in ["A客", "AS"])
-                    
-                    key = None
-                    if a_side == 3: key = "A3人"
-                    elif a_side == 2: key = "A2人B1人"
-                    elif a_side == 1: key = "A1人B2人"
-                    elif a_side == 0: key = "B3人"
-                    
-                    if key:
-                        pattern_counts[key] += 1
-                        if winner_is_a: pattern_wins_a[key] += 1
+    if df_filtered.empty:
+        st.warning("条件に一致するデータが見つかりませんでした")
+    else:
+        if not df_filtered.empty:
+            st.markdown("### 📅 選択期間の集計")
+            total_games_day = len(df_filtered)
+            day_back_a = 0
+            day_back_b = 0
+            pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+            pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+
+            for _, row in df_filtered.iterrows():
+                note = str(row["備考"])
+                discount = 0
+                if note == "東１終了": discount = 1
+                elif note == "２人飛ばし": discount = 2
+                elif note == "５連勝〜": discount = 5
                 
-                c_s1, c_s2, c_s3 = st.columns(3)
-                c_s1.metric("ゲーム回数", f"{total_games_day} 回")
-                c_s2.metric("A客バック", f"{day_back_a} 枚")
-                c_s3.metric("B客バック", f"{day_back_b} 枚")
+                winner_is_a = False
+                winner_type = None
+                try:
+                    r_a = int(float(row["A着順"]))
+                    r_b = int(float(row["B着順"]))
+                    r_c = int(float(row["C着順"]))
+                    
+                    if r_a == 1: winner_type = row["Aタイプ"]
+                    elif r_b == 1: winner_type = row["Bタイプ"]
+                    elif r_c == 1: winner_type = row["Cタイプ"]
+                    
+                    if winner_type in ["A客", "AS"]: winner_is_a = True
+                except:
+                    pass
+
+                if discount > 0 and winner_type:
+                    if winner_type == "A客": day_back_a += discount
+                    elif winner_type == "B客": day_back_b += discount
                 
-                st.caption("卓組構成の割合")
-                df_pattern = pd.DataFrame({
-                    "構成": list(pattern_counts.keys()),
-                    "回数": list(pattern_counts.values())
-                })
-                total = df_pattern["回数"].sum()
-                if total > 0:
-                    df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
+                p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
+                a_side = sum(1 for t in p_types if t in ["A客", "AS"])
+                
+                key = None
+                if a_side == 3: key = "A3人"
+                elif a_side == 2: key = "A2人B1人"
+                elif a_side == 1: key = "A1人B2人"
+                elif a_side == 0: key = "B3人"
+                
+                if key:
+                    pattern_counts[key] += 1
+                    if winner_is_a: pattern_wins_a[key] += 1
+            
+            c_s1, c_s2, c_s3 = st.columns(3)
+            c_s1.metric("ゲーム回数", f"{total_games_day} 回")
+            c_s2.metric("A客バック", f"{day_back_a} 枚")
+            c_s3.metric("B客バック", f"{day_back_b} 枚")
+            
+            st.caption("卓組構成の割合")
+            df_pattern = pd.DataFrame({
+                "構成": list(pattern_counts.keys()),
+                "回数": list(pattern_counts.values())
+            })
+            total = df_pattern["回数"].sum()
+            if total > 0:
+                df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
+            else:
+                df_pattern["割合"] = "0.0%"
+
+            win_rates = []
+            for k in df_pattern["構成"]:
+                cnt = pattern_counts[k]
+                wins_a = pattern_wins_a[k]
+                wins_b = cnt - wins_a
+                if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
+                    rate_a = (wins_a / cnt) * 100
+                    rate_b = (wins_b / cnt) * 100
+                    win_rates.append(f"A: {rate_a:.0f}% / B: {rate_b:.0f}%")
                 else:
-                    df_pattern["割合"] = "0.0%"
+                    win_rates.append("-")
+            
+            df_pattern["勝率データ"] = win_rates
+            st.dataframe(df_pattern, hide_index=True, use_container_width=True)
+            st.divider()
 
-                win_rates = []
-                for k in df_pattern["構成"]:
-                    cnt = pattern_counts[k]
-                    wins_a = pattern_wins_a[k]
-                    wins_b = cnt - wins_a
-                    if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
-                        rate_a = (wins_a / cnt) * 100
-                        rate_b = (wins_b / cnt) * 100
-                        win_rates.append(f"A: {rate_a:.0f}% / B: {rate_b:.0f}%")
-                    else:
-                        win_rates.append("-")
+        if active_player != "(指定なし)":
+            st.markdown(f"#### 👤 {active_player} さんの成績")
+            ranks = []
+            played_dates = set()
+            compatibility = {}
+            player_seat_ranks = {"A": [], "B": [], "C": []}
+
+            for _, row in df_filtered.iterrows():
+                my_rank = None
+                my_seat = None
+                seats = ["A", "B", "C"]
                 
-                df_pattern["勝率データ"] = win_rates
-                st.dataframe(df_pattern, hide_index=True, use_container_width=True)
-                st.divider()
-
-            if sel_player != "(指定なし)":
-                st.markdown(f"#### 👤 {sel_player} さんの成績")
-                ranks = []
-                played_dates = set()
-                compatibility = {}
-                player_seat_ranks = {"A": [], "B": [], "C": []}
-
-                for _, row in df_filtered.iterrows():
-                    my_rank = None
-                    my_seat = None
-                    seats = ["A", "B", "C"]
+                for s in seats:
+                    if row[f"{s}さん"] == active_player:
+                        try:
+                            my_rank = int(float(row[f"{s}着順"]))
+                            my_seat = s
+                        except: pass
+                        break
+                
+                if my_rank:
+                    ranks.append(my_rank)
+                    played_dates.add(row["論理日付"])
+                    
+                    if my_seat in player_seat_ranks:
+                        player_seat_ranks[my_seat].append(my_rank)
                     
                     for s in seats:
-                        if row[f"{s}さん"] == sel_player:
-                            try:
-                                my_rank = int(float(row[f"{s}着順"]))
-                                my_seat = s
-                            except: pass
-                            break
-                    
-                    if my_rank:
-                        ranks.append(my_rank)
-                        played_dates.add(row["論理日付"])
+                        if s == my_seat: continue
+                        opp_name = row[f"{s}さん"]
+                        if not opp_name: continue
+                        try:
+                            opp_rank = int(float(row[f"{s}着順"]))
+                        except: opp_rank = 0
+                        if opp_rank == 0: continue
                         
-                        if my_seat in player_seat_ranks:
-                            player_seat_ranks[my_seat].append(my_rank)
-                        
-                        for s in seats:
-                            if s == my_seat: continue
-                            opp_name = row[f"{s}さん"]
-                            if not opp_name: continue
-                            try:
-                                opp_rank = int(float(row[f"{s}着順"]))
-                            except: opp_rank = 0
-                            if opp_rank == 0: continue
-                            
-                            if opp_name not in compatibility:
-                                compatibility[opp_name] = {"count": 0, "score": 0}
-                            compatibility[opp_name]["count"] += 1
-                            score = opp_rank - my_rank
-                            compatibility[opp_name]["score"] += score
+                        if opp_name not in compatibility:
+                            compatibility[opp_name] = {"count": 0, "score": 0}
+                        compatibility[opp_name]["count"] += 1
+                        score = opp_rank - my_rank
+                        compatibility[opp_name]["score"] += score
 
-                if ranks:
-                    games = len(ranks)
-                    avg = sum(ranks)/games
-                    c1 = ranks.count(1)
-                    c2_cnt = ranks.count(2)
-                    c3 = ranks.count(3)
-                    r1_rate = (c1 / games) * 100
-                    r2_rate = (c2_cnt / games) * 100
-                    r3_rate = (c3 / games) * 100
-                    
-                    stats_html = f"""
-                    <table class="stats-table"><thead><tr><th>総回数</th><th>平均着順</th><th>1着回数</th><th>2着回数</th><th>3着回数</th></tr></thead>
-                    <tbody><tr><td>{games} 回</td><td>{avg:.2f}</td><td>{c1} 回<span class="stats-sub">({r1_rate:.1f}%)</span></td><td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.1f}%)</span></td><td>{c3} 回<span class="stats-sub">({r3_rate:.1f}%)</span></td></tr></tbody></table>
-                    """
-                    st.markdown(stats_html, unsafe_allow_html=True)
-                    st.divider()
-                    
-                    p_seat_rows = []
-                    for s in ["A", "B", "C"]:
-                        rs = player_seat_ranks[s]
-                        c = len(rs)
-                        if c > 0:
-                            r1 = rs.count(1)
-                            r2 = rs.count(2)
-                            r3 = rs.count(3)
-                            avg = sum(rs)/c
-                            p_seat_rows.append({
-                                "席": f"{s}席",
-                                "打数": c,
-                                "平均着順": f"{avg:.2f}",
-                                "1着": f"{r1} ({r1/c*100:.1f}%)",
-                                "2着": f"{r2} ({r2/c*100:.1f}%)",
-                                "3着": f"{r3} ({r3/c*100:.1f}%)"
-                            })
-                    if p_seat_rows:
-                        st.markdown("##### 🪑 席別成績")
-                        st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
-                    
-                    st.divider()
-                    
-                    c_graph, c_dates = st.columns([2, 1])
-                    with c_graph:
-                        st.markdown("##### 📈 直近10戦の着順推移")
-                        recent_ranks = ranks[-10:]
-                        df_trend = pd.DataFrame({
-                            "戦数": range(1, len(recent_ranks) + 1),
-                            "着順": recent_ranks
-                        })
-                        line_chart = alt.Chart(df_trend).mark_line(point=True).encode(
-                            x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
-                            y=alt.Y("着順", scale=alt.Scale(domain=[3, 1]), title="着順"),
-                            tooltip=["戦数", "着順"]
-                        ).properties(height=300)
-                        st.altair_chart(line_chart, use_container_width=True)
-
-                    with c_dates:
-                        st.markdown("##### 📅 稼働日リスト")
-                        date_list = sorted(list(played_dates), reverse=True)
-                        st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
+            if ranks:
+                games = len(ranks)
+                avg = sum(ranks)/games
+                c1 = ranks.count(1)
+                c2_cnt = ranks.count(2)
+                c3 = ranks.count(3)
+                r1_rate = (c1 / games) * 100
+                r2_rate = (c2_cnt / games) * 100
+                r3_rate = (c3 / games) * 100
                 
-                if compatibility:
-                    st.divider()
-                    st.subheader("🤝 対戦相手データ (TOP5)")
-                    comp_data = []
-                    for name, data in compatibility.items():
-                        comp_data.append({"名前": name, "同卓回数": data["count"], "相性スコア": data["score"]})
-                    
-                    df_comp = pd.DataFrame(comp_data)
-                    c_freq, c_good, c_bad = st.columns(3)
-                    with c_freq:
-                        st.markdown("** 同卓回数が多い**")
-                        df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
-                        st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
-                    with c_good:
-                        st.markdown("** 相性が良い **")
-                        df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
-                        st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
-                    with c_bad:
-                        st.markdown("** 相性が悪い )**")
-                        df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
-                        st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
-
+                stats_html = f"""
+                <table class="stats-table"><thead><tr><th>総回数</th><th>平均着順</th><th>1着回数</th><th>2着回数</th><th>3着回数</th></tr></thead>
+                <tbody><tr><td>{games} 回</td><td>{avg:.2f}</td><td>{c1} 回<span class="stats-sub">({r1_rate:.1f}%)</span></td><td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.1f}%)</span></td><td>{c3} 回<span class="stats-sub">({r3_rate:.1f}%)</span></td></tr></tbody></table>
+                """
+                st.markdown(stats_html, unsafe_allow_html=True)
                 st.divider()
-                st.markdown("#### 🀄 個人記録の更新")
-                df_mem = load_member_data()
                 
-                current_max = 0
-                current_yaku = 0
-                target_idx = df_mem.index[df_mem["名前"] == sel_player].tolist()
+                p_seat_rows = []
+                for s in ["A", "B", "C"]:
+                    rs = player_seat_ranks[s]
+                    c = len(rs)
+                    if c > 0:
+                        r1 = rs.count(1)
+                        r2 = rs.count(2)
+                        r3 = rs.count(3)
+                        avg = sum(rs)/c
+                        p_seat_rows.append({
+                            "席": f"{s}席",
+                            "打数": c,
+                            "平均着順": f"{avg:.2f}",
+                            "1着": f"{r1} ({r1/c*100:.1f}%)",
+                            "2着": f"{r2} ({r2/c*100:.1f}%)",
+                            "3着": f"{r3} ({r3/c*100:.1f}%)"
+                        })
+                if p_seat_rows:
+                    st.markdown("##### 🪑 席別成績")
+                    st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
                 
-                if target_idx:
-                    idx = target_idx[0]
-                    current_max = int(df_mem.at[idx, "最大飜数"])
-                    current_yaku = int(df_mem.at[idx, "役満回数"])
-                    
-                    current_detail = ""
-                    current_date = ""
-                    if "最大飜数詳細" in df_mem.columns:
-                        current_detail = df_mem.at[idx, "最大飜数詳細"]
-                    if "最大飜数記録日" in df_mem.columns:
-                        current_date = df_mem.at[idx, "最大飜数記録日"]
+                st.divider()
                 
-                with st.form("update_personal_stats"):
-                    c_in1, c_in2 = st.columns(2)
-                    with c_in1:
-                        new_max = st.number_input("最大飜数", min_value=0, value=current_max)
-                        new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail)
-                        new_date = st.text_input("記録日 (例: 2026/02/20)", value=current_date)
-                    with c_in2:
-                        new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku)
-                    
-                    if st.form_submit_button("更新する"):
-                        if target_idx:
-                            df_mem.at[idx, "最大飜数"] = new_max
-                            df_mem.at[idx, "役満回数"] = new_yaku
-                            
-                            if "最大飜数詳細" in df_mem.columns:
-                                df_mem.at[idx, "最大飜数詳細"] = new_detail
-                            else:
-                                df_mem["最大飜数詳細"] = ""
-                                df_mem.at[idx, "最大飜数詳細"] = new_detail
-                                
-                            if "最大飜数記録日" in df_mem.columns:
-                                df_mem.at[idx, "最大飜数記録日"] = new_date
-                            else:
-                                df_mem["最大飜数記録日"] = ""
-                                df_mem.at[idx, "最大飜数記録日"] = new_date
-                                
-                            save_member_data(df_mem)
-                            st.success(f"{sel_player}さんの記録を更新しました！")
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
+                c_graph, c_dates = st.columns([2, 1])
+                with c_graph:
+                    st.markdown("##### 📈 直近10戦の着順推移")
+                    recent_ranks = ranks[-10:]
+                    df_trend = pd.DataFrame({
+                        "戦数": range(1, len(recent_ranks) + 1),
+                        "着順": recent_ranks
+                    })
+                    line_chart = alt.Chart(df_trend).mark_line(point=True).encode(
+                        x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
+                        y=alt.Y("着順", scale=alt.Scale(domain=[3, 1]), title="着順"),
+                        tooltip=["戦数", "着順"]
+                    ).properties(height=300)
+                    st.altair_chart(line_chart, use_container_width=True)
 
-            else:
-                st.markdown(f"#### 📝 集計表")
-                render_paper_sheet(df_filtered)
-    else:
-        st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
+                with c_dates:
+                    st.markdown("##### 📅 稼働日リスト")
+                    date_list = sorted(list(played_dates), reverse=True)
+                    st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
+            
+            if compatibility:
+                st.divider()
+                st.subheader("🤝 対戦相手データ (TOP5)")
+                comp_data = []
+                for name, data in compatibility.items():
+                    comp_data.append({"名前": name, "同卓回数": data["count"], "相性スコア": data["score"]})
+                
+                df_comp = pd.DataFrame(comp_data)
+                c_freq, c_good, c_bad = st.columns(3)
+                with c_freq:
+                    st.markdown("** 同卓回数が多い**")
+                    df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
+                    st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
+                with c_good:
+                    st.markdown("** 相性が良い **")
+                    df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
+                    st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+                with c_bad:
+                    st.markdown("** 相性が悪い )**")
+                    df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
+                    st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+
+            st.divider()
+            st.markdown("#### 🀄 個人記録の更新")
+            df_mem = load_member_data()
+            
+            current_max = 0
+            current_yaku = 0
+            target_idx = df_mem.index[df_mem["名前"] == active_player].tolist()
+            
+            if target_idx:
+                idx = target_idx[0]
+                current_max = int(df_mem.at[idx, "最大飜数"])
+                current_yaku = int(df_mem.at[idx, "役満回数"])
+                
+                current_detail = ""
+                current_date = ""
+                if "最大飜数詳細" in df_mem.columns:
+                    current_detail = df_mem.at[idx, "最大飜数詳細"]
+                if "最大飜数記録日" in df_mem.columns:
+                    current_date = df_mem.at[idx, "最大飜数記録日"]
+            
+            with st.form("update_personal_stats"):
+                c_in1, c_in2 = st.columns(2)
+                with c_in1:
+                    new_max = st.number_input("最大飜数", min_value=0, value=current_max)
+                    new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail)
+                    new_date = st.text_input("記録日 (例: 2026/02/20)", value=current_date)
+                with c_in2:
+                    new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku)
+                
+                if st.form_submit_button("更新する"):
+                    if target_idx:
+                        df_mem.at[idx, "最大飜数"] = new_max
+                        df_mem.at[idx, "役満回数"] = new_yaku
+                        
+                        if "最大飜数詳細" in df_mem.columns:
+                            df_mem.at[idx, "最大飜数詳細"] = new_detail
+                        else:
+                            df_mem["最大飜数詳細"] = ""
+                            df_mem.at[idx, "最大飜数詳細"] = new_detail
+                            
+                        if "最大飜数記録日" in df_mem.columns:
+                            df_mem.at[idx, "最大飜数記録日"] = new_date
+                        else:
+                            df_mem["最大飜数記録日"] = ""
+                            df_mem.at[idx, "最大飜数記録日"] = new_date
+                            
+                        save_member_data(df_mem)
+                        st.success(f"{active_player}さんの記録を更新しました！")
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
+
+        else:
+            st.markdown(f"#### 📝 集計表")
+            render_paper_sheet(df_filtered)
 
 # --- ランキング画面 ---
 def page_ranking():
