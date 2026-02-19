@@ -112,6 +112,7 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
+
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -1290,15 +1291,19 @@ def page_history():
     
     st.divider()
 
+    # ★修正: フォームが送信された時にセッションステートを更新して即座にリロードする
     if submitted:
         st.session_state.hist_sel_date = sel_date
         st.session_state.hist_sel_time = sel_time
         st.session_state.hist_sel_player = sel_player
+        st.rerun() # ← これにより表示ズレを防止
 
+    # 常にセッションステートの値を正として処理
     active_date = st.session_state.hist_sel_date
     active_time = st.session_state.hist_sel_time
     active_player = st.session_state.hist_sel_player
 
+    # 何も指定されていない場合はここで終了
     if active_date == "(指定なし)" and active_player == "(指定なし)":
         st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
         return
@@ -1511,17 +1516,20 @@ def page_history():
                     comp_data.append({"名前": name, "同卓回数": data["count"], "相性スコア": data["score"]})
                 
                 df_comp = pd.DataFrame(comp_data)
+                
+                # ★修正: 5列ではなく、表示するデータ数を.head(5)にし、画面レイアウトは3列のまま維持
                 c_freq, c_good, c_bad = st.columns(3)
+                
                 with c_freq:
-                    st.markdown("** 同卓回数が多い**")
+                    st.markdown("**同卓回数が多い**")
                     df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                 with c_good:
-                    st.markdown("** 相性が良い **")
+                    st.markdown("**相性が良い**")
                     df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
                 with c_bad:
-                    st.markdown("** 相性が悪い )**")
+                    st.markdown("**相性が悪い**")
                     df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
                     st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
@@ -1747,9 +1755,9 @@ def page_ranking():
     def show_mem_ranking(df_g, df_s, col, label):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
             if not df_g.empty:
-                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(20)
+                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(10)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
@@ -1763,9 +1771,9 @@ def page_ranking():
                 else: st.info("データなし")
             else: st.info("データなし")
         with c2:
-            st.markdown("### 👔 スタッフ Top20")
+            st.markdown("### 👔 スタッフ Top10")
             if not df_s.empty:
-                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(20)
+                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(10)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
