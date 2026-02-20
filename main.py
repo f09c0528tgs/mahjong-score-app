@@ -131,7 +131,8 @@ EXPECTED_COLS = [
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=60)
+# メンバーやログなど、スコア以外のシート取得用（10分キャッシュ）
+@st.cache_data(ttl=600)
 def fetch_data_cached(_conn, sheet_name):
     return _conn.read(worksheet=sheet_name, ttl=0)
 
@@ -178,15 +179,17 @@ def process_score_df(df):
         
     return df
 
+# スコアデータは整形済みのものを10分間キャッシュする（超高速化）
+@st.cache_data(ttl=600)
 def load_score_data():
     conn = get_conn()
     try:
-        df = fetch_data_cached(conn, SHEET_SCORE)
+        df = conn.read(worksheet=SHEET_SCORE, ttl=0)
         processed_df = process_score_df(df)
         
         if processed_df is None:
-            fetch_data_cached.clear()
-            df = fetch_data_cached(conn, SHEET_SCORE)
+            st.cache_data.clear()
+            df = conn.read(worksheet=SHEET_SCORE, ttl=0)
             processed_df = process_score_df(df)
             
         if processed_df is None:
@@ -228,7 +231,7 @@ def save_score_data(df):
     
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
     time.sleep(1)
-    fetch_data_cached.clear()
+    st.cache_data.clear() # データ更新時に全キャッシュをクリア
 
 def save_action_log(action, game_no, detail=""):
     conn = get_conn()
@@ -247,7 +250,7 @@ def save_action_log(action, game_no, detail=""):
     
     df_log = pd.concat([df_log, new_log], ignore_index=True)
     conn.update(worksheet=SHEET_LOG, data=df_log)
-    fetch_data_cached.clear()
+    st.cache_data.clear()
 
 def load_log_data():
     conn = get_conn()
@@ -283,7 +286,7 @@ def load_member_data():
 def save_member_data(df):
     conn = get_conn()
     conn.update(worksheet=SHEET_MEMBER, data=df)
-    fetch_data_cached.clear()
+    st.cache_data.clear()
 
 def get_all_member_names():
     df_mem = load_member_data()
@@ -327,7 +330,7 @@ def save_profit_data(df):
     try:
         conn.update(worksheet=SHEET_PROFIT, data=df)
         time.sleep(1)
-        fetch_data_cached.clear()
+        st.cache_data.clear()
     except Exception as e:
         if "WorksheetNotFound" in str(e):
             st.error(f"エラー: スプレッドシートに '{SHEET_PROFIT}' という名前のシートが見つかりません。")
@@ -739,7 +742,7 @@ def page_edit():
             st.rerun()
 
         if submit_update:
-            fetch_data_cached.clear()
+            st.cache_data.clear()
             df_latest = load_score_data_fresh()
             
             if edit_id not in df_latest["GameNo"].values:
@@ -785,7 +788,7 @@ def page_edit():
                     st.rerun()
         
         if submit_delete:
-            fetch_data_cached.clear()
+            st.cache_data.clear()
             df_latest = load_score_data_fresh()
             
             if edit_id in df_latest["GameNo"].values:
@@ -888,7 +891,7 @@ def page_input():
             st.error("⚠️ 名前が選択されていません！")
         else:
             with st.spinner("サーバーに書き込み中..."):
-                fetch_data_cached.clear()
+                st.cache_data.clear()
                 try:
                     df_latest = load_score_data_fresh()
                 except:
@@ -1035,9 +1038,18 @@ def page_history():
         st.info("データがありません")
         return
 
+    if "論理日付" in df.columns:
+        min_date = df["論理日付"].min()
+        max_date = df["論理日付"].max()
+    else:
+        min_date = date.today()
+        max_date = date.today()
+
     # --- セッションステート初期化 (状態維持用) ---
-    if "hist_sel_date" not in st.session_state:
-        st.session_state.hist_sel_date = "(指定なし)"
+    if "hist_sel_start" not in st.session_state:
+        st.session_state.hist_sel_start = min_date
+    if "hist_sel_end" not in st.session_state:
+        st.session_state.hist_sel_end = max_date
     if "hist_sel_time" not in st.session_state:
         st.session_state.hist_sel_time = "全日"
     if "hist_sel_player" not in st.session_state:
@@ -1045,19 +1057,13 @@ def page_history():
 
     if "jump_to_player" in st.session_state:
         st.session_state.hist_sel_player = st.session_state["jump_to_player"]
-        st.session_state.hist_sel_date = "(指定なし)"
+        st.session_state.hist_sel_start = min_date
+        st.session_state.hist_sel_end = max_date
         st.session_state.hist_sel_time = "全日"
         del st.session_state["jump_to_player"]
 
-    # --- 期間別統計 (集計) ---
+    # --- 期間別統計 (全体集計) ---
     st.markdown("### 📈 期間別統計 (集計)")
-    
-    if "論理日付" in df.columns:
-        min_date = df["論理日付"].min()
-        max_date = df["論理日付"].max()
-    else:
-        min_date = date.today()
-        max_date = date.today()
 
     c1, c2 = st.columns([2, 1])
     with c1:
@@ -1069,14 +1075,14 @@ def page_history():
     df_target = df.copy()
     
     if isinstance(stats_range, tuple) and len(stats_range) == 2:
-        start, end = stats_range
-        df_target = df_target[(df_target["論理日付"] >= start) & (df_target["論理日付"] <= end)]
+        start_dt, end_dt = stats_range
+        df_target = df_target[(df_target["論理日付"] >= start_dt) & (df_target["論理日付"] <= end_dt)]
     elif isinstance(stats_range, tuple) and len(stats_range) == 1:
-        start = stats_range[0]
-        end = start 
-        df_target = df_target[df_target["論理日付"] == start]
+        start_dt = stats_range[0]
+        end_dt = start_dt 
+        df_target = df_target[df_target["論理日付"] == start_dt]
     else:
-        start, end = min_date, max_date
+        start_dt, end_dt = min_date, max_date
     
     if stats_time_range == "9:00-21:00":
         df_target = df_target[df_target["日時Obj"].dt.hour.between(9, 20)]
@@ -1166,9 +1172,9 @@ def page_history():
 
             df_p_target = df_profit.copy()
             if isinstance(stats_range, tuple) and len(stats_range) == 2:
-                df_p_target = df_p_target[(df_p_target["DateObj"] >= start) & (df_p_target["DateObj"] <= end)]
+                df_p_target = df_p_target[(df_p_target["DateObj"] >= start_dt) & (df_p_target["DateObj"] <= end_dt)]
             elif isinstance(stats_range, tuple) and len(stats_range) == 1:
-                df_p_target = df_p_target[df_p_target["DateObj"] == start]
+                df_p_target = df_p_target[df_p_target["DateObj"] == start_dt]
             
             if stats_time_range == "9:00-21:00":
                 df_p_target = df_p_target[df_p_target["TimeSlot"] == "Day"]
@@ -1183,7 +1189,7 @@ def page_history():
             cp1.metric("MIX差 (合計)", f"{sum_mix:,}")
             cp2.metric("実利益 (合計)", f"{sum_real:,}")
 
-        st.caption(f"卓組構成の割合 ({start} 〜 {end})")
+        st.caption(f"卓組構成の割合 ({start_dt} 〜 {end_dt})")
         df_pattern = pd.DataFrame({
             "構成": list(pattern_counts.keys()),
             "回数": list(pattern_counts.values())
@@ -1262,27 +1268,22 @@ def page_history():
 
     st.divider()
 
-    # --- 詳細検索 ---
-    if "論理日付" in df.columns:
-        valid_dates = [d for d in df["論理日付"].unique() if pd.notnull(d) and d != pd.Timestamp("1900-01-01").date()]
-        unique_dates = sorted(valid_dates, reverse=True)
-    else:
-        unique_dates = []
-
+    # --- 詳細検索 (期間 & 個人) ---
     all_players = get_all_member_names()
-    
-    date_options = ["(指定なし)"] + list(unique_dates)
     time_options = ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"]
     player_options = ["(指定なし)"] + list(all_players)
 
     def get_idx(lst, val):
         return lst.index(val) if val in lst else 0
 
-    st.markdown("### 🔍 日付・人物ごとの詳細")
+    st.markdown("### 🔍 期間・人物ごとの詳細")
     with st.form("history_search_form"):
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3 = st.columns([1.5, 1, 1]) 
         with c1: 
-            sel_date = st.selectbox("📅 日付を選択", date_options, index=get_idx(date_options, st.session_state.hist_sel_date))
+            sel_date_range = st.date_input(
+                "📅 期間を選択", 
+                value=(st.session_state.hist_sel_start, st.session_state.hist_sel_end)
+            )
         with c2:
             sel_time = st.selectbox("⏰ 時間帯", time_options, index=get_idx(time_options, st.session_state.hist_sel_time))
         with c3: 
@@ -1291,27 +1292,35 @@ def page_history():
     
     st.divider()
 
-    # ★修正: フォームが送信された時にセッションステートを更新して即座にリロードする
     if submitted:
-        st.session_state.hist_sel_date = sel_date
+        if isinstance(sel_date_range, tuple) and len(sel_date_range) == 2:
+            st.session_state.hist_sel_start = sel_date_range[0]
+            st.session_state.hist_sel_end = sel_date_range[1]
+        elif isinstance(sel_date_range, tuple) and len(sel_date_range) == 1:
+            st.session_state.hist_sel_start = sel_date_range[0]
+            st.session_state.hist_sel_end = sel_date_range[0]
+        elif isinstance(sel_date_range, date): 
+            st.session_state.hist_sel_start = sel_date_range
+            st.session_state.hist_sel_end = sel_date_range
+            
         st.session_state.hist_sel_time = sel_time
         st.session_state.hist_sel_player = sel_player
-        st.rerun() # ← これにより表示ズレを防止
+        st.rerun() 
 
-    # 常にセッションステートの値を正として処理
-    active_date = st.session_state.hist_sel_date
+    active_start = st.session_state.hist_sel_start
+    active_end = st.session_state.hist_sel_end
     active_time = st.session_state.hist_sel_time
     active_player = st.session_state.hist_sel_player
 
-    # 何も指定されていない場合はここで終了
-    if active_date == "(指定なし)" and active_player == "(指定なし)":
+    if not active_start and active_player == "(指定なし)":
         st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
         return
 
     df_filtered = df.copy()
     
-    if active_date != "(指定なし)":
-        df_filtered = df_filtered[df_filtered["論理日付"] == active_date]
+    if active_start and active_end:
+        df_filtered = df_filtered[(df_filtered["論理日付"] >= active_start) & (df_filtered["論理日付"] <= active_end)]
+    
     if active_player != "(指定なし)":
         df_filtered = df_filtered[
             (df_filtered["Aさん"] == active_player) | 
@@ -1517,19 +1526,18 @@ def page_history():
                 
                 df_comp = pd.DataFrame(comp_data)
                 
-                # ★修正: 5列ではなく、表示するデータ数を.head(5)にし、画面レイアウトは3列のまま維持
                 c_freq, c_good, c_bad = st.columns(3)
                 
                 with c_freq:
-                    st.markdown("**同卓回数が多い**")
+                    st.markdown("**👬 同卓回数が多い**")
                     df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                 with c_good:
-                    st.markdown("**相性が良い**")
+                    st.markdown("**相性が良い **")
                     df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
                 with c_bad:
-                    st.markdown("**相性が悪い**")
+                    st.markdown("**相性が悪い **")
                     df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
                     st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
@@ -1755,9 +1763,9 @@ def page_ranking():
     def show_mem_ranking(df_g, df_s, col, label):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
             if not df_g.empty:
-                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(20)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
@@ -1771,9 +1779,9 @@ def page_ranking():
                 else: st.info("データなし")
             else: st.info("データなし")
         with c2:
-            st.markdown("### 👔 スタッフ Top10")
+            st.markdown("### 👔 スタッフ Top20")
             if not df_s.empty:
-                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(20)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
