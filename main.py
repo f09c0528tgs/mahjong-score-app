@@ -112,7 +112,6 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
-
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -131,7 +130,6 @@ EXPECTED_COLS = [
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-# メンバーやログなど、スコア以外のシート取得用（10分キャッシュ）
 @st.cache_data(ttl=600)
 def fetch_data_cached(_conn, sheet_name):
     return _conn.read(worksheet=sheet_name, ttl=0)
@@ -179,7 +177,6 @@ def process_score_df(df):
         
     return df
 
-# スコアデータは整形済みのものを10分間キャッシュする（超高速化）
 @st.cache_data(ttl=600)
 def load_score_data():
     conn = get_conn()
@@ -231,7 +228,7 @@ def save_score_data(df):
     
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
     time.sleep(1)
-    st.cache_data.clear() # データ更新時に全キャッシュをクリア
+    st.cache_data.clear() 
 
 def save_action_log(action, game_no, detail=""):
     conn = get_conn()
@@ -496,8 +493,41 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
 # --- ホーム画面 ---
 def page_home():
     st.title("🀄 ぱいん成績管理")
-    st.write("")
     
+    # --- リアルタイムモニター ---
+    df = load_score_data()
+    JST = timezone(timedelta(hours=9), 'JST')
+    now_jst = datetime.now(JST)
+    logical_today = (now_jst - timedelta(hours=9)).date()
+    
+    st.markdown("### 📡 現在の卓状況 (リアルタイムモニター)")
+    st.caption(f"本日の稼働状況 ({logical_today})")
+    
+    df_today = df[df["論理日付"] == logical_today]
+    c_m1, c_m2, c_m3 = st.columns(3)
+    cols_m = [c_m1, c_m2, c_m3]
+    
+    for i, t in enumerate([1, 2, 3]):
+        with cols_m[i]:
+            df_t = df_today[df_today["TableNo"] == t]
+            if not df_t.empty:
+                last_game = df_t.iloc[-1]
+                try:
+                    time_str = pd.to_datetime(last_game["日時"]).strftime('%H:%M')
+                except:
+                    time_str = "--:--"
+                st.success(f"**【 {t}卓 】** (第 {int(last_game['SetNo'])} セット)\n\n"
+                           f"⏱ 最新記録: {time_str}\n\n"
+                           f"👤 {last_game['Aさん']}\n\n"
+                           f"👤 {last_game['Bさん']}\n\n"
+                           f"👤 {last_game['Cさん']}")
+            else:
+                st.info(f"**【 {t}卓 】**\n\n\n💤 稼働なし\n\n\n")
+                
+    st.divider()
+    
+    # --- メニュー ---
+    st.markdown("### 🗂 メニュー")
     c1, c2 = st.columns(2)
     with c1:
         if st.button("📝 成績をつける", type="primary", use_container_width=True):
@@ -511,6 +541,10 @@ def page_home():
         if st.button("💰 利益管理", use_container_width=True):
             st.session_state["page"] = "profit"
             st.rerun()
+        st.write("")
+        if st.button("⚔️ 直接対決 (vs)", use_container_width=True):
+            st.session_state["page"] = "vs"
+            st.rerun()
     with c2:
         if st.button("📊 データを見る", use_container_width=True):
             st.session_state["page"] = "history"
@@ -523,6 +557,86 @@ def page_home():
         if st.button("📜 操作ログ", use_container_width=True):
             st.session_state["page"] = "logs"
             st.rerun()
+        st.write("")
+
+# --- 直接対決 (vs) 画面 ---
+def page_vs():
+    st.title("⚔️ 直接対決 (Head-to-Head)")
+    if st.button("🏠 ホームに戻る"):
+        st.session_state["page"] = "home"
+        st.rerun()
+
+    df = load_score_data()
+    all_players = get_all_member_names()
+
+    if df.empty or len(all_players) < 2:
+        st.info("比較するデータが不足しています。")
+        return
+
+    st.markdown("#### 比較したい2人を選択してください")
+    c1, c2 = st.columns(2)
+    with c1: 
+        p1 = st.selectbox("プレイヤー1 (🟥)", all_players, index=0)
+    with c2: 
+        p2 = st.selectbox("プレイヤー2 (🟦)", all_players, index=1 if len(all_players)>1 else 0)
+
+    if p1 == p2:
+        st.warning("⚠️ 異なるプレイヤーを選択してください")
+        return
+
+    # 同卓データの抽出
+    mask_p1 = (df["Aさん"] == p1) | (df["Bさん"] == p1) | (df["Cさん"] == p1)
+    mask_p2 = (df["Aさん"] == p2) | (df["Bさん"] == p2) | (df["Cさん"] == p2)
+    df_vs = df[mask_p1 & mask_p2].copy()
+
+    if df_vs.empty:
+        st.info(f"「{p1}」さんと「{p2}」さんが同卓した記録はありません。")
+        return
+
+    def get_rank(row, p):
+        if row["Aさん"] == p: return int(float(row["A着順"]))
+        if row["Bさん"] == p: return int(float(row["B着順"]))
+        if row["Cさん"] == p: return int(float(row["C着順"]))
+        return 99
+
+    df_vs["P1_Rank"] = df_vs.apply(lambda row: get_rank(row, p1), axis=1)
+    df_vs["P2_Rank"] = df_vs.apply(lambda row: get_rank(row, p2), axis=1)
+
+    total_games = len(df_vs)
+    p1_wins = (df_vs["P1_Rank"] < df_vs["P2_Rank"]).sum()
+    p2_wins = (df_vs["P2_Rank"] < df_vs["P1_Rank"]).sum()
+
+    p1_avg = df_vs["P1_Rank"].mean()
+    p2_avg = df_vs["P2_Rank"].mean()
+
+    p1_r1 = (df_vs["P1_Rank"] == 1).sum()
+    p1_r2 = (df_vs["P1_Rank"] == 2).sum()
+    p1_r3 = (df_vs["P1_Rank"] == 3).sum()
+
+    p2_r1 = (df_vs["P2_Rank"] == 1).sum()
+    p2_r2 = (df_vs["P2_Rank"] == 2).sum()
+    p2_r3 = (df_vs["P2_Rank"] == 3).sum()
+
+    st.divider()
+    st.markdown(f"### 🥊 {p1} 🆚 {p2} (同卓: {total_games} 回)")
+
+    c_vs1, c_vs2 = st.columns(2)
+    c_vs1.metric(f"🟥 {p1} の先着数", f"{p1_wins} 勝", f"直接対決 勝率: {p1_wins/total_games*100:.1f}%")
+    c_vs2.metric(f"🟦 {p2} の先着数", f"{p2_wins} 勝", f"直接対決 勝率: {p2_wins/total_games*100:.1f}%")
+
+    st.markdown("#### 📊 同卓時の成績比較")
+    comp_data = {
+        "プレイヤー": [f"🟥 {p1}", f"🟦 {p2}"],
+        "平均着順": [f"{p1_avg:.2f}", f"{p2_avg:.2f}"],
+        "1着回数": [f"{p1_r1} ({p1_r1/total_games*100:.1f}%)", f"{p2_r1} ({p2_r1/total_games*100:.1f}%)"],
+        "2着回数": [f"{p1_r2} ({p1_r2/total_games*100:.1f}%)", f"{p2_r2} ({p2_r2/total_games*100:.1f}%)"],
+        "3着回数": [f"{p1_r3} ({p1_r3/total_games*100:.1f}%)", f"{p2_r3} ({p2_r3/total_games*100:.1f}%)"],
+    }
+    st.dataframe(pd.DataFrame(comp_data), hide_index=True, use_container_width=True)
+
+    st.markdown("#### 📜 最近の同卓ログ (直近10件)")
+    recent_vs = df_vs.sort_values("日時Obj", ascending=False).head(10)
+    render_paper_sheet(recent_vs)
 
 # --- 利益管理専用ページ ---
 def page_profit():
@@ -1529,15 +1643,15 @@ def page_history():
                 c_freq, c_good, c_bad = st.columns(3)
                 
                 with c_freq:
-                    st.markdown("**👬 同卓回数が多い**")
+                    st.markdown("**同卓回数が多い**")
                     df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                 with c_good:
-                    st.markdown("**相性が良い **")
+                    st.markdown("**相性が良い**")
                     df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
                 with c_bad:
-                    st.markdown("**相性が悪い **")
+                    st.markdown("**相性が悪い**")
                     df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
                     st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
@@ -1841,6 +1955,8 @@ elif st.session_state["page"] == "ranking":
     page_ranking()
 elif st.session_state["page"] == "profit":
     page_profit()
+elif st.session_state["page"] == "vs":
+    page_vs()
 elif st.session_state["page"] == "logs":
     page_logs()
 else:
