@@ -494,38 +494,6 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
 def page_home():
     st.title("🀄 ぱいん成績管理")
     
-    # --- リアルタイムモニター ---
-    df = load_score_data()
-    JST = timezone(timedelta(hours=9), 'JST')
-    now_jst = datetime.now(JST)
-    logical_today = (now_jst - timedelta(hours=9)).date()
-    
-    st.markdown("### 📡 現在の卓状況 (リアルタイムモニター)")
-    st.caption(f"本日の稼働状況 ({logical_today})")
-    
-    df_today = df[df["論理日付"] == logical_today]
-    c_m1, c_m2, c_m3 = st.columns(3)
-    cols_m = [c_m1, c_m2, c_m3]
-    
-    for i, t in enumerate([1, 2, 3]):
-        with cols_m[i]:
-            df_t = df_today[df_today["TableNo"] == t]
-            if not df_t.empty:
-                last_game = df_t.iloc[-1]
-                try:
-                    time_str = pd.to_datetime(last_game["日時"]).strftime('%H:%M')
-                except:
-                    time_str = "--:--"
-                st.success(f"**【 {t}卓 】** (第 {int(last_game['SetNo'])} セット)\n\n"
-                           f"⏱ 最新記録: {time_str}\n\n"
-                           f"👤 {last_game['Aさん']}\n\n"
-                           f"👤 {last_game['Bさん']}\n\n"
-                           f"👤 {last_game['Cさん']}")
-            else:
-                st.info(f"**【 {t}卓 】**\n\n\n💤 稼働なし\n\n\n")
-                
-    st.divider()
-    
     # --- メニュー ---
     st.markdown("### 🗂 メニュー")
     c1, c2 = st.columns(2)
@@ -621,16 +589,16 @@ def page_vs():
     st.markdown(f"### 🥊 {p1} 🆚 {p2} (同卓: {total_games} 回)")
 
     c_vs1, c_vs2 = st.columns(2)
-    c_vs1.metric(f"🟥 {p1} の先着数", f"{p1_wins} 勝", f"直接対決 勝率: {p1_wins/total_games*100:.1f}%")
-    c_vs2.metric(f"🟦 {p2} の先着数", f"{p2_wins} 勝", f"直接対決 勝率: {p2_wins/total_games*100:.1f}%")
+    c_vs1.metric(f"🟥 {p1} の先着数", f"{p1_wins} 勝", f"直接対決 勝率: {p1_wins/total_games*100:.2f}%")
+    c_vs2.metric(f"🟦 {p2} の先着数", f"{p2_wins} 勝", f"直接対決 勝率: {p2_wins/total_games*100:.2f}%")
 
     st.markdown("#### 📊 同卓時の成績比較")
     comp_data = {
         "プレイヤー": [f"🟥 {p1}", f"🟦 {p2}"],
-        "平均着順": [f"{p1_avg:.2f}", f"{p2_avg:.2f}"],
-        "1着回数": [f"{p1_r1} ({p1_r1/total_games*100:.1f}%)", f"{p2_r1} ({p2_r1/total_games*100:.1f}%)"],
-        "2着回数": [f"{p1_r2} ({p1_r2/total_games*100:.1f}%)", f"{p2_r2} ({p2_r2/total_games*100:.1f}%)"],
-        "3着回数": [f"{p1_r3} ({p1_r3/total_games*100:.1f}%)", f"{p2_r3} ({p2_r3/total_games*100:.1f}%)"],
+        "平均着順": [f"{p1_avg:.4f}", f"{p2_avg:.4f}"],
+        "1着回数": [f"{p1_r1} ({p1_r1/total_games*100:.2f}%)", f"{p2_r1} ({p2_r1/total_games*100:.2f}%)"],
+        "2着回数": [f"{p1_r2} ({p1_r2/total_games*100:.2f}%)", f"{p2_r2} ({p2_r2/total_games*100:.2f}%)"],
+        "3着回数": [f"{p1_r3} ({p1_r3/total_games*100:.2f}%)", f"{p2_r3} ({p2_r3/total_games*100:.2f}%)"],
     }
     st.dataframe(pd.DataFrame(comp_data), hide_index=True, use_container_width=True)
 
@@ -1341,9 +1309,9 @@ def page_history():
             ).reset_index()
 
             def fmt(row, col):
-                return f"{row[col]} ({row[col]/row['games']*100:.1f}%)"
+                return f"{row[col]} ({row[col]/row['games']*100:.2f}%)"
 
-            stats_by_type["avg"] = stats_by_type["avg"].map('{:.2f}'.format)
+            stats_by_type["avg"] = stats_by_type["avg"].map('{:.4f}'.format)
             stats_by_type["1着"] = stats_by_type.apply(lambda x: fmt(x, "r1"), axis=1)
             stats_by_type["2着"] = stats_by_type.apply(lambda x: fmt(x, "r2"), axis=1)
             stats_by_type["3着"] = stats_by_type.apply(lambda x: fmt(x, "r3"), axis=1)
@@ -1370,10 +1338,10 @@ def page_history():
                 seat_rows.append({
                     "席": f"{s}席",
                     "打数": c,
-                    "平均着順": f"{avg:.2f}",
-                    "1着": f"{d['1']} ({r1_r:.1f}%)",
-                    "2着": f"{d['2']} ({r2_r:.1f}%)",
-                    "3着": f"{d['3']} ({r3_r:.1f}%)"
+                    "平均着順": f"{avg:.4f}",
+                    "1着": f"{d['1']} ({r1_r:.2f}%)",
+                    "2着": f"{d['2']} ({r2_r:.2f}%)",
+                    "3着": f"{d['3']} ({r3_r:.2f}%)"
                 })
         
         if seat_rows:
@@ -1583,7 +1551,7 @@ def page_history():
                 
                 stats_html = f"""
                 <table class="stats-table"><thead><tr><th>総回数</th><th>平均着順</th><th>1着回数</th><th>2着回数</th><th>3着回数</th></tr></thead>
-                <tbody><tr><td>{games} 回</td><td>{avg:.2f}</td><td>{c1} 回<span class="stats-sub">({r1_rate:.1f}%)</span></td><td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.1f}%)</span></td><td>{c3} 回<span class="stats-sub">({r3_rate:.1f}%)</span></td></tr></tbody></table>
+                <tbody><tr><td>{games} 回</td><td>{avg:.4f}</td><td>{c1} 回<span class="stats-sub">({r1_rate:.2f}%)</span></td><td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.2f}%)</span></td><td>{c3} 回<span class="stats-sub">({r3_rate:.2f}%)</span></td></tr></tbody></table>
                 """
                 st.markdown(stats_html, unsafe_allow_html=True)
                 st.divider()
@@ -1600,10 +1568,10 @@ def page_history():
                         p_seat_rows.append({
                             "席": f"{s}席",
                             "打数": c,
-                            "平均着順": f"{avg:.2f}",
-                            "1着": f"{r1} ({r1/c*100:.1f}%)",
-                            "2着": f"{r2} ({r2/c*100:.1f}%)",
-                            "3着": f"{r3} ({r3/c*100:.1f}%)"
+                            "平均着順": f"{avg:.4f}",
+                            "1着": f"{r1} ({r1/c*100:.2f}%)",
+                            "2着": f"{r2} ({r2/c*100:.2f}%)",
+                            "3着": f"{r3} ({r3/c*100:.2f}%)"
                         })
                 if p_seat_rows:
                     st.markdown("##### 🪑 席別成績")
@@ -1643,15 +1611,15 @@ def page_history():
                 c_freq, c_good, c_bad = st.columns(3)
                 
                 with c_freq:
-                    st.markdown("**同卓回数が多い**")
+                    st.markdown("**👬 同卓回数が多い**")
                     df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
                 with c_good:
-                    st.markdown("**相性が良い**")
+                    st.markdown("** 相性が良い **")
                     df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
                     st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
                 with c_bad:
-                    st.markdown("**相性が悪い**")
+                    st.markdown("** 相性が悪い **")
                     df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
                     st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
@@ -1859,11 +1827,11 @@ def page_ranking():
     with t1:
         show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
     with t2:
-        show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.2f}'.format, "avg_rank")
+        show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.4f}'.format, "avg_rank")
     with t3:
-        show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.1f}%'.format, "top_rate")
+        show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.2f}%'.format, "top_rate")
     with t4:
-        show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.1f}%'.format, "last_avoid_rate")
+        show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.2f}%'.format, "last_avoid_rate")
 
     # --- メンバーデータのランキング ---
     df_mem = load_member_data()
@@ -1877,9 +1845,9 @@ def page_ranking():
     def show_mem_ranking(df_g, df_s, col, label):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
             if not df_g.empty:
-                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(20)
+                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(10)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
@@ -1893,9 +1861,9 @@ def page_ranking():
                 else: st.info("データなし")
             else: st.info("データなし")
         with c2:
-            st.markdown("### 👔 スタッフ Top20")
+            st.markdown("### 👔 スタッフ Top10")
             if not df_s.empty:
-                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(20)
+                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(10)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
