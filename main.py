@@ -1792,7 +1792,7 @@ def page_ranking():
         
         def render_table(df_subset):
             if not df_subset.empty:
-                res = df_subset.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
+                res = df_subset.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
                 res["順位"] = res.index + 1
                 
                 # 指定されたフォーマットの適用
