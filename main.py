@@ -112,6 +112,7 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # 2. パスワード認証 (全員共通)
 # ==========================================
 
+
 # ==========================================
 # 3. データ管理関数
 # ==========================================
@@ -494,7 +495,6 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
 def page_home():
     st.title("🀄 ぱいん成績管理")
     
-    # --- メニュー ---
     st.markdown("### 🗂 メニュー")
     c1, c2 = st.columns(2)
     with c1:
@@ -502,7 +502,7 @@ def page_home():
             st.session_state["page"] = "input"
             st.rerun()
         st.write("")
-        if st.button("🏆 ランキング", use_container_width=True):
+        if st.button("🏆 月間ランキング", use_container_width=True):
             st.session_state["page"] = "ranking"
             st.rerun()
         st.write("")
@@ -1278,9 +1278,9 @@ def page_history():
         })
         total_p = df_pattern["回数"].sum()
         if total_p > 0:
-            df_pattern["割合"] = (df_pattern["回数"] / total_p * 100).map('{:.1f}%'.format)
+            df_pattern["割合"] = (df_pattern["回数"] / total_p * 100).map('{:.2f}%'.format)
         else:
-            df_pattern["割合"] = "0.0%"
+            df_pattern["割合"] = "0.00%"
         
         win_rates = []
         for k in df_pattern["構成"]:
@@ -1290,7 +1290,7 @@ def page_history():
             if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
                 rate_a = (wins_a / cnt) * 100
                 rate_b = (wins_b / cnt) * 100
-                win_rates.append(f"A: {rate_a:.0f}% / B: {rate_b:.0f}%")
+                win_rates.append(f"A: {rate_a:.2f}% / B: {rate_b:.2f}%")
             else:
                 win_rates.append("-")
         
@@ -1477,9 +1477,9 @@ def page_history():
             })
             total = df_pattern["回数"].sum()
             if total > 0:
-                df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.1f}%'.format)
+                df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.2f}%'.format)
             else:
-                df_pattern["割合"] = "0.0%"
+                df_pattern["割合"] = "0.00%"
 
             win_rates = []
             for k in df_pattern["構成"]:
@@ -1489,7 +1489,7 @@ def page_history():
                 if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
                     rate_a = (wins_a / cnt) * 100
                     rate_b = (wins_b / cnt) * 100
-                    win_rates.append(f"A: {rate_a:.0f}% / B: {rate_b:.0f}%")
+                    win_rates.append(f"A: {rate_a:.2f}% / B: {rate_b:.2f}%")
                 else:
                     win_rates.append("-")
             
@@ -1682,7 +1682,7 @@ def page_history():
 
 # --- ランキング画面 ---
 def page_ranking():
-    st.title("🏆 ランキング (通算)")
+    st.title("🏆 月間ランキング")
     
     if st.button("🏠 ホームに戻る"):
         st.session_state["page"] = "home"
@@ -1693,36 +1693,36 @@ def page_ranking():
         st.info("データがありません")
         return
 
-    # 日付範囲フィルター
-    valid_dates = pd.to_datetime(df["論理日付"]).dropna()
+    # 日付から「YYYY年MM月」のリストを作成
+    valid_dates = pd.to_datetime(df["日時Obj"], errors='coerce').dropna()
     if not valid_dates.empty:
-        min_date = valid_dates.min().date()
-        max_date = valid_dates.max().date()
+        year_months = valid_dates.dt.strftime('%Y年%m月').unique().tolist()
+        year_months = sorted(year_months, reverse=True)
     else:
-        min_date = date.today()
-        max_date = date.today()
+        year_months = [datetime.now(timezone(timedelta(hours=9), 'JST')).strftime('%Y年%m月')]
 
     c1, c2 = st.columns(2)
     with c1:
-        date_range = st.date_input(
-            "📅 集計期間",
-            value=(min_date, max_date),
-            min_value=min_date,
-            max_value=max_date
-        )
-    
-    if len(date_range) == 2:
-        start_d, end_d = date_range
-        mask = (df["論理日付"] >= start_d) & (df["論理日付"] <= end_d)
-        df_filtered = df[mask]
+        options = year_months + ["通算"]
+        selected_month = st.selectbox("📅 集計月を選択", options, index=0)
+
+    # 選択された月でデータをフィルタリング
+    if selected_month != "通算":
+        df["年月"] = pd.to_datetime(df["日時Obj"], errors='coerce').dt.strftime('%Y年%m月')
+        df_filtered = df[df["年月"] == selected_month].copy()
     else:
-        df_filtered = df
+        df_filtered = df.copy()
 
     if df_filtered.empty:
         st.warning("指定された期間のデータはありません")
         return
 
+    # 時系列にソート（「最初の100回」を正しく計算するため）
+    df_filtered = df_filtered.sort_values(["論理日付", "TableNo", "DailyNo"])
+
     records = []
+    player_ranks = {}
+    
     for _, row in df_filtered.iterrows():
         for seat in ["A", "B", "C"]:
             name = row[f"{seat}さん"]
@@ -1732,6 +1732,9 @@ def page_ranking():
                 except: r = 0
                 if r > 0:
                     records.append({"name": name, "rank": r, "date": row["論理日付"]})
+                    if name not in player_ranks:
+                        player_ranks[name] = []
+                    player_ranks[name].append(r)
     
     if not records:
         st.warning("集計できるデータがありません")
@@ -1747,6 +1750,16 @@ def page_ranking():
         days=("date", "nunique") 
     ).reset_index()
 
+    # 最初の100回の平均を計算する関数
+    def get_first_100_avg(name):
+        ranks = player_ranks.get(name, [])
+        first_100 = ranks[:100]
+        if len(first_100) > 0:
+            return sum(first_100) / len(first_100)
+        return 0.0
+
+    stats["first_100_avg"] = stats["name"].apply(get_first_100_avg)
+
     stats["games_per_day"] = stats["games"] / stats["days"]
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
@@ -1760,7 +1773,7 @@ def page_ranking():
     stats_guest = stats[stats["type"] == "guest"]
     stats_staff = stats[stats["type"] == "staff"]
     
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 50, 500, 50)
+    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
     
     # フィルタリング
     stats_guest = stats_guest[stats_guest["games"] >= min_games]
@@ -1776,53 +1789,45 @@ def page_ranking():
     
     def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None):
         c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
-            if not df_g.empty:
-                res = df_g.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
+        
+        def render_table(df_subset):
+            if not df_subset.empty:
+                res = df_subset.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
                 res["順位"] = res.index + 1
-                if format_func and val_col and val_col != "games":
+                
+                # 指定されたフォーマットの適用
+                if format_func and val_col and val_col != "games" and val_col != "avg_rank":
                     res[val_col] = res[val_col].map(format_func)
+                elif val_col == "avg_rank":
+                    res["avg_rank"] = res["avg_rank"].map('{:.4f}'.format)
+                    res["first_100_avg"] = res["first_100_avg"].map('{:.4f}'.format)
                 
                 cols = ["順位", "name"]
+                
+                # 表示項目の切り替え
                 if val_col == "games":
                     cols.extend(["games", "games_per_day"])
                     rename_map = {"name":"名前", "games":"打数", "games_per_day":"平均打数/日"}
                     res["games_per_day"] = res["games_per_day"].map('{:.1f}'.format)
+                elif val_col == "avg_rank":
+                    cols.extend(["avg_rank", "first_100_avg", "games"])
+                    rename_map = {"name":"名前", "avg_rank":"平均着順", "first_100_avg":"最初の100回平均", "games":"打数"}
                 else:
                     cols.extend([val_col, "games"])
                     rename_map = {"name":"名前", "games":"打数"}
-                    if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
-                    elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
+                    if val_col == "top_rate": rename_map["top_rate"] = "トップ率"
                     elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
                 
                 st.dataframe(res[cols].rename(columns=rename_map), hide_index=True, use_container_width=True)
             else:
                 st.info("データなし")
 
+        with c1:
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
+            render_table(df_g)
         with c2:
             st.markdown("### 👔 スタッフ Top20")
-            if not df_s.empty:
-                res = df_s.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
-                res["順位"] = res.index + 1
-                if format_func and val_col and val_col != "games":
-                    res[val_col] = res[val_col].map(format_func)
-                
-                cols = ["順位", "name"]
-                if val_col == "games":
-                    cols.extend(["games", "games_per_day"])
-                    rename_map = {"name":"名前", "games":"打数", "games_per_day":"平均打数/日"}
-                    res["games_per_day"] = res["games_per_day"].map('{:.1f}'.format)
-                else:
-                    cols.extend([val_col, "games"])
-                    rename_map = {"name":"名前", "games":"打数"}
-                    if val_col == "avg_rank": rename_map["avg_rank"] = "平均着順"
-                    elif val_col == "top_rate": rename_map["top_rate"] = "トップ率"
-                    elif val_col == "last_avoid_rate": rename_map["last_avoid_rate"] = "ラス回避率"
-                
-                st.dataframe(res[cols].rename(columns=rename_map), hide_index=True, use_container_width=True)
-            else:
-                st.info("データなし")
+            render_table(df_s)
 
     with t1:
         show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
@@ -1845,9 +1850,9 @@ def page_ranking():
     def show_mem_ranking(df_g, df_s, col, label):
         c1, c2 = st.columns(2)
         with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
             if not df_g.empty:
-                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(20)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
@@ -1861,9 +1866,9 @@ def page_ranking():
                 else: st.info("データなし")
             else: st.info("データなし")
         with c2:
-            st.markdown("### 👔 スタッフ Top10")
+            st.markdown("### 👔 スタッフ Top20")
             if not df_s.empty:
-                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(20)
                 res = res[res[col] > 0]
                 if not res.empty:
                     res["順位"] = res.index + 1
