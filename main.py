@@ -1335,31 +1335,6 @@ def page_personal():
         date_list = sorted(list(played_dates), reverse=True)
         st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
 
-    # --- 月別着順推移グラフ ---
-    if len(monthly_data) >= 2:
-        st.divider()
-        st.markdown("##### 📊 月別平均着順の推移")
-        m_chart_data = []
-        for ym in sorted(monthly_data.keys()):
-            rs = monthly_data[ym]["ranks"]
-            if rs:
-                m_chart_data.append({"年月": ym, "平均着順": sum(rs) / len(rs), "打数": len(rs)})
-        if len(m_chart_data) >= 2:
-            df_m_chart = pd.DataFrame(m_chart_data)
-            m_chart = alt.Chart(df_m_chart).mark_line(
-                point=alt.OverlayMarkDef(color="#4caf87", size=100),
-                color="#4caf87", strokeWidth=2.5
-            ).encode(
-                x=alt.X("年月:N", title="年月", sort=None),
-                y=alt.Y("平均着順:Q", scale=alt.Scale(domain=[3.3, 0.7]), title="平均着順"),
-                tooltip=["年月", alt.Tooltip("平均着順", format=".3f"), "打数"]
-            ).properties(height=260).configure_view(
-                strokeWidth=0, fill="#1a1d2e"
-            ).configure_axis(
-                gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8"
-            )
-            st.altair_chart(m_chart, use_container_width=True)
-
     # --- 対戦相手データ ---
     if compatibility:
         st.divider()
