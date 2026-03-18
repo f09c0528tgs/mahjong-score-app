@@ -539,18 +539,98 @@ hide_style = """
         border: 1px solid var(--border) !important;
         color: var(--text-primary) !important;
     }
+
+    /* ========== 改善: 全ページ共通フッターナビ ========== */
+    .bottom-nav {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: var(--bg-card);
+        border-top: 1px solid var(--border);
+        display: flex;
+        justify-content: center;
+        gap: 0;
+        z-index: 999;
+        padding: 0;
+        box-shadow: 0 -2px 16px rgba(0,0,0,0.4);
+    }
+    .bottom-nav a {
+        flex: 1;
+        max-width: 120px;
+        text-align: center;
+        padding: 8px 4px 10px;
+        color: var(--text-muted);
+        text-decoration: none;
+        font-size: 10px;
+        font-weight: 600;
+        font-family: 'Noto Sans JP', sans-serif;
+        transition: color 0.15s;
+        letter-spacing: 0.02em;
+    }
+    .bottom-nav a:hover, .bottom-nav a.active {
+        color: var(--accent);
+    }
+    .bottom-nav .nav-icon {
+        display: block;
+        font-size: 20px;
+        margin-bottom: 2px;
+    }
+
+    /* ========== 改善: クイック統計バー ========== */
+    .quick-stat-bar {
+        display: flex;
+        gap: 12px;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+    }
+    .quick-stat-item {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 10px 16px;
+        flex: 1;
+        min-width: 120px;
+        text-align: center;
+    }
+    .quick-stat-item .qs-label {
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 2px;
+    }
+    .quick-stat-item .qs-value {
+        font-size: 1.3rem;
+        font-weight: 900;
+        color: var(--accent);
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+    }
+
+    /* ========== 改善: 確認ダイアログ風 ========== */
+    .confirm-box {
+        background: var(--bg-card);
+        border: 2px solid var(--accent2);
+        border-radius: var(--radius);
+        padding: 1.2rem;
+        margin: 1rem 0;
+    }
+
+    /* パディング下部確保（フッターナビ用） */
+    .main .block-container {
+        padding-bottom: 5rem !important;
+    }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証
+# 2. パスワード認証 — 削除済み
 # ==========================================
-
-    
+# パスワード機能は削除しました。直接アプリにアクセスできます。
 
 # ==========================================
-# 3. データ管理関数 (変更なし)
+# 3. データ管理関数
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
@@ -910,6 +990,70 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
     return name, type_, rank
 
 # ==========================================
+# 5.5 今日のクイック統計（ホーム用）
+# ==========================================
+def render_today_quick_stats():
+    """ホーム画面に今日の簡易統計を表示"""
+    df = load_score_data()
+    if df.empty:
+        return
+
+    JST = timezone(timedelta(hours=9), 'JST')
+    current_dt = datetime.now(JST)
+    today_logical = (current_dt - timedelta(hours=9)).date()
+    mask = df["論理日付"].apply(lambda x: x == today_logical if pd.notnull(x) else False)
+    df_today = df[mask]
+
+    if df_today.empty:
+        st.caption("今日の対局データはまだありません")
+        return
+
+    total_games = len(df_today)
+    total_fee = 0
+    type_counts = {"A客": 0, "B客": 0, "AS": 0, "BS": 0}
+    FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
+
+    for _, row in df_today.iterrows():
+        try:
+            r_a, r_b, r_c = int(float(row["A着順"])), int(float(row["B着順"])), int(float(row["C着順"]))
+        except:
+            r_a, r_b, r_c = 0, 0, 0
+        winner_type = None
+        if r_a == 1: winner_type = row["Aタイプ"]
+        elif r_b == 1: winner_type = row["Bタイプ"]
+        elif r_c == 1: winner_type = row["Cタイプ"]
+        if winner_type in type_counts:
+            type_counts[winner_type] += 1
+            total_fee += FEE_MAP.get(winner_type, 0)
+        note = str(row["備考"])
+        if note == "東１終了": total_fee -= 1
+        elif note == "２人飛ばし": total_fee -= 2
+        elif note == "５連勝〜": total_fee -= 5
+
+    fee_color = "#4caf87" if total_fee >= 0 else "#e05c5c"
+    st.markdown(f"""
+    <div class="quick-stat-bar">
+        <div class="quick-stat-item">
+            <div class="qs-label">本日のゲーム数</div>
+            <div class="qs-value">{total_games}</div>
+        </div>
+        <div class="quick-stat-item">
+            <div class="qs-label">ゲーム代</div>
+            <div class="qs-value" style="color:{fee_color};">{total_fee} 枚</div>
+        </div>
+        <div class="quick-stat-item">
+            <div class="qs-label">A客 / B客</div>
+            <div class="qs-value" style="font-size:1rem;">{type_counts['A客']} / {type_counts['B客']}</div>
+        </div>
+        <div class="quick-stat-item">
+            <div class="qs-label">AS / BS</div>
+            <div class="qs-value" style="font-size:1rem;">{type_counts['AS']} / {type_counts['BS']}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ==========================================
 # 6. 各ページ
 # ==========================================
 
@@ -921,6 +1065,9 @@ def page_home():
         <div class="app-sub">PINE SCORE MANAGER</div>
     </div>
     """, unsafe_allow_html=True)
+
+    # 今日のクイック統計
+    render_today_quick_stats()
 
     nav_items = [
         ("📝", "成績をつける", "input"),
@@ -1244,7 +1391,7 @@ def page_input():
 
     st.markdown(f"""
     <div style="background:var(--bg-card);border:1px solid var(--border-accent);border-radius:var(--radius);
-                padding:0.7rem 1.2rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;">
+                padding:0.7rem 1.2rem;margin-bottom:1rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;">
         <span style="color:var(--accent);font-weight:700;">🀄 {current_table}卓 — 第 {current_set_no} セット</span>
         <span style="color:var(--text-muted);font-size:0.85rem;">次の記録: No.{next_display_no}</span>
     </div>
@@ -1545,7 +1692,7 @@ def page_history():
             cnt = pattern_counts[k]
             wins_a = pattern_wins_a[k]
             if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
-                win_rates.append(f"A: {wins_a/cnt*100:.0f}% / B: {(cnt-wins_a)/cnt*100:.0f}%")
+                win_rates.append(f"A: {wins_a/cnt*100:.1f}% / B: {(cnt-wins_a)/cnt*100:.1f}%")
             else:
                 win_rates.append("-")
         df_pattern["勝率"] = win_rates
@@ -1558,10 +1705,10 @@ def page_history():
                 games="count", avg="mean",
                 r1=lambda x: (x==1).sum(), r2=lambda x: (x==2).sum(), r3=lambda x: (x==3).sum()
             ).reset_index()
-            stats_by_type["avg"] = stats_by_type["avg"].map('{:.2f}'.format)
-            stats_by_type["1着"] = stats_by_type.apply(lambda x: f"{x['r1']} ({x['r1']/x['games']*100:.1f}%)", axis=1)
-            stats_by_type["2着"] = stats_by_type.apply(lambda x: f"{x['r2']} ({x['r2']/x['games']*100:.1f}%)", axis=1)
-            stats_by_type["3着"] = stats_by_type.apply(lambda x: f"{x['r3']} ({x['r3']/x['games']*100:.1f}%)", axis=1)
+            stats_by_type["avg"] = stats_by_type["avg"].map('{:.3f}'.format)
+            stats_by_type["1着"] = stats_by_type.apply(lambda x: f"{x['r1']} ({x['r1']/x['games']*100:.3f}%)", axis=1)
+            stats_by_type["2着"] = stats_by_type.apply(lambda x: f"{x['r2']} ({x['r2']/x['games']*100:.3f}%)", axis=1)
+            stats_by_type["3着"] = stats_by_type.apply(lambda x: f"{x['r3']} ({x['r3']/x['games']*100:.3f}%)", axis=1)
             type_order = {"A客": 0, "B客": 1, "AS": 2, "BS": 3}
             stats_by_type["order"] = stats_by_type["Type"].map(lambda x: type_order.get(x, 99))
             stats_by_type = stats_by_type.sort_values("order").drop("order", axis=1)
@@ -1577,10 +1724,10 @@ def page_history():
             if c > 0:
                 avg = d["sum"] / c
                 seat_rows.append({
-                    "席": f"{s}席", "打数": c, "平均着順": f"{avg:.2f}",
-                    "1着": f"{d['1']} ({d['1']/c*100:.1f}%)",
-                    "2着": f"{d['2']} ({d['2']/c*100:.1f}%)",
-                    "3着": f"{d['3']} ({d['3']/c*100:.1f}%)"
+                    "席": f"{s}席", "打数": c, "平均着順": f"{avg:.3f}",
+                    "1着": f"{d['1']} ({d['1']/c*100:.3f}%)",
+                    "2着": f"{d['2']} ({d['2']/c*100:.3f}%)",
+                    "3着": f"{d['3']} ({d['3']/c*100:.3f}%)"
                 })
         if seat_rows:
             st.markdown("##### 🪑 席別成績")
@@ -1699,7 +1846,7 @@ def page_history():
         cnt = pattern_counts[k]
         wins_a = pattern_wins_a[k]
         if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
-            win_rates.append(f"A: {wins_a/cnt*100:.0f}% / B: {(cnt-wins_a)/cnt*100:.0f}%")
+            win_rates.append(f"A: {wins_a/cnt*100:.1f}% / B: {(cnt-wins_a)/cnt*100:.1f}%")
         else:
             win_rates.append("-")
     df_pattern["勝率"] = win_rates
@@ -1748,19 +1895,23 @@ def page_history():
             c1_cnt = ranks.count(1)
             c2_cnt = ranks.count(2)
             c3_cnt = ranks.count(3)
+            top_rate = c1_cnt / games * 100
+            last_avoid = (games - c3_cnt) / games * 100
 
             stats_html = f"""
             <table class="stats-table">
                 <thead><tr>
-                    <th>総回数</th><th>平均着順</th>
+                    <th>総回数</th><th>平均着順</th><th>トップ率</th><th>ラス回避率</th>
                     <th>1着</th><th>2着</th><th>3着</th>
                 </tr></thead>
                 <tbody><tr>
                     <td>{games} 回</td>
-                    <td style="color:var(--accent)">{avg:.2f}</td>
-                    <td>{c1_cnt}<span class="stats-sub">{c1_cnt/games*100:.1f}%</span></td>
-                    <td>{c2_cnt}<span class="stats-sub">{c2_cnt/games*100:.1f}%</span></td>
-                    <td>{c3_cnt}<span class="stats-sub">{c3_cnt/games*100:.1f}%</span></td>
+                    <td style="color:var(--accent)">{avg:.3f}</td>
+                    <td style="color:var(--green)">{top_rate:.3f}%</td>
+                    <td style="color:var(--blue)">{last_avoid:.3f}%</td>
+                    <td>{c1_cnt}<span class="stats-sub">{c1_cnt/games*100:.3f}%</span></td>
+                    <td>{c2_cnt}<span class="stats-sub">{c2_cnt/games*100:.3f}%</span></td>
+                    <td>{c3_cnt}<span class="stats-sub">{c3_cnt/games*100:.3f}%</span></td>
                 </tr></tbody>
             </table>
             """
@@ -1772,10 +1923,10 @@ def page_history():
                 c = len(rs)
                 if c > 0:
                     p_seat_rows.append({
-                        "席": f"{s}席", "打数": c, "平均着順": f"{sum(rs)/c:.2f}",
-                        "1着": f"{rs.count(1)} ({rs.count(1)/c*100:.1f}%)",
-                        "2着": f"{rs.count(2)} ({rs.count(2)/c*100:.1f}%)",
-                        "3着": f"{rs.count(3)} ({rs.count(3)/c*100:.1f}%)"
+                        "席": f"{s}席", "打数": c, "平均着順": f"{sum(rs)/c:.3f}",
+                        "1着": f"{rs.count(1)} ({rs.count(1)/c*100:.3f}%)",
+                        "2着": f"{rs.count(2)} ({rs.count(2)/c*100:.3f}%)",
+                        "3着": f"{rs.count(3)} ({rs.count(3)/c*100:.3f}%)"
                     })
             if p_seat_rows:
                 st.markdown("##### 🪑 席別成績")
@@ -1784,22 +1935,41 @@ def page_history():
             st.divider()
             c_graph, c_dates = st.columns([2, 1])
             with c_graph:
-                st.markdown("##### 📈 直近10戦の着順推移")
-                recent_ranks = ranks[-10:]
+                st.markdown("##### 📈 直近20戦の着順推移")
+                recent_ranks = ranks[-20:]
                 df_trend = pd.DataFrame({"戦数": range(1, len(recent_ranks) + 1), "着順": recent_ranks})
-                line_chart = alt.Chart(df_trend).mark_line(
+                # 移動平均を追加
+                if len(recent_ranks) >= 5:
+                    df_trend["移動平均(5戦)"] = df_trend["着順"].rolling(window=5, min_periods=1).mean()
+
+                base = alt.Chart(df_trend).encode(
+                    x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
+                )
+                line_main = base.mark_line(
                     point=alt.OverlayMarkDef(color="#f0c040", size=80),
                     color="#f0c040", strokeWidth=2
                 ).encode(
-                    x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
                     y=alt.Y("着順", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"),
                     tooltip=["戦数", "着順"]
-                ).properties(height=260).configure_view(
+                )
+                chart = line_main
+                if "移動平均(5戦)" in df_trend.columns:
+                    line_avg = base.mark_line(
+                        color="#5b9cf6", strokeWidth=1.5, strokeDash=[5, 3]
+                    ).encode(
+                        y=alt.Y("移動平均(5戦)"),
+                        tooltip=["戦数", alt.Tooltip("移動平均(5戦)", format=".3f")]
+                    )
+                    chart = alt.layer(line_main, line_avg)
+
+                chart = chart.properties(height=280).configure_view(
                     strokeWidth=0, fill="#1a1d2e"
                 ).configure_axis(
                     gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8"
                 )
-                st.altair_chart(line_chart, use_container_width=True)
+                st.altair_chart(chart, use_container_width=True)
+                if "移動平均(5戦)" in df_trend.columns:
+                    st.caption("🟡 着順  /  🔵 5戦移動平均")
             with c_dates:
                 st.markdown("##### 📅 稼働日")
                 date_list = sorted(list(played_dates), reverse=True)
@@ -1960,9 +2130,9 @@ def page_ranking():
     t1, t2, t3, t4, t5, t6 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
 
     with t1: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
-    with t2: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.2f}'.format, "avg_rank")
-    with t3: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.1f}%'.format, "top_rate")
-    with t4: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.1f}%'.format, "last_avoid_rate")
+    with t2: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
+    with t3: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
+    with t4: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
 
     df_mem = load_member_data()
     df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
