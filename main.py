@@ -1371,10 +1371,10 @@ def page_personal():
             st.markdown("**👬 同卓回数**")
             st.dataframe(df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
         with c_good:
-            st.markdown("**💖 カモ**")
+            st.markdown("**💖 相性が良い**")
             st.dataframe(df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
         with c_bad:
-            st.markdown("**💀 天敵**")
+            st.markdown("**💀 相性が悪い**")
             st.dataframe(df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
     # --- 個人記録の更新 ---
@@ -2325,10 +2325,10 @@ def page_history():
                 st.markdown("**👬 同卓回数**")
                 st.dataframe(df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
             with c_good:
-                st.markdown("**💖 カモ**")
+                st.markdown("**💖 相性が良い**")
                 st.dataframe(df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
             with c_bad:
-                st.markdown("**💀 天敵**")
+                st.markdown("**💀 相性が悪い**")
                 st.dataframe(df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
         st.divider()
@@ -2395,7 +2395,7 @@ def page_ranking():
     with c1:
         date_range = st.date_input("📅 集計期間", value=(min_date, max_date), min_value=min_date, max_value=max_date)
     with c2:
-        min_games = st.number_input("規定打数", min_value=1, value=5, help="これ未満は非表示")
+        min_games = st.number_input("規定打数", min_value=1, value=100, help="これ未満は非表示")
 
     if len(date_range) == 2:
         start_d, end_d = date_range
@@ -2448,9 +2448,9 @@ def page_ranking():
         c1, c2 = st.columns(2)
         for col_obj, df_r, title, icon in [(c1, df_g, "お客さん", "🧑‍🤝‍🧑"), (c2, df_s, "スタッフ", "👔")]:
             with col_obj:
-                st.markdown(f"#### {icon} {title} Top10")
+                st.markdown(f"#### {icon} {title} Top20")
                 if not df_r.empty:
-                    res = df_r.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
+                    res = df_r.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
                     res["順位"] = res.index + 1
                     if format_func and val_col and val_col != "games":
                         res[val_col] = res[val_col].map(format_func)
@@ -2484,9 +2484,9 @@ def page_ranking():
         c1, c2 = st.columns(2)
         for col_obj, df_r, title, icon in [(c1, df_g, "お客さん", "🧑‍🤝‍🧑"), (c2, df_s, "スタッフ", "👔")]:
             with col_obj:
-                st.markdown(f"#### {icon} {title} Top10")
+                st.markdown(f"#### {icon} {title} Top20")
                 if not df_r.empty:
-                    res = df_r.sort_values(col, ascending=False).reset_index(drop=True).head(10)
+                    res = df_r.sort_values(col, ascending=False).reset_index(drop=True).head(20)
                     res = res[res[col] > 0]
                     if not res.empty:
                         res["順位"] = res.index + 1
