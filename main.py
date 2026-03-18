@@ -546,34 +546,8 @@ st.markdown(hide_style, unsafe_allow_html=True)
 # ==========================================
 # 2. パスワード認証
 # ==========================================
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
 
-    if st.session_state["password_correct"]:
-        return True
-
-    st.markdown("""
-    <div style="max-width:380px; margin:5rem auto; text-align:center;">
-        <div style="font-size:3rem; margin-bottom:1rem;">🀄</div>
-        <div style="font-family:'Zen Kaku Gothic New',sans-serif; font-size:1.8rem; font-weight:900; color:#f0c040; margin-bottom:0.3rem;">ぱいん成績管理</div>
-        <div style="color:#8890a8; font-size:0.85rem; margin-bottom:2rem; letter-spacing:0.1em;">PINE SCORE MANAGER</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        password = st.text_input("パスワード", type="password", placeholder="パスワードを入力")
-        if st.button("ログイン", type="primary", use_container_width=True):
-            if password == "2026":
-                st.session_state["password_correct"] = True
-                st.rerun()
-            else:
-                st.error("パスワードが違います")
-    return False
-
-if not check_password():
-    st.stop()
+    
 
 # ==========================================
 # 3. データ管理関数 (変更なし)
