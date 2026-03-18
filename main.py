@@ -2391,18 +2391,34 @@ def page_ranking():
     else:
         min_date = max_date = date.today()
 
+    # 月選択用リスト生成
+    df_tmp = df.copy()
+    df_tmp["年月"] = df_tmp["日時Obj"].dt.to_period("M")
+    available_months = sorted(df_tmp["年月"].dropna().unique(), reverse=True)
+    month_labels = ["全期間", "カスタム期間"] + [str(m) for m in available_months]
+
     c1, c2 = st.columns([2, 1])
     with c1:
-        date_range = st.date_input("📅 集計期間", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+        selected_period = st.selectbox("📅 集計期間", month_labels, index=0, key="ranking_period")
     with c2:
         min_games = st.number_input("規定打数", min_value=1, value=100, help="これ未満は非表示")
 
-    if len(date_range) == 2:
-        start_d, end_d = date_range
-        mask = (df["論理日付"] >= start_d) & (df["論理日付"] <= end_d)
-        df_filtered = df[mask]
-    else:
+    # カスタム期間の場合のみ date_input を表示
+    if selected_period == "カスタム期間":
+        date_range = st.date_input("📅 期間を指定", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="ranking_custom_date")
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            start_d, end_d = date_range
+            mask = (df["論理日付"] >= start_d) & (df["論理日付"] <= end_d)
+            df_filtered = df[mask]
+        else:
+            df_filtered = df
+    elif selected_period == "全期間":
         df_filtered = df
+    else:
+        # 特定の月が選択された
+        df_filtered = df_tmp[df_tmp["年月"].astype(str) == selected_period]
+        # process_score_df で追加されたカラムを維持
+        df_filtered = df_filtered.drop(columns=["年月"], errors="ignore")
 
     if df_filtered.empty:
         st.warning("指定された期間のデータはありません")
