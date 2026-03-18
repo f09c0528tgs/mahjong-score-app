@@ -1071,6 +1071,7 @@ def page_home():
 
     nav_items = [
         ("📝", "成績をつける", "input"),
+        ("👤", "個人成績を見る", "personal"),
         ("📊", "データを見る", "history"),
         ("🏆", "ランキング", "ranking"),
         ("👥", "メンバー管理", "members"),
@@ -1085,6 +1086,345 @@ def page_home():
                 st.session_state["page"] = page
                 st.rerun()
             st.write("")
+
+# --- 個人成績画面 ---
+def page_personal():
+    st.title("👤 個人成績")
+    page_back_button()
+    st.write("")
+
+    df = load_score_data()
+    if df.empty:
+        st.info("データがありません")
+        return
+
+    all_players = get_all_member_names()
+    if not all_players:
+        st.info("メンバーが登録されていません")
+        return
+
+    # --- プレイヤー選択 ---
+    default_player_idx = 0
+    if "personal_player" in st.session_state and st.session_state["personal_player"] in all_players:
+        default_player_idx = all_players.index(st.session_state["personal_player"])
+
+    selected_player = st.selectbox("👤 プレイヤーを選択", all_players, index=default_player_idx, key="personal_player_select")
+    st.session_state["personal_player"] = selected_player
+
+    if not selected_player:
+        return
+
+    # プレイヤーの全データ抽出
+    df_player = df[
+        (df["Aさん"] == selected_player) |
+        (df["Bさん"] == selected_player) |
+        (df["Cさん"] == selected_player)
+    ]
+
+    if df_player.empty:
+        st.warning(f"「{selected_player}」さんの対局データはありません")
+        return
+
+    # --- 期間フィルター（月選択） ---
+    st.markdown("---")
+
+    # 利用可能な年月を取得
+    df_player = df_player.copy()
+    df_player["年月"] = df_player["日時Obj"].dt.to_period("M")
+    available_months = sorted(df_player["年月"].dropna().unique(), reverse=True)
+
+    if not len(available_months):
+        st.warning("日時データがありません")
+        return
+
+    month_labels = ["全期間"] + [str(m) for m in available_months]
+
+    c_filter1, c_filter2 = st.columns([1, 2])
+    with c_filter1:
+        selected_month_label = st.selectbox("📅 期間を選択", month_labels, index=0, key="personal_month")
+    with c_filter2:
+        time_range = st.selectbox("⏰ 時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="personal_time")
+
+    # フィルタ適用
+    df_filtered = df_player.copy()
+    if selected_month_label != "全期間":
+        df_filtered = df_filtered[df_filtered["年月"].astype(str) == selected_month_label]
+    if time_range == "9:00-21:00":
+        df_filtered = df_filtered[df_filtered["日時Obj"].dt.hour.between(9, 20)]
+    elif time_range == "21:00-33:00(翌9:00)":
+        df_filtered = df_filtered[~df_filtered["日時Obj"].dt.hour.between(9, 20)]
+
+    if df_filtered.empty:
+        st.warning("選択した条件のデータはありません")
+        return
+
+    period_label = selected_month_label if selected_month_label != "全期間" else "全期間"
+    st.markdown(f"### 📊 {selected_player} さんの成績　—　{period_label}")
+
+    # --- 成績集計 ---
+    ranks = []
+    played_dates = set()
+    compatibility = {}
+    player_seat_ranks = {"A": [], "B": [], "C": []}
+    monthly_data = {}  # 月別成績用
+
+    for _, row in df_filtered.iterrows():
+        my_rank = None
+        my_seat = None
+        for s in ["A", "B", "C"]:
+            if row[f"{s}さん"] == selected_player:
+                try:
+                    my_rank = int(float(row[f"{s}着順"]))
+                    my_seat = s
+                except:
+                    pass
+                break
+        if my_rank:
+            ranks.append(my_rank)
+            played_dates.add(row["論理日付"])
+            if my_seat in player_seat_ranks:
+                player_seat_ranks[my_seat].append(my_rank)
+
+            # 月別集計
+            ym = str(row["年月"])
+            if ym not in monthly_data:
+                monthly_data[ym] = {"ranks": [], "dates": set()}
+            monthly_data[ym]["ranks"].append(my_rank)
+            monthly_data[ym]["dates"].add(row["論理日付"])
+
+            # 対戦相手
+            for s in ["A", "B", "C"]:
+                if s == my_seat:
+                    continue
+                opp_name = row[f"{s}さん"]
+                if not opp_name:
+                    continue
+                try:
+                    opp_rank = int(float(row[f"{s}着順"]))
+                except:
+                    opp_rank = 0
+                if opp_rank == 0:
+                    continue
+                if opp_name not in compatibility:
+                    compatibility[opp_name] = {"count": 0, "score": 0}
+                compatibility[opp_name]["count"] += 1
+                compatibility[opp_name]["score"] += opp_rank - my_rank
+
+    if not ranks:
+        st.warning("着順データが見つかりません")
+        return
+
+    games = len(ranks)
+    avg = sum(ranks) / games
+    c1_cnt = ranks.count(1)
+    c2_cnt = ranks.count(2)
+    c3_cnt = ranks.count(3)
+    top_rate = c1_cnt / games * 100
+    last_avoid = (games - c3_cnt) / games * 100
+    unique_days = len(played_dates)
+
+    # --- メイン統計カード ---
+    stats_html = f"""
+    <table class="stats-table">
+        <thead><tr>
+            <th>総回数</th><th>稼働日数</th><th>平均着順</th><th>トップ率</th><th>ラス回避率</th>
+            <th>1着</th><th>2着</th><th>3着</th>
+        </tr></thead>
+        <tbody><tr>
+            <td>{games} 回</td>
+            <td>{unique_days} 日</td>
+            <td style="color:var(--accent)">{avg:.3f}</td>
+            <td style="color:var(--green)">{top_rate:.3f}%</td>
+            <td style="color:var(--blue)">{last_avoid:.3f}%</td>
+            <td>{c1_cnt}<span class="stats-sub">{c1_cnt/games*100:.3f}%</span></td>
+            <td>{c2_cnt}<span class="stats-sub">{c2_cnt/games*100:.3f}%</span></td>
+            <td>{c3_cnt}<span class="stats-sub">{c3_cnt/games*100:.3f}%</span></td>
+        </tr></tbody>
+    </table>
+    """
+    st.markdown(stats_html, unsafe_allow_html=True)
+
+    # --- 席別成績 ---
+    p_seat_rows = []
+    for s in ["A", "B", "C"]:
+        rs = player_seat_ranks[s]
+        c = len(rs)
+        if c > 0:
+            p_seat_rows.append({
+                "席": f"{s}席", "打数": c, "平均着順": f"{sum(rs)/c:.3f}",
+                "1着": f"{rs.count(1)} ({rs.count(1)/c*100:.3f}%)",
+                "2着": f"{rs.count(2)} ({rs.count(2)/c*100:.3f}%)",
+                "3着": f"{rs.count(3)} ({rs.count(3)/c*100:.3f}%)"
+            })
+    if p_seat_rows:
+        st.markdown("##### 🪑 席別成績")
+        st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
+
+    # --- 月別成績テーブル ---
+    if len(monthly_data) > 1 or selected_month_label == "全期間":
+        st.divider()
+        st.markdown("##### 📅 月別成績")
+        month_rows = []
+        for ym in sorted(monthly_data.keys(), reverse=True):
+            md = monthly_data[ym]
+            rs = md["ranks"]
+            g = len(rs)
+            if g == 0:
+                continue
+            r1 = rs.count(1)
+            r2 = rs.count(2)
+            r3 = rs.count(3)
+            m_avg = sum(rs) / g
+            m_top = r1 / g * 100
+            m_avoid = (g - r3) / g * 100
+            month_rows.append({
+                "年月": ym,
+                "打数": g,
+                "稼働日数": len(md["dates"]),
+                "平均着順": f"{m_avg:.3f}",
+                "トップ率": f"{m_top:.3f}%",
+                "ラス回避率": f"{m_avoid:.3f}%",
+                "1着": f"{r1} ({r1/g*100:.1f}%)",
+                "2着": f"{r2} ({r2/g*100:.1f}%)",
+                "3着": f"{r3} ({r3/g*100:.1f}%)",
+            })
+        if month_rows:
+            st.dataframe(pd.DataFrame(month_rows), hide_index=True, use_container_width=True)
+
+    # --- 着順推移グラフ ---
+    st.divider()
+    c_graph, c_dates = st.columns([2, 1])
+    with c_graph:
+        chart_count = min(len(ranks), 30)
+        st.markdown(f"##### 📈 直近{chart_count}戦の着順推移")
+        recent_ranks = ranks[-chart_count:]
+        df_trend = pd.DataFrame({"戦数": range(1, len(recent_ranks) + 1), "着順": recent_ranks})
+        if len(recent_ranks) >= 5:
+            df_trend["移動平均(5戦)"] = df_trend["着順"].rolling(window=5, min_periods=1).mean()
+
+        base = alt.Chart(df_trend).encode(
+            x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
+        )
+        line_main = base.mark_line(
+            point=alt.OverlayMarkDef(color="#f0c040", size=80),
+            color="#f0c040", strokeWidth=2
+        ).encode(
+            y=alt.Y("着順", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"),
+            tooltip=["戦数", "着順"]
+        )
+        chart = line_main
+        if "移動平均(5戦)" in df_trend.columns:
+            line_avg = base.mark_line(
+                color="#5b9cf6", strokeWidth=1.5, strokeDash=[5, 3]
+            ).encode(
+                y=alt.Y("移動平均(5戦)"),
+                tooltip=["戦数", alt.Tooltip("移動平均(5戦)", format=".3f")]
+            )
+            chart = alt.layer(line_main, line_avg)
+
+        chart = chart.properties(height=280).configure_view(
+            strokeWidth=0, fill="#1a1d2e"
+        ).configure_axis(
+            gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8"
+        )
+        st.altair_chart(chart, use_container_width=True)
+        if "移動平均(5戦)" in df_trend.columns:
+            st.caption("🟡 着順  /  🔵 5戦移動平均")
+    with c_dates:
+        st.markdown("##### 📅 稼働日")
+        date_list = sorted(list(played_dates), reverse=True)
+        st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True)
+
+    # --- 月別着順推移グラフ ---
+    if len(monthly_data) >= 2:
+        st.divider()
+        st.markdown("##### 📊 月別平均着順の推移")
+        m_chart_data = []
+        for ym in sorted(monthly_data.keys()):
+            rs = monthly_data[ym]["ranks"]
+            if rs:
+                m_chart_data.append({"年月": ym, "平均着順": sum(rs) / len(rs), "打数": len(rs)})
+        if len(m_chart_data) >= 2:
+            df_m_chart = pd.DataFrame(m_chart_data)
+            m_chart = alt.Chart(df_m_chart).mark_line(
+                point=alt.OverlayMarkDef(color="#4caf87", size=100),
+                color="#4caf87", strokeWidth=2.5
+            ).encode(
+                x=alt.X("年月:N", title="年月", sort=None),
+                y=alt.Y("平均着順:Q", scale=alt.Scale(domain=[3.3, 0.7]), title="平均着順"),
+                tooltip=["年月", alt.Tooltip("平均着順", format=".3f"), "打数"]
+            ).properties(height=260).configure_view(
+                strokeWidth=0, fill="#1a1d2e"
+            ).configure_axis(
+                gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8"
+            )
+            st.altair_chart(m_chart, use_container_width=True)
+
+    # --- 対戦相手データ ---
+    if compatibility:
+        st.divider()
+        st.markdown("##### 🤝 対戦相手データ (TOP5)")
+        comp_data = [{"名前": n, "同卓回数": d["count"], "相性スコア": d["score"]} for n, d in compatibility.items()]
+        df_comp = pd.DataFrame(comp_data)
+        c_freq, c_good, c_bad = st.columns(3)
+        with c_freq:
+            st.markdown("**👬 同卓回数**")
+            st.dataframe(df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
+        with c_good:
+            st.markdown("**💖 カモ**")
+            st.dataframe(df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+        with c_bad:
+            st.markdown("**💀 天敵**")
+            st.dataframe(df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+
+    # --- 個人記録の更新 ---
+    st.divider()
+    st.markdown("#### 🀄 個人記録の更新")
+    df_mem = load_member_data()
+    current_max = 0
+    current_yaku = 0
+    current_detail = ""
+    current_date_str = ""
+    target_idx = df_mem.index[df_mem["名前"] == selected_player].tolist()
+
+    if target_idx:
+        idx = target_idx[0]
+        current_max = int(df_mem.at[idx, "最大飜数"])
+        current_yaku = int(df_mem.at[idx, "役満回数"])
+        current_detail = df_mem.at[idx, "最大飜数詳細"] if "最大飜数詳細" in df_mem.columns else ""
+        current_date_str = df_mem.at[idx, "最大飜数記録日"] if "最大飜数記録日" in df_mem.columns else ""
+
+        # 現在値を表示
+        c_d1, c_d2, c_d3 = st.columns(3)
+        c_d1.metric("最大飜数", f"{current_max} 飜", current_detail if current_detail else None)
+        c_d2.metric("役満回数", f"{current_yaku} 回")
+        if current_date_str:
+            c_d3.metric("記録日", current_date_str)
+
+    with st.form("update_personal_stats_page"):
+        c_in1, c_in2 = st.columns(2)
+        with c_in1:
+            new_max = st.number_input("最大飜数", min_value=0, value=current_max, key="ps_max")
+            new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail, key="ps_detail")
+            new_date_val = st.text_input("記録日 (例: 2026/02/20)", value=current_date_str, key="ps_date")
+        with c_in2:
+            new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku, key="ps_yaku")
+        if st.form_submit_button("💾 更新する", type="primary"):
+            if target_idx:
+                df_mem.at[idx, "最大飜数"] = new_max
+                df_mem.at[idx, "役満回数"] = new_yaku
+                if "最大飜数詳細" not in df_mem.columns:
+                    df_mem["最大飜数詳細"] = ""
+                if "最大飜数記録日" not in df_mem.columns:
+                    df_mem["最大飜数記録日"] = ""
+                df_mem.at[idx, "最大飜数詳細"] = new_detail
+                df_mem.at[idx, "最大飜数記録日"] = new_date_val
+                save_member_data(df_mem)
+                st.success(f"✅ {selected_player}さんの記録を更新しました！")
+                time.sleep(1)
+                st.rerun()
+            else:
+                st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
 
 # --- 利益管理 ---
 def page_profit():
@@ -1194,15 +1534,15 @@ def page_members():
                 for i, row in guests.iterrows():
                     badge = f'<span class="badge badge-{"b" if row["タイプ"]=="B客" else "a"}">{row["タイプ"]}</span>'
                     if st.button(f"👤 {row['名前']}", key=f"lnk_g_{i}"):
-                        st.session_state["page"] = "history"
-                        st.session_state["jump_to_player"] = row['名前']
+                        st.session_state["page"] = "personal"
+                        st.session_state["personal_player"] = row['名前']
                         st.rerun()
             with c2:
                 st.markdown("#### 👔 スタッフ")
                 for i, row in staffs.iterrows():
                     if st.button(f"👔 {row['名前']}", key=f"lnk_s_{i}"):
-                        st.session_state["page"] = "history"
-                        st.session_state["jump_to_player"] = row['名前']
+                        st.session_state["page"] = "personal"
+                        st.session_state["personal_player"] = row['名前']
                         st.rerun()
 
     with tab_add:
@@ -2186,6 +2526,7 @@ if "page" not in st.session_state:
 
 page = st.session_state["page"]
 if page == "home":       page_home()
+elif page == "personal": page_personal()
 elif page == "members":  page_members()
 elif page == "input":    page_input()
 elif page == "history":  page_history()
