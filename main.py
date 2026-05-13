@@ -127,13 +127,15 @@ hide_style = """
         border-color: var(--accent) !important;
         box-shadow: 0 0 0 2px var(--accent-soft) !important;
     }
-    .stSelectbox label,
-    .stTextInput label,
-    .stNumberInput label,
-    .stDateInput label,
-    .stTextArea label,
-    .stRadio label,
-    .stCheckbox label {
+    /* 外側のウィジェットラベル (例: 「着順」「タイプ」等のフィールド名) - 直接子のみ指定 */
+    .stSelectbox > label,
+    .stTextInput > label,
+    .stNumberInput > label,
+    .stDateInput > label,
+    .stTextArea > label,
+    .stRadio > label,
+    .stCheckbox > label,
+    [data-testid="stWidgetLabel"] {
         color: var(--text-muted) !important;
         font-size: 0.8rem !important;
         font-weight: 500 !important;
@@ -146,33 +148,59 @@ hide_style = """
         gap: 0.4rem !important;
         flex-wrap: wrap !important;
     }
-    .stRadio > div > label {
+    /* 各オプションのスタイル (data-baseweb属性で直接ターゲットして確実に適用) */
+    label[data-baseweb="radio"] {
         background: var(--bg-card2) !important;
         border: 1px solid var(--border) !important;
         border-radius: var(--radius-sm) !important;
-        padding: 0.4rem 0.85rem !important;
+        padding: 0.45rem 0.9rem !important;
         color: var(--text-primary) !important;
-        font-size: 0.9rem !important;
+        font-size: 0.92rem !important;
+        font-weight: 500 !important;
         text-transform: none !important;
         letter-spacing: 0 !important;
         cursor: pointer !important;
         transition: all 0.15s ease !important;
-        min-height: 38px !important;
-        display: flex !important;
+        min-height: 40px !important;
+        display: inline-flex !important;
         align-items: center !important;
+        justify-content: center !important;
+        gap: 0.3rem !important;
     }
-    .stRadio > div > label:hover {
-        border-color: var(--border-strong) !important;
+    /* 内部のテキスト要素 (div/p/span) にも色を強制継承させる */
+    label[data-baseweb="radio"],
+    label[data-baseweb="radio"] *,
+    label[data-baseweb="radio"] div,
+    label[data-baseweb="radio"] p,
+    label[data-baseweb="radio"] span {
+        color: var(--text-primary) !important;
+        opacity: 1 !important;
+    }
+    /* マークダウンコンテナの背景もクリア */
+    label[data-baseweb="radio"] [data-testid="stMarkdownContainer"],
+    label[data-baseweb="radio"] [data-testid="stMarkdownContainer"] * {
+        background: transparent !important;
+        color: var(--text-primary) !important;
+    }
+    label[data-baseweb="radio"]:hover {
+        border-color: var(--accent) !important;
         background: var(--bg-card) !important;
     }
-    .stRadio > div > label:has(input:checked) {
+    /* チェック済みオプション */
+    label[data-baseweb="radio"]:has(input:checked) {
         background: var(--accent-soft) !important;
         border-color: var(--accent) !important;
-        color: var(--accent) !important;
-        font-weight: 700 !important;
-        box-shadow: 0 0 0 2px rgba(240,192,64,0.15) !important;
+        font-weight: 800 !important;
+        box-shadow: 0 0 0 2px rgba(240,192,64,0.2) !important;
     }
-    /* ラジオボタンのネイティブUI(丸印)のみを非表示にし、テキスト部分は残す */
+    label[data-baseweb="radio"]:has(input:checked),
+    label[data-baseweb="radio"]:has(input:checked) *,
+    label[data-baseweb="radio"]:has(input:checked) div,
+    label[data-baseweb="radio"]:has(input:checked) p,
+    label[data-baseweb="radio"]:has(input:checked) span {
+        color: var(--accent-bright) !important;
+    }
+    /* ネイティブのラジオUI(丸印)のみを非表示にし、テキスト部分は残す */
     [data-baseweb="radio"] input { display: none !important; }
     [data-baseweb="radio"] > div:first-child { display: none !important; }
 
