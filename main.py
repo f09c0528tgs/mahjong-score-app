@@ -172,8 +172,9 @@ hide_style = """
         font-weight: 700 !important;
         box-shadow: 0 0 0 2px rgba(240,192,64,0.15) !important;
     }
+    /* ラジオボタンのネイティブUI(丸印)のみを非表示にし、テキスト部分は残す */
     [data-baseweb="radio"] input { display: none !important; }
-    [data-baseweb="radio"] > div { display: none !important; }
+    [data-baseweb="radio"] > div:first-child { display: none !important; }
 
     /* ========== チェックボックス ========== */
     .stCheckbox > label {
