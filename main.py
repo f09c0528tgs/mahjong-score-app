@@ -2314,30 +2314,6 @@ def page_input():
 
     start_new_set = st.checkbox(f"🆕 新しいセットへ ({current_table}卓 → 第{current_set_no+1}セット)")
 
-    # 改善: 入力プレビュー (記録前確認)
-    if n1 and n2 and n3:
-        # 着順順にソート
-        players_info = sorted([
-            (r1, n1, t1, "A席"),
-            (r2, n2, t2, "B席"),
-            (r3, n3, t3, "C席"),
-        ], key=lambda x: x[0])
-
-        preview_html = '<div class="preview-card"><div class="preview-title">📋 記録内容プレビュー</div>'
-        for rank, name, ptype, seat in players_info:
-            preview_html += f'''
-            <div class="preview-row">
-                <span class="preview-rank r{rank}">{rank}</span>
-                <span class="preview-name">{name}</span>
-                <span class="badge badge-{"b" if ptype=="B客" else ("a" if ptype=="A客" else ("as" if ptype=="AS" else "bs"))}">{ptype}</span>
-                <span style="margin-left:auto;" class="preview-seat">{seat}</span>
-            </div>
-            '''
-        if note != "なし":
-            preview_html += f'<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px dashed var(--border);color:var(--accent2);font-size:0.85rem;font-weight:700;">📌 備考: {note}</div>'
-        preview_html += '</div>'
-        st.markdown(preview_html, unsafe_allow_html=True)
-
     st.write("")
     if st.button("📝 記録する (一時保存)", type="primary", use_container_width=True):
         if not n1 or not n2 or not n3:
