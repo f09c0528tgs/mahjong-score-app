@@ -972,6 +972,314 @@ def save_profit_data(df):
         st.stop()
 
 # ==========================================
+# 2.5 ローカルバッファ機構 (一括保存)
+# ==========================================
+# pending_changes は session_state に保持し、明示的な保存ボタンで一括書き込みする。
+# 各エントリは以下の構造:
+#   {
+#       "type": "add" | "update" | "delete",
+#       "buffer_id": <int>,   # バッファ内で一意のID (内部管理用)
+#       "target_game_no": <int>,  # update/delete時の対象スプレッドシート上のGameNo
+#       "data": {...},        # add/update時の最新データ (EXPECTED_COLS準拠)
+#       "timestamp": <iso>,   # 追加時刻
+#   }
+
+def init_buffer():
+    """バッファ関連のセッション状態を初期化"""
+    if "pending_changes" not in st.session_state:
+        st.session_state["pending_changes"] = []
+    if "buffer_id_counter" not in st.session_state:
+        st.session_state["buffer_id_counter"] = 0
+    if "buffer_temp_game_no" not in st.session_state:
+        # 新規追加用の仮GameNo (負の整数を使ってスプレッドシート上のGameNoと衝突しないように)
+        st.session_state["buffer_temp_game_no"] = -1
+
+def next_buffer_id():
+    st.session_state["buffer_id_counter"] += 1
+    return st.session_state["buffer_id_counter"]
+
+def next_temp_game_no():
+    """バッファ内の新規追加用の仮GameNoを発番(負の整数)"""
+    no = st.session_state["buffer_temp_game_no"]
+    st.session_state["buffer_temp_game_no"] -= 1
+    return no
+
+def has_pending_changes():
+    init_buffer()
+    return len(st.session_state["pending_changes"]) > 0
+
+def pending_count():
+    init_buffer()
+    return len(st.session_state["pending_changes"])
+
+def buffer_add(new_row):
+    """新規行をバッファに追加"""
+    init_buffer()
+    temp_no = next_temp_game_no()
+    new_row = dict(new_row)
+    new_row["GameNo"] = temp_no
+    entry = {
+        "type": "add",
+        "buffer_id": next_buffer_id(),
+        "target_game_no": temp_no,
+        "data": new_row,
+        "timestamp": datetime.now().isoformat(),
+    }
+    st.session_state["pending_changes"].append(entry)
+
+def buffer_update(target_game_no, new_data, detail=""):
+    """既存または未保存行の更新をバッファに記録"""
+    init_buffer()
+    # 同じ target_game_no に対する既存の add/update があれば、それを上書きする
+    for i, e in enumerate(st.session_state["pending_changes"]):
+        if e.get("target_game_no") == target_game_no:
+            if e["type"] == "add":
+                # 未保存の新規行の更新: addのデータを直接書き換える
+                merged = dict(e["data"])
+                merged.update(new_data)
+                merged["GameNo"] = target_game_no  # 仮GameNoは保持
+                st.session_state["pending_changes"][i]["data"] = merged
+                return
+            elif e["type"] == "update":
+                # 既存updateの上書き
+                st.session_state["pending_changes"][i]["data"] = new_data
+                st.session_state["pending_changes"][i]["detail"] = detail
+                return
+            elif e["type"] == "delete":
+                # 削除予定だったものを更新に変える
+                st.session_state["pending_changes"][i] = {
+                    "type": "update",
+                    "buffer_id": next_buffer_id(),
+                    "target_game_no": target_game_no,
+                    "data": new_data,
+                    "detail": detail,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                return
+    # 新規のupdate
+    entry = {
+        "type": "update",
+        "buffer_id": next_buffer_id(),
+        "target_game_no": target_game_no,
+        "data": new_data,
+        "detail": detail,
+        "timestamp": datetime.now().isoformat(),
+    }
+    st.session_state["pending_changes"].append(entry)
+
+def buffer_delete(target_game_no, info=""):
+    """既存または未保存行の削除をバッファに記録"""
+    init_buffer()
+    # 未保存のaddを削除する場合は単純に取り除く
+    for i, e in enumerate(st.session_state["pending_changes"]):
+        if e.get("target_game_no") == target_game_no:
+            if e["type"] == "add":
+                # まだスプレッドシートに無いので削除エントリ自体を消すだけ
+                st.session_state["pending_changes"].pop(i)
+                return
+            elif e["type"] == "update":
+                # update予定だったものを delete に変える
+                st.session_state["pending_changes"][i] = {
+                    "type": "delete",
+                    "buffer_id": next_buffer_id(),
+                    "target_game_no": target_game_no,
+                    "info": info,
+                    "timestamp": datetime.now().isoformat(),
+                }
+                return
+            elif e["type"] == "delete":
+                # すでに削除予定
+                return
+    entry = {
+        "type": "delete",
+        "buffer_id": next_buffer_id(),
+        "target_game_no": target_game_no,
+        "info": info,
+        "timestamp": datetime.now().isoformat(),
+    }
+    st.session_state["pending_changes"].append(entry)
+
+def buffer_remove_by_id(buffer_id):
+    """指定バッファエントリを取り消す"""
+    init_buffer()
+    st.session_state["pending_changes"] = [
+        e for e in st.session_state["pending_changes"] if e.get("buffer_id") != buffer_id
+    ]
+
+def buffer_clear():
+    """全バッファをクリア"""
+    st.session_state["pending_changes"] = []
+    st.session_state["buffer_id_counter"] = 0
+    st.session_state["buffer_temp_game_no"] = -1
+
+def apply_buffer_to_df(df):
+    """
+    DataFrameにバッファの変更を適用し、表示用の実効DataFrameを返す。
+    df: load_score_data() の結果 (派生カラム含む)
+    """
+    init_buffer()
+    changes = st.session_state["pending_changes"]
+    if not changes:
+        return df
+
+    df = df.copy() if not df.empty else pd.DataFrame(columns=EXPECTED_COLS)
+
+    # 削除を先に適用
+    delete_ids = [e["target_game_no"] for e in changes if e["type"] == "delete"]
+    if delete_ids and not df.empty:
+        df = df[~df["GameNo"].isin(delete_ids)]
+
+    # 更新を適用
+    for e in changes:
+        if e["type"] == "update":
+            target = e["target_game_no"]
+            if not df.empty and target in df["GameNo"].values:
+                idx_pos = df[df["GameNo"] == target].index
+                for col, val in e["data"].items():
+                    if col in df.columns:
+                        df.loc[idx_pos, col] = val
+
+    # 新規追加を適用 (EXPECTED_COLSのみ取り出して追加)
+    add_rows = []
+    for e in changes:
+        if e["type"] == "add":
+            row = {c: e["data"].get(c, "") for c in EXPECTED_COLS}
+            add_rows.append(row)
+    if add_rows:
+        df_add = pd.DataFrame(add_rows)
+        if df.empty:
+            df = df_add
+        else:
+            df = pd.concat([df, df_add], ignore_index=True)
+
+    # 派生カラムを再計算
+    df = process_score_df(df[EXPECTED_COLS]) if not df.empty else df
+    if df is None:
+        return pd.DataFrame(columns=EXPECTED_COLS)
+    return df
+
+def load_score_data_effective():
+    """
+    実効スコアデータ (スプレッドシート + バッファ) を返す。
+    表示・統計・入力時の本日No算出などはこちらを使う。
+    """
+    base_df = load_score_data()
+    return apply_buffer_to_df(base_df)
+
+def commit_buffer_to_sheet():
+    """
+    バッファに溜まった全変更をスプレッドシートに一括反映する。
+    成功時: バッファクリアして True
+    失敗時: バッファ保持して False
+    """
+    init_buffer()
+    changes = st.session_state["pending_changes"]
+    if not changes:
+        return True
+
+    # 最新データを取得
+    try:
+        df_latest = load_score_data_fresh()
+    except Exception as e:
+        st.error(f"最新データの取得に失敗しました: {e}")
+        return False
+
+    # 削除適用
+    delete_ids = [e["target_game_no"] for e in changes if e["type"] == "delete"]
+    if delete_ids and not df_latest.empty:
+        df_latest = df_latest[~df_latest["GameNo"].isin(delete_ids)]
+
+    # 更新適用
+    for e in changes:
+        if e["type"] == "update":
+            target = e["target_game_no"]
+            if not df_latest.empty and target in df_latest["GameNo"].values:
+                idx_pos = df_latest[df_latest["GameNo"] == target].index[0]
+                for col, val in e["data"].items():
+                    if col in df_latest.columns:
+                        df_latest.loc[idx_pos, col] = val
+
+    # 新規追加適用 (GameNoを正の値で発番し直す)
+    if not df_latest.empty and "GameNo" in df_latest.columns:
+        max_no = pd.to_numeric(df_latest["GameNo"], errors='coerce').fillna(0)
+        max_no = int(max_no[max_no > 0].max()) if (max_no > 0).any() else 0
+    else:
+        max_no = 0
+
+    add_rows = []
+    add_log_entries = []
+    for e in changes:
+        if e["type"] == "add":
+            max_no += 1
+            row = {c: e["data"].get(c, "") for c in EXPECTED_COLS}
+            row["GameNo"] = max_no
+            add_rows.append(row)
+            add_log_entries.append({
+                "real_game_no": max_no,
+                "detail": e["data"].get("_log_detail", f"新規: {row.get('TableNo','?')}卓"),
+            })
+    if add_rows:
+        df_add = pd.DataFrame(add_rows)
+        if df_latest.empty:
+            df_latest = df_add
+        else:
+            df_latest = pd.concat([df_latest[EXPECTED_COLS], df_add], ignore_index=True)
+
+    # 保存
+    try:
+        save_score_data(df_latest)
+    except Exception as e:
+        st.error(f"保存に失敗しました: {e}")
+        return False
+
+    # ログを一括書き込み
+    try:
+        conn = get_conn()
+        try:
+            df_log = fetch_data_fresh(conn, SHEET_LOG)
+        except:
+            df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
+        jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
+        new_log_rows = []
+        for e in changes:
+            if e["type"] == "add":
+                # add_log_entriesと対応付け
+                pass
+            elif e["type"] == "update":
+                new_log_rows.append({
+                    "日時": jst_now,
+                    "操作": "修正",
+                    "GameNo": e["target_game_no"],
+                    "詳細": e.get("detail", ""),
+                })
+            elif e["type"] == "delete":
+                new_log_rows.append({
+                    "日時": jst_now,
+                    "操作": "削除",
+                    "GameNo": e["target_game_no"],
+                    "詳細": e.get("info", ""),
+                })
+        # 新規追加分のログ
+        for entry in add_log_entries:
+            new_log_rows.append({
+                "日時": jst_now,
+                "操作": "新規登録",
+                "GameNo": entry["real_game_no"],
+                "詳細": entry["detail"],
+            })
+        if new_log_rows:
+            df_log = pd.concat([df_log, pd.DataFrame(new_log_rows)], ignore_index=True)
+            conn.update(worksheet=SHEET_LOG, data=df_log)
+            fetch_data_cached.clear()
+    except Exception as e:
+        # ログ書き込み失敗は致命的ではないので警告のみ
+        st.warning(f"ログの保存に一部失敗しました: {e}")
+
+    # バッファクリア
+    buffer_clear()
+    return True
+
+# ==========================================
 # 3. 集計関数 (元のまま)
 # ==========================================
 
@@ -1133,6 +1441,74 @@ def section_title(icon, text):
         unsafe_allow_html=True
     )
 
+def render_pending_bar(location_key=""):
+    """
+    未保存変更がある場合に表示する共通ステータスバー。
+    全ページの上部 (top_navの直後) に配置する。
+    """
+    init_buffer()
+    cnt = pending_count()
+    if cnt == 0:
+        return
+
+    # 件数に応じて警告レベルを変える
+    if cnt >= 20:
+        bg_grad = "linear-gradient(135deg, rgba(224,92,92,0.18) 0%, rgba(224,123,57,0.15) 100%)"
+        border_col = "var(--red)"
+        text_col = "var(--red)"
+        icon = "⚠️"
+    elif cnt >= 10:
+        bg_grad = "linear-gradient(135deg, rgba(224,123,57,0.18) 0%, rgba(240,192,64,0.12) 100%)"
+        border_col = "var(--accent2)"
+        text_col = "var(--accent2)"
+        icon = "📌"
+    else:
+        bg_grad = "linear-gradient(135deg, rgba(91,156,246,0.15) 0%, rgba(240,192,64,0.1) 100%)"
+        border_col = "var(--blue)"
+        text_col = "var(--blue)"
+        icon = "💾"
+
+    st.markdown(f"""
+    <div style="background:{bg_grad};border:1px solid {border_col};
+                border-radius:var(--radius);padding:0.7rem 1.1rem;margin-bottom:1rem;
+                display:flex;align-items:center;gap:0.7rem;">
+        <span style="font-size:1.2rem;">{icon}</span>
+        <span style="color:{text_col};font-weight:700;font-size:0.95rem;">
+            未保存の変更: <span style="font-size:1.3rem;font-family:'Zen Kaku Gothic New';">{cnt}</span> 件
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        if st.button(f"💾 まとめて保存する ({cnt} 件)", key=f"commit_btn_{location_key}",
+                     type="primary", use_container_width=True):
+            with st.spinner(f"{cnt} 件の変更を保存中..."):
+                ok = commit_buffer_to_sheet()
+            if ok:
+                st.session_state["success_msg"] = f"✨ {cnt} 件の変更を保存しました!"
+                st.rerun()
+    with c2:
+        if st.button("🗑 破棄", key=f"discard_btn_{location_key}", use_container_width=True):
+            st.session_state[f"_confirm_discard_{location_key}"] = True
+            st.rerun()
+
+    # 破棄確認
+    if st.session_state.get(f"_confirm_discard_{location_key}", False):
+        st.warning(f"⚠️ {cnt} 件の未保存データをすべて破棄しますか?この操作は取り消せません。")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            if st.button("✅ はい、破棄する", key=f"discard_yes_{location_key}", use_container_width=True):
+                buffer_clear()
+                st.session_state[f"_confirm_discard_{location_key}"] = False
+                st.rerun()
+        with cc2:
+            if st.button("キャンセル", key=f"discard_no_{location_key}", use_container_width=True):
+                st.session_state[f"_confirm_discard_{location_key}"] = False
+                st.rerun()
+
+    st.write("")
+
 def update_type_by_name(key_name, key_type, type_map):
     name = st.session_state[key_name]
     if name in type_map:
@@ -1189,7 +1565,7 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
 # 5. 今日のクイック統計 (ホーム用 - 改善版)
 # ==========================================
 def render_today_quick_stats():
-    df = load_score_data()
+    df = load_score_data_effective()
     if df.empty:
         st.markdown(
             '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);'
@@ -1277,6 +1653,9 @@ def page_home():
     </div>
     """, unsafe_allow_html=True)
 
+    # 未保存ステータスバー
+    render_pending_bar(location_key="home")
+
     # 今日のクイック統計
     render_today_quick_stats()
 
@@ -1315,8 +1694,9 @@ def page_home():
 def page_personal():
     render_top_nav("personal")
     st.title("👤 個人成績")
+    render_pending_bar(location_key="personal")
 
-    df = load_score_data()
+    df = load_score_data_effective()
     if df.empty:
         st.info("データがありません")
         return
@@ -1610,6 +1990,7 @@ def page_personal():
 def page_profit():
     render_top_nav("profit")
     st.title("💰 利益管理")
+    render_pending_bar(location_key="profit")
 
     JST = timezone(timedelta(hours=9), 'JST')
     current_dt = datetime.now(JST)
@@ -1667,6 +2048,7 @@ def page_profit():
 def page_members():
     render_top_nav("members")
     st.title("👥 メンバー管理")
+    render_pending_bar(location_key="members")
 
     df_mem = load_member_data()
     tab_list, tab_add = st.tabs(["📋 一覧・編集", "➕ 新規追加"])
@@ -1743,7 +2125,7 @@ def page_members():
                     st.success(f"✅「{new_name}」を追加しました")
                     st.rerun()
 
-# --- 編集画面 ---
+# --- 編集画面 (バッファ方式) ---
 def page_edit():
     st.title("🔧 データ修正・削除")
 
@@ -1755,7 +2137,8 @@ def page_edit():
             st.rerun()
         return
 
-    df = load_score_data()
+    # 実効データ (バッファ反映後) から対象を探す
+    df = load_score_data_effective()
     target_row = df[df["GameNo"] == edit_id]
 
     if target_row.empty:
@@ -1770,12 +2153,18 @@ def page_edit():
     member_list = get_all_member_names()
     type_map = dict(zip(df_mem["名前"], df_mem["タイプ"]))
 
+    # 未保存データかどうかを判定 (GameNoが負なら未保存の新規追加)
+    is_unsaved = edit_id < 0
+    status_badge = "🆕 未保存(新規)" if is_unsaved else "💾 保存済み"
+
     st.markdown(f"""
     <div class="input-status-bar">
         <span class="isb-main">📝 編集中: No.{row['DailyNo']}</span>
-        <span class="isb-sub">卓: {row['TableNo']} ／ セット: {row['SetNo']} ／ 時刻: {pd.to_datetime(row['日時']).strftime('%H:%M') if row['日時'] else '-'}</span>
+        <span class="isb-sub">{status_badge} ／ 卓: {row['TableNo']} ／ セット: {row['SetNo']} ／ 時刻: {pd.to_datetime(row['日時']).strftime('%H:%M') if row['日時'] else '-'}</span>
     </div>
     """, unsafe_allow_html=True)
+
+    st.info("📌 編集内容は「未保存」状態になります。入力画面の「💾 まとめて保存」ボタンで一括反映してください。")
 
     with st.form("edit_form"):
         p1_n, p1_t, p1_r = player_input_row_dynamic("A席", member_list, row["Aさん"], row["Aタイプ"], int(float(row["A着順"])), [1, 2, 3], "_edit", type_map)
@@ -1792,9 +2181,9 @@ def page_edit():
         st.divider()
         c_up, c_del, c_can = st.columns(3)
         with c_up:
-            submit_update = st.form_submit_button("🔄 更新して保存", type="primary", use_container_width=True)
+            submit_update = st.form_submit_button("🔄 更新を一時保存", type="primary", use_container_width=True)
         with c_del:
-            submit_delete = st.form_submit_button("🗑 削除する", use_container_width=True)
+            submit_delete = st.form_submit_button("🗑 削除を一時保存", use_container_width=True)
         with c_can:
             submit_cancel = st.form_submit_button("キャンセル", use_container_width=True)
 
@@ -1804,60 +2193,46 @@ def page_edit():
             st.rerun()
 
         if submit_update:
-            fetch_data_cached.clear()
-            df_latest = load_score_data_fresh()
-            if edit_id not in df_latest["GameNo"].values:
-                st.error("データが他で削除された可能性があります")
+            if not p1_n or not p2_n or not p3_n:
+                st.error("名前を選択してください")
+            elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
+                st.error("着順が重複しています")
             else:
-                if not p1_n or not p2_n or not p3_n:
-                    st.error("名前を選択してください")
-                elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
-                    st.error("着順が重複しています")
-                else:
-                    new_data = {
-                        "GameNo": row["GameNo"], "TableNo": row["TableNo"], "SetNo": row["SetNo"],
-                        "日時": row["日時"], "備考": ("" if note == "なし" else note),
-                        "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
-                        "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
-                        "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
-                    }
-                    changes = []
-                    compare_keys = [
-                        ("備考", "備考"), ("A名前", "Aさん"), ("A着順", "A着順"), ("Aタイプ", "Aタイプ"),
-                        ("B名前", "Bさん"), ("B着順", "B着順"), ("Bタイプ", "Bタイプ"),
-                        ("C名前", "Cさん"), ("C着順", "C着順"), ("Cタイプ", "Cタイプ"),
-                    ]
-                    for label, key in compare_keys:
-                        old_val = row[key]
-                        new_val = new_data[key]
-                        if str(old_val) != str(new_val):
-                            changes.append(f"{label}: {old_val}→{new_val}")
-                    diff_text = ", ".join(changes) if changes else "変更なし"
-                    idx_pos = df_latest[df_latest["GameNo"] == edit_id].index[0]
-                    df_latest.loc[idx_pos, list(new_data.keys())] = list(new_data.values())
-                    save_score_data(df_latest)
-                    save_action_log("修正", row["DailyNo"], diff_text)
-                    st.session_state["success_msg"] = "✅ 修正しました！"
-                    st.session_state["page"] = "input"
-                    st.session_state["editing_game_id"] = None
-                    st.rerun()
+                new_data = {
+                    "GameNo": row["GameNo"], "TableNo": row["TableNo"], "SetNo": row["SetNo"],
+                    "日時": row["日時"], "備考": ("" if note == "なし" else note),
+                    "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
+                    "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
+                    "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
+                }
+                changes_list = []
+                compare_keys = [
+                    ("備考", "備考"), ("A名前", "Aさん"), ("A着順", "A着順"), ("Aタイプ", "Aタイプ"),
+                    ("B名前", "Bさん"), ("B着順", "B着順"), ("Bタイプ", "Bタイプ"),
+                    ("C名前", "Cさん"), ("C着順", "C着順"), ("Cタイプ", "Cタイプ"),
+                ]
+                for label_, key in compare_keys:
+                    old_val = row[key]
+                    new_val = new_data[key]
+                    if str(old_val) != str(new_val):
+                        changes_list.append(f"{label_}: {old_val}→{new_val}")
+                diff_text = ", ".join(changes_list) if changes_list else "変更なし"
 
-        if submit_delete:
-            fetch_data_cached.clear()
-            df_latest = load_score_data_fresh()
-            if edit_id in df_latest["GameNo"].values:
-                df_latest = df_latest[df_latest["GameNo"] != edit_id]
-                save_score_data(df_latest)
-                del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']}"
-                save_action_log("削除", row["DailyNo"], del_info)
-                st.session_state["success_msg"] = "🗑 削除しました"
+                buffer_update(edit_id, new_data, detail=diff_text)
+                st.session_state["success_msg"] = f"🔄 修正を一時保存しました — 未保存: {pending_count()}件"
                 st.session_state["page"] = "input"
                 st.session_state["editing_game_id"] = None
                 st.rerun()
-            else:
-                st.error("既に削除されています")
 
-# --- 入力画面 (改善版) ---
+        if submit_delete:
+            del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']}"
+            buffer_delete(edit_id, info=del_info)
+            st.session_state["success_msg"] = f"🗑 削除を一時保存しました — 未保存: {pending_count()}件"
+            st.session_state["page"] = "input"
+            st.session_state["editing_game_id"] = None
+            st.rerun()
+
+# --- 入力画面 (改善版 + バッファ方式) ---
 def page_input():
     render_top_nav("input")
     st.title("📝 成績入力")
@@ -1874,7 +2249,11 @@ def page_input():
         components.html("""<script>try{var main=window.parent.document.querySelector('section.main');if(main){main.scrollTo(0,0);}window.parent.scrollTo(0,0);}catch(e){}</script>""", height=0)
         st.session_state["success_msg"] = None
 
-    df = load_score_data()
+    # 未保存ステータスバー
+    render_pending_bar(location_key="input")
+
+    # 実効データ (スプレッドシート + バッファ) を使用
+    df = load_score_data_effective()
     df_mem = load_member_data()
     member_list = get_all_member_names()
     type_map = dict(zip(df_mem["名前"], df_mem["タイプ"]))
@@ -1889,9 +2268,9 @@ def page_input():
         default_date_obj = (current_dt - timedelta(hours=9)).date()
         input_date = st.date_input("📅 日付 (朝9時切替)", value=default_date_obj)
 
-    mask_all = df["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
-    df_all_today = df[mask_all]
-    df_table_today = df_all_today[df_all_today["TableNo"] == current_table]
+    mask_all = df["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False) if not df.empty else pd.Series([], dtype=bool)
+    df_all_today = df[mask_all] if not df.empty else df
+    df_table_today = df_all_today[df_all_today["TableNo"] == current_table] if not df_all_today.empty else df_all_today
 
     if not df_table_today.empty and "SetNo" in df_table_today.columns:
         current_set_no = int(df_table_today["SetNo"].max())
@@ -1902,11 +2281,6 @@ def page_input():
         next_display_no = int(df_table_today["DailyNo"].max()) + 1
     else:
         next_display_no = 1
-
-    if not df.empty and "GameNo" in df.columns:
-        next_internal_game_no = df["GameNo"].max() + 1
-    else:
-        next_internal_game_no = 1
 
     last_n1, last_t1 = None, "A客"
     last_n2, last_t2 = None, "B客"
@@ -1965,57 +2339,32 @@ def page_input():
         st.markdown(preview_html, unsafe_allow_html=True)
 
     st.write("")
-    if st.button("📝 記録する", type="primary", use_container_width=True):
+    if st.button("📝 記録する (一時保存)", type="primary", use_container_width=True):
         if not n1 or not n2 or not n3:
             st.error("⚠️ 名前が選択されていません！")
+        elif sorted([r1, r2, r3]) != [1, 2, 3]:
+            st.error("⚠️ 着順が重複しています！")
         else:
-            with st.spinner("保存中..."):
-                fetch_data_cached.clear()
-                try:
-                    df_latest = load_score_data_fresh()
-                except:
-                    st.error("データの読み込みに失敗しました。再試行してください。")
-                    st.stop()
+            # バッファに追加するだけ。スプレッドシートには書かない。
+            now_jst = datetime.now(JST)
+            save_date_obj = input_date
+            if now_jst.hour < 9:
+                save_date_obj = input_date + timedelta(days=1)
+            save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+            final_set_no = current_set_no + (1 if start_new_set else 0)
 
-                if not df.empty and df_latest.empty:
-                    st.error("🚨 最新データの取得に失敗しました。保存を中止しました。")
-                    st.stop()
-
-                if not df_latest.empty and "GameNo" in df_latest.columns:
-                    next_internal_game_no = df_latest["GameNo"].max() + 1
-                else:
-                    next_internal_game_no = 1
-
-                df_table_latest = df_latest[df_latest["TableNo"] == current_table]
-                mask_latest = df_table_latest["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
-                df_today_latest = df_table_latest[mask_latest]
-
-                if not df_today_latest.empty:
-                    next_display_no = int(df_today_latest["DailyNo"].max()) + 1
-                else:
-                    next_display_no = 1
-
-                now_jst = datetime.now(JST)
-                save_date_obj = input_date
-                if now_jst.hour < 9:
-                    save_date_obj = input_date + timedelta(days=1)
-                save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
-                final_set_no = current_set_no + (1 if start_new_set else 0)
-
-                new_row = {
-                    "GameNo": next_internal_game_no, "TableNo": current_table, "SetNo": final_set_no,
-                    "日時": save_date_str, "備考": ("" if note == "なし" else note),
-                    "Aさん": n1, "Aタイプ": t1, "A着順": r1,
-                    "Bさん": n2, "Bタイプ": t2, "B着順": r2,
-                    "Cさん": n3, "Cタイプ": t3, "C着順": r3
-                }
-
-                df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
-                save_score_data(df_final)
-                save_action_log("新規登録", next_internal_game_no, f"新規: {current_table}卓 No.{next_display_no}")
+            new_row = {
+                "TableNo": current_table, "SetNo": final_set_no,
+                "日時": save_date_str, "備考": ("" if note == "なし" else note),
+                "Aさん": n1, "Aタイプ": t1, "A着順": r1,
+                "Bさん": n2, "Bタイプ": t2, "B着順": r2,
+                "Cさん": n3, "Cタイプ": t3, "C着順": r3,
+                "_log_detail": f"新規: {current_table}卓 No.{next_display_no}",
+            }
+            buffer_add(new_row)
 
             time_str = now_jst.strftime("%H:%M")
-            st.session_state["success_msg"] = f"記録しました！ ({time_str} / {current_table}卓 No.{next_display_no})"
+            st.session_state["success_msg"] = f"一時保存しました ({time_str} / {current_table}卓 No.{next_display_no}) — 未保存: {pending_count()}件"
             st.rerun()
 
     st.divider()
@@ -2085,27 +2434,30 @@ def page_input():
 
         with st.expander("✏️ 過去のゲームを修正・削除する", expanded=False):
             st.caption("👇 修正したい行をクリックすると編集画面へ移動します")
-            df_display = df_all_today.sort_values(["TableNo", "DailyNo"])[["TableNo", "DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
+            df_display = df_all_today.sort_values(["TableNo", "DailyNo"])[["GameNo", "TableNo", "DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
 
             def safe_strftime(x):
                 try: return pd.to_datetime(x).strftime('%H:%M')
                 except: return ""
             df_display["日時"] = df_display["日時"].apply(safe_strftime)
 
+            # 未保存(GameNo<0)を示す状態列を追加
+            df_display["状態"] = df_display["GameNo"].apply(lambda x: "🆕 未保存" if x < 0 else "")
+            df_display = df_display[["状態", "TableNo", "DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん", "GameNo"]]
+            # GameNoは内部用なので非表示用に最後に置くが、列名で隠す
+            df_show = df_display.drop(columns=["GameNo"])
+
             event = st.dataframe(
-                df_display, use_container_width=True, hide_index=True,
+                df_show, use_container_width=True, hide_index=True,
                 on_select="rerun", selection_mode="single-row"
             )
 
             if len(event.selection.rows) > 0:
                 selected_idx = event.selection.rows[0]
-                target_daily_no = df_display.iloc[selected_idx]["DailyNo"]
-                target_table_no = df_display.iloc[selected_idx]["TableNo"]
-                target_rows = df_all_today[(df_all_today["DailyNo"] == target_daily_no) & (df_all_today["TableNo"] == target_table_no)]
-                if not target_rows.empty:
-                    st.session_state["editing_game_id"] = target_rows.iloc[0]["GameNo"]
-                    st.session_state["page"] = "edit"
-                    st.rerun()
+                target_game_no = df_display.iloc[selected_idx]["GameNo"]
+                st.session_state["editing_game_id"] = int(target_game_no)
+                st.session_state["page"] = "edit"
+                st.rerun()
     else:
         st.info("今日のデータはまだありません")
 
@@ -2113,8 +2465,9 @@ def page_input():
 def page_history():
     render_top_nav("history")
     st.title("📊 過去データ参照")
+    render_pending_bar(location_key="history")
 
-    df = load_score_data()
+    df = load_score_data_effective()
     if df.empty:
         st.info("データがありません")
         return
@@ -2601,8 +2954,9 @@ def page_history():
 def page_ranking():
     render_top_nav("ranking")
     st.title("🏆 ランキング")
+    render_pending_bar(location_key="ranking")
 
-    df = load_score_data()
+    df = load_score_data_effective()
     if df.empty:
         st.info("データがありません")
         return
@@ -2740,6 +3094,7 @@ def page_ranking():
 def page_logs():
     render_top_nav("logs")
     st.title("📜 操作ログ")
+    render_pending_bar(location_key="logs")
 
     df_logs = load_log_data()
     if not df_logs.empty and "操作" in df_logs.columns:
