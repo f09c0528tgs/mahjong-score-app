@@ -1518,10 +1518,15 @@ NAV_ITEMS = [
 
 def render_top_nav(current_page):
     """全ページ共通の上部ナビゲーション (ホーム以外で表示)"""
+    # versus2/versus3 はデータ系ページなので、トップナビ上では「データ」をアクティブ表示にする
+    display_active = current_page
+    if current_page in ("versus2", "versus3"):
+        display_active = "history"
+
     cols = st.columns(len(NAV_ITEMS))
     for i, (icon, label, page) in enumerate(NAV_ITEMS):
         with cols[i]:
-            is_current = (page == current_page)
+            is_current = (page == display_active)
             btn_label = f"{icon}\n{label}"
             if is_current:
                 # 現在のページは押せないようにdisabled風にするか、強調
@@ -1779,8 +1784,10 @@ def page_home():
     sub_nav_items = [
         ("👤", "個人成績", "personal"),
         ("📊", "データ参照", "history"),
+        ("🤝", "2人対戦データ", "versus2"),
+        ("👥", "3人対戦データ", "versus3"),
         ("🏆", "ランキング", "ranking"),
-        ("👥", "メンバー管理", "members"),
+        ("📇", "メンバー管理", "members"),
         ("💰", "利益管理", "profit"),
         ("📜", "操作ログ", "logs"),
     ]
@@ -2559,6 +2566,30 @@ def page_history():
         _page_history_versus_2(df)
     with tab3:
         _page_history_versus_3(df)
+
+def page_versus2():
+    """2人対戦データ専用ページ (ホームから直接アクセス可能)"""
+    render_top_nav("versus2")
+    st.title("🤝 2人対戦データ")
+    render_pending_bar(location_key="versus2")
+
+    df = load_score_data_effective()
+    if df.empty:
+        st.info("データがありません")
+        return
+    _page_history_versus_2(df)
+
+def page_versus3():
+    """3人対戦データ専用ページ (ホームから直接アクセス可能)"""
+    render_top_nav("versus3")
+    st.title("👥 3人対戦データ")
+    render_pending_bar(location_key="versus3")
+
+    df = load_score_data_effective()
+    if df.empty:
+        st.info("データがありません")
+        return
+    _page_history_versus_3(df)
 
 def _page_history_versus_2(df):
     """2人を選択して、その2人が同卓した試合データを表示"""
@@ -3512,6 +3543,8 @@ elif page == "personal": page_personal()
 elif page == "members":  page_members()
 elif page == "input":    page_input()
 elif page == "history":  page_history()
+elif page == "versus2":  page_versus2()
+elif page == "versus3":  page_versus3()
 elif page == "edit":     page_edit()
 elif page == "ranking":  page_ranking()
 elif page == "profit":   page_profit()
