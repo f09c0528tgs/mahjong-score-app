@@ -786,6 +786,23 @@ SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
 SHEET_LOG = "logs"
 SHEET_PROFIT = "daily_profits"
+SHEET_PENDING = "pending_buffer"  # 仮保存データ用の専用シート
+
+# pending_buffer シートに必要な列
+PENDING_COLS = [
+    "EntryId",         # 一意ID (ISO日時+ランダム)
+    "Type",            # add / update / delete
+    "TargetGameNo",    # update/delete時の対象GameNo (addは仮の負の数)
+    "Timestamp",       # 追加日時
+    "Detail",          # 編集/削除の差分テキスト
+    "Info",            # 削除時の情報
+    # 以下、addとupdateで使うペイロード列 (EXPECTED_COLSと同じ)
+    "GameNo", "TableNo", "SetNo", "日時", "備考",
+    "Aさん", "Aタイプ", "A着順",
+    "Bさん", "Bタイプ", "B着順",
+    "Cさん", "Cタイプ", "C着順",
+    "LogDetail",       # add時のログ用詳細
+]
 
 EXPECTED_COLS = [
     "GameNo", "TableNo", "SetNo", "日時", "備考",
@@ -972,153 +989,248 @@ def save_profit_data(df):
         st.stop()
 
 # ==========================================
-# 2.5 ローカルバッファ機構 (一括保存)
+# 2.5 永続バッファ機構 (一括保存)
 # ==========================================
-# pending_changes は session_state に保持し、明示的な保存ボタンで一括書き込みする。
-# 各エントリは以下の構造:
-#   {
-#       "type": "add" | "update" | "delete",
-#       "buffer_id": <int>,   # バッファ内で一意のID (内部管理用)
-#       "target_game_no": <int>,  # update/delete時の対象スプレッドシート上のGameNo
-#       "data": {...},        # add/update時の最新データ (EXPECTED_COLS準拠)
-#       "timestamp": <iso>,   # 追加時刻
-#   }
+# 仮保存データを専用シート `pending_buffer` に書き込み、ページ遷移・ブラウザ閉じても消えないようにする。
+# session_state はキャッシュとして使い、シートとの同期はライフサイクル要所で行う。
+#
+# 各エントリ (PENDING_COLS) は以下:
+#   EntryId, Type (add/update/delete), TargetGameNo, Timestamp, Detail, Info,
+#   GameNo, TableNo, SetNo, 日時, 備考, Aさん,Aタイプ,A着順, Bさん,Bタイプ,B着順, Cさん,Cタイプ,C着順,
+#   LogDetail
 
-def init_buffer():
-    """バッファ関連のセッション状態を初期化"""
-    if "pending_changes" not in st.session_state:
-        st.session_state["pending_changes"] = []
-    if "buffer_id_counter" not in st.session_state:
-        st.session_state["buffer_id_counter"] = 0
-    if "buffer_temp_game_no" not in st.session_state:
-        # 新規追加用の仮GameNo (負の整数を使ってスプレッドシート上のGameNoと衝突しないように)
-        st.session_state["buffer_temp_game_no"] = -1
+import uuid as _uuid
 
-def next_buffer_id():
-    st.session_state["buffer_id_counter"] += 1
-    return st.session_state["buffer_id_counter"]
+@st.cache_data(ttl=5)
+def _fetch_pending_cached(_conn):
+    """pending_buffer シートを短期キャッシュ付きで読む (5秒)"""
+    try:
+        return _conn.read(worksheet=SHEET_PENDING, ttl=0)
+    except Exception:
+        return None
 
-def next_temp_game_no():
-    """バッファ内の新規追加用の仮GameNoを発番(負の整数)"""
-    no = st.session_state["buffer_temp_game_no"]
-    st.session_state["buffer_temp_game_no"] -= 1
-    return no
+def _save_pending_df(df):
+    """pending_buffer シートを上書き保存"""
+    conn = get_conn()
+    # 列を統一
+    for c in PENDING_COLS:
+        if c not in df.columns:
+            df[c] = ""
+    df = df[PENDING_COLS]
+    try:
+        conn.update(worksheet=SHEET_PENDING, data=df)
+        _fetch_pending_cached.clear()
+    except Exception as e:
+        st.error(f"仮保存シートの更新に失敗しました: {e}")
+        if "WorksheetNotFound" in str(e):
+            st.info(f"💡 スプレッドシートに `{SHEET_PENDING}` という名前のシートを作成してください。1行目は空でOKです。")
+        st.stop()
+
+def _load_pending_df():
+    """pending_buffer シートから読み込み、DataFrameを返す。失敗時は空DataFrame"""
+    conn = get_conn()
+    df = _fetch_pending_cached(conn)
+    if df is None:
+        # シートが無い場合は空DataFrameを返す (作成は保存時に試行)
+        return pd.DataFrame(columns=PENDING_COLS)
+    if df.empty:
+        return pd.DataFrame(columns=PENDING_COLS)
+    # 必要な列を補完
+    for c in PENDING_COLS:
+        if c not in df.columns:
+            df[c] = ""
+    df = df.fillna("")
+    # 型変換
+    for nc in ["TargetGameNo", "GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]:
+        df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0).astype(int)
+    return df
+
+def _df_row_to_entry(row):
+    """pending_buffer の1行を内部entry辞書に変換"""
+    return {
+        "EntryId": str(row["EntryId"]),
+        "type": str(row["Type"]),
+        "target_game_no": int(row["TargetGameNo"]) if str(row["TargetGameNo"]).strip() else 0,
+        "timestamp": str(row["Timestamp"]),
+        "detail": str(row["Detail"]),
+        "info": str(row["Info"]),
+        "data": {
+            "GameNo": int(row["GameNo"]),
+            "TableNo": int(row["TableNo"]),
+            "SetNo": int(row["SetNo"]),
+            "日時": str(row["日時"]),
+            "備考": str(row["備考"]),
+            "Aさん": str(row["Aさん"]), "Aタイプ": str(row["Aタイプ"]), "A着順": int(row["A着順"]),
+            "Bさん": str(row["Bさん"]), "Bタイプ": str(row["Bタイプ"]), "B着順": int(row["B着順"]),
+            "Cさん": str(row["Cさん"]), "Cタイプ": str(row["Cタイプ"]), "C着順": int(row["C着順"]),
+            "_log_detail": str(row["LogDetail"]),
+        },
+    }
+
+def _entry_to_df_row(entry):
+    """内部entry辞書を pending_buffer の1行に変換"""
+    data = entry.get("data", {})
+    return {
+        "EntryId": entry.get("EntryId", str(_uuid.uuid4())),
+        "Type": entry["type"],
+        "TargetGameNo": entry.get("target_game_no", 0),
+        "Timestamp": entry.get("timestamp", datetime.now().isoformat()),
+        "Detail": entry.get("detail", ""),
+        "Info": entry.get("info", ""),
+        "GameNo": data.get("GameNo", 0),
+        "TableNo": data.get("TableNo", 0),
+        "SetNo": data.get("SetNo", 0),
+        "日時": data.get("日時", ""),
+        "備考": data.get("備考", ""),
+        "Aさん": data.get("Aさん", ""), "Aタイプ": data.get("Aタイプ", ""), "A着順": data.get("A着順", 0),
+        "Bさん": data.get("Bさん", ""), "Bタイプ": data.get("Bタイプ", ""), "B着順": data.get("B着順", 0),
+        "Cさん": data.get("Cさん", ""), "Cタイプ": data.get("Cタイプ", ""), "C着順": data.get("C着順", 0),
+        "LogDetail": data.get("_log_detail", ""),
+    }
+
+def load_pending_changes():
+    """pending_buffer から全エントリを読み込みリストで返す"""
+    df = _load_pending_df()
+    if df.empty:
+        return []
+    entries = [_df_row_to_entry(row) for _, row in df.iterrows()]
+    # 時系列でソート
+    entries.sort(key=lambda e: e.get("timestamp", ""))
+    return entries
+
+def save_pending_changes(entries):
+    """エントリのリストを pending_buffer シートに保存"""
+    if not entries:
+        # 空の場合はヘッダだけのDataFrameを書く
+        df = pd.DataFrame(columns=PENDING_COLS)
+    else:
+        rows = [_entry_to_df_row(e) for e in entries]
+        df = pd.DataFrame(rows)
+    _save_pending_df(df)
 
 def has_pending_changes():
-    init_buffer()
-    return len(st.session_state["pending_changes"]) > 0
+    return pending_count() > 0
 
 def pending_count():
-    init_buffer()
-    return len(st.session_state["pending_changes"])
+    return len(load_pending_changes())
+
+def _next_temp_game_no(entries):
+    """既存entriesの中で最小の(最も負の)target_game_noの次を発番"""
+    existing = [e.get("target_game_no", 0) for e in entries if e.get("target_game_no", 0) < 0]
+    if not existing:
+        return -1
+    return min(existing) - 1
 
 def buffer_add(new_row):
-    """新規行をバッファに追加"""
-    init_buffer()
-    temp_no = next_temp_game_no()
+    """新規行をバッファに追加 (シートに書き込み)"""
+    entries = load_pending_changes()
+    temp_no = _next_temp_game_no(entries)
     new_row = dict(new_row)
     new_row["GameNo"] = temp_no
     entry = {
+        "EntryId": str(_uuid.uuid4()),
         "type": "add",
-        "buffer_id": next_buffer_id(),
         "target_game_no": temp_no,
         "data": new_row,
         "timestamp": datetime.now().isoformat(),
+        "detail": "",
+        "info": "",
     }
-    st.session_state["pending_changes"].append(entry)
+    entries.append(entry)
+    save_pending_changes(entries)
 
 def buffer_update(target_game_no, new_data, detail=""):
     """既存または未保存行の更新をバッファに記録"""
-    init_buffer()
-    # 同じ target_game_no に対する既存の add/update があれば、それを上書きする
-    for i, e in enumerate(st.session_state["pending_changes"]):
+    entries = load_pending_changes()
+    # 同じ target_game_no に対する既存のadd/update/deleteを統合
+    for i, e in enumerate(entries):
         if e.get("target_game_no") == target_game_no:
             if e["type"] == "add":
-                # 未保存の新規行の更新: addのデータを直接書き換える
+                # 未保存add: dataを書き換えて add のまま残す
                 merged = dict(e["data"])
                 merged.update(new_data)
-                merged["GameNo"] = target_game_no  # 仮GameNoは保持
-                st.session_state["pending_changes"][i]["data"] = merged
+                merged["GameNo"] = target_game_no
+                entries[i]["data"] = merged
+                entries[i]["timestamp"] = datetime.now().isoformat()
+                save_pending_changes(entries)
                 return
             elif e["type"] == "update":
-                # 既存updateの上書き
-                st.session_state["pending_changes"][i]["data"] = new_data
-                st.session_state["pending_changes"][i]["detail"] = detail
+                entries[i]["data"] = new_data
+                entries[i]["detail"] = detail
+                entries[i]["timestamp"] = datetime.now().isoformat()
+                save_pending_changes(entries)
                 return
             elif e["type"] == "delete":
-                # 削除予定だったものを更新に変える
-                st.session_state["pending_changes"][i] = {
+                # 削除予定→更新に切替
+                entries[i] = {
+                    "EntryId": str(_uuid.uuid4()),
                     "type": "update",
-                    "buffer_id": next_buffer_id(),
                     "target_game_no": target_game_no,
                     "data": new_data,
                     "detail": detail,
+                    "info": "",
                     "timestamp": datetime.now().isoformat(),
                 }
+                save_pending_changes(entries)
                 return
-    # 新規のupdate
-    entry = {
+    # 新規update
+    entries.append({
+        "EntryId": str(_uuid.uuid4()),
         "type": "update",
-        "buffer_id": next_buffer_id(),
         "target_game_no": target_game_no,
         "data": new_data,
         "detail": detail,
+        "info": "",
         "timestamp": datetime.now().isoformat(),
-    }
-    st.session_state["pending_changes"].append(entry)
+    })
+    save_pending_changes(entries)
 
 def buffer_delete(target_game_no, info=""):
     """既存または未保存行の削除をバッファに記録"""
-    init_buffer()
-    # 未保存のaddを削除する場合は単純に取り除く
-    for i, e in enumerate(st.session_state["pending_changes"]):
+    entries = load_pending_changes()
+    for i, e in enumerate(entries):
         if e.get("target_game_no") == target_game_no:
             if e["type"] == "add":
-                # まだスプレッドシートに無いので削除エントリ自体を消すだけ
-                st.session_state["pending_changes"].pop(i)
+                # 未保存add → エントリ消去
+                entries.pop(i)
+                save_pending_changes(entries)
                 return
             elif e["type"] == "update":
-                # update予定だったものを delete に変える
-                st.session_state["pending_changes"][i] = {
+                # update予定→deleteに切替
+                entries[i] = {
+                    "EntryId": str(_uuid.uuid4()),
                     "type": "delete",
-                    "buffer_id": next_buffer_id(),
                     "target_game_no": target_game_no,
+                    "data": {},
+                    "detail": "",
                     "info": info,
                     "timestamp": datetime.now().isoformat(),
                 }
+                save_pending_changes(entries)
                 return
             elif e["type"] == "delete":
-                # すでに削除予定
                 return
-    entry = {
+    entries.append({
+        "EntryId": str(_uuid.uuid4()),
         "type": "delete",
-        "buffer_id": next_buffer_id(),
         "target_game_no": target_game_no,
+        "data": {},
+        "detail": "",
         "info": info,
         "timestamp": datetime.now().isoformat(),
-    }
-    st.session_state["pending_changes"].append(entry)
-
-def buffer_remove_by_id(buffer_id):
-    """指定バッファエントリを取り消す"""
-    init_buffer()
-    st.session_state["pending_changes"] = [
-        e for e in st.session_state["pending_changes"] if e.get("buffer_id") != buffer_id
-    ]
+    })
+    save_pending_changes(entries)
 
 def buffer_clear():
-    """全バッファをクリア"""
-    st.session_state["pending_changes"] = []
-    st.session_state["buffer_id_counter"] = 0
-    st.session_state["buffer_temp_game_no"] = -1
+    """全バッファをクリア (シートも空に)"""
+    save_pending_changes([])
 
 def apply_buffer_to_df(df):
     """
     DataFrameにバッファの変更を適用し、表示用の実効DataFrameを返す。
     df: load_score_data() の結果 (派生カラム含む)
     """
-    init_buffer()
-    changes = st.session_state["pending_changes"]
+    changes = load_pending_changes()
     if not changes:
         return df
 
@@ -1159,10 +1271,7 @@ def apply_buffer_to_df(df):
     return df
 
 def load_score_data_effective():
-    """
-    実効スコアデータ (スプレッドシート + バッファ) を返す。
-    表示・統計・入力時の本日No算出などはこちらを使う。
-    """
+    """実効スコアデータ (スプレッドシート + バッファ) を返す"""
     base_df = load_score_data()
     return apply_buffer_to_df(base_df)
 
@@ -1172,8 +1281,7 @@ def commit_buffer_to_sheet():
     成功時: バッファクリアして True
     失敗時: バッファ保持して False
     """
-    init_buffer()
-    changes = st.session_state["pending_changes"]
+    changes = load_pending_changes()
     if not changes:
         return True
 
@@ -1201,8 +1309,8 @@ def commit_buffer_to_sheet():
 
     # 新規追加適用 (GameNoを正の値で発番し直す)
     if not df_latest.empty and "GameNo" in df_latest.columns:
-        max_no = pd.to_numeric(df_latest["GameNo"], errors='coerce').fillna(0)
-        max_no = int(max_no[max_no > 0].max()) if (max_no > 0).any() else 0
+        max_no_series = pd.to_numeric(df_latest["GameNo"], errors='coerce').fillna(0)
+        max_no = int(max_no_series[max_no_series > 0].max()) if (max_no_series > 0).any() else 0
     else:
         max_no = 0
 
@@ -1242,10 +1350,7 @@ def commit_buffer_to_sheet():
         jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
         new_log_rows = []
         for e in changes:
-            if e["type"] == "add":
-                # add_log_entriesと対応付け
-                pass
-            elif e["type"] == "update":
+            if e["type"] == "update":
                 new_log_rows.append({
                     "日時": jst_now,
                     "操作": "修正",
@@ -1259,7 +1364,6 @@ def commit_buffer_to_sheet():
                     "GameNo": e["target_game_no"],
                     "詳細": e.get("info", ""),
                 })
-        # 新規追加分のログ
         for entry in add_log_entries:
             new_log_rows.append({
                 "日時": jst_now,
@@ -1272,7 +1376,6 @@ def commit_buffer_to_sheet():
             conn.update(worksheet=SHEET_LOG, data=df_log)
             fetch_data_cached.clear()
     except Exception as e:
-        # ログ書き込み失敗は致命的ではないので警告のみ
         st.warning(f"ログの保存に一部失敗しました: {e}")
 
     # バッファクリア
@@ -1446,7 +1549,6 @@ def render_pending_bar(location_key=""):
     未保存変更がある場合に表示する共通ステータスバー。
     全ページの上部 (top_navの直後) に配置する。
     """
-    init_buffer()
     cnt = pending_count()
     if cnt == 0:
         return
@@ -2448,6 +2550,321 @@ def page_history():
         st.info("データがありません")
         return
 
+    # タブで「期間統計・詳細検索」「2人対戦」「3人対戦」を切り替え
+    tab1, tab2, tab3 = st.tabs(["📈 期間統計・詳細検索", "👥 2人対戦データ", "👥👤 3人対戦データ"])
+
+    with tab1:
+        _page_history_overview(df)
+    with tab2:
+        _page_history_versus_2(df)
+    with tab3:
+        _page_history_versus_3(df)
+
+def _page_history_versus_2(df):
+    """2人を選択して、その2人が同卓した試合データを表示"""
+    section_title("👥", "2人を選択")
+    st.caption("選択した2人が同卓した試合のデータを表示します")
+
+    all_players = get_all_member_names()
+    if len(all_players) < 2:
+        st.warning("メンバーが2人以上必要です")
+        return
+
+    c1, c2 = st.columns(2)
+    with c1:
+        p1 = st.selectbox("👤 プレイヤー1", ["(選択してください)"] + all_players, key="vs2_p1")
+    with c2:
+        p2_options = ["(選択してください)"] + [p for p in all_players if p != p1]
+        p2 = st.selectbox("👤 プレイヤー2", p2_options, key="vs2_p2")
+
+    if p1 == "(選択してください)" or p2 == "(選択してください)" or p1 == p2:
+        st.info("☝️ 2人を選択してください")
+        return
+
+    # 同卓試合を抽出
+    def has_both(row, a, b):
+        names = [row["Aさん"], row["Bさん"], row["Cさん"]]
+        return a in names and b in names
+
+    mask = df.apply(lambda r: has_both(r, p1, p2), axis=1)
+    df_vs = df[mask].copy()
+
+    if df_vs.empty:
+        st.warning(f"「{p1}」と「{p2}」が同卓した試合はありません")
+        return
+
+    # 統計を計算
+    p1_ranks = []
+    p2_ranks = []
+    p1_wins = 0  # p1がp2より上位だった回数
+    p2_wins = 0
+    draws = 0  # 同じ着順はあり得ないが念のため
+
+    for _, row in df_vs.iterrows():
+        r1, r2 = None, None
+        for s in ["A", "B", "C"]:
+            if row[f"{s}さん"] == p1:
+                try: r1 = int(float(row[f"{s}着順"]))
+                except: pass
+            if row[f"{s}さん"] == p2:
+                try: r2 = int(float(row[f"{s}着順"]))
+                except: pass
+        if r1 and r2 and r1 > 0 and r2 > 0:
+            p1_ranks.append(r1)
+            p2_ranks.append(r2)
+            if r1 < r2: p1_wins += 1
+            elif r1 > r2: p2_wins += 1
+            else: draws += 1
+
+    total = len(p1_ranks)
+    if total == 0:
+        st.warning("有効なデータがありません")
+        return
+
+    # サマリーカード
+    st.markdown(f"""
+    <div class="quick-stat-bar">
+        <div class="quick-stat-item blue">
+            <div class="qs-label">同卓回数</div>
+            <div class="qs-value">{total}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item green">
+            <div class="qs-label">{p1} 直接対決 勝</div>
+            <div class="qs-value">{p1_wins}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item red">
+            <div class="qs-label">{p2} 直接対決 勝</div>
+            <div class="qs-value">{p2_wins}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item">
+            <div class="qs-label">{p1} 勝率</div>
+            <div class="qs-value" style="font-size:1.2rem;">{p1_wins/total*100:.1f}%</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 着順分布テーブル
+    section_title("📊", "着順の分布")
+
+    def calc_stats(ranks, name):
+        c = len(ranks)
+        if c == 0: return None
+        r1 = ranks.count(1); r2 = ranks.count(2); r3 = ranks.count(3)
+        return {
+            "プレイヤー": name,
+            "打数": c,
+            "平均着順": f"{sum(ranks)/c:.3f}",
+            "1着": f"{r1} ({r1/c*100:.1f}%)",
+            "2着": f"{r2} ({r2/c*100:.1f}%)",
+            "3着": f"{r3} ({r3/c*100:.1f}%)",
+            "トップ率": f"{r1/c*100:.2f}%",
+            "ラス回避率": f"{(c-r3)/c*100:.2f}%",
+        }
+
+    rows = []
+    s1 = calc_stats(p1_ranks, p1)
+    s2 = calc_stats(p2_ranks, p2)
+    if s1: rows.append(s1)
+    if s2: rows.append(s2)
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    # 直接対決マトリックス
+    section_title("⚔️", "直接対決の内訳")
+    st.caption(f"{p1} の着順 × {p2} の着順 (同卓した全試合)")
+
+    matrix = [[0]*3 for _ in range(3)]
+    for a, b in zip(p1_ranks, p2_ranks):
+        if 1 <= a <= 3 and 1 <= b <= 3:
+            matrix[a-1][b-1] += 1
+
+    matrix_html = f"""
+    <table class="stats-table" style="width:auto;margin:0 auto;">
+        <thead>
+            <tr>
+                <th rowspan="2" style="background:var(--bg-card2);"></th>
+                <th colspan="3" style="background:var(--accent-soft);color:var(--accent);">{p2} 着順</th>
+            </tr>
+            <tr>
+                <th>1着</th><th>2着</th><th>3着</th>
+            </tr>
+        </thead>
+        <tbody>
+    """
+    rank_labels = ["1着", "2着", "3着"]
+    for i in range(3):
+        matrix_html += f'<tr><th style="background:var(--accent-soft);color:var(--accent);">{p1}<br>{rank_labels[i]}</th>'
+        for j in range(3):
+            val = matrix[i][j]
+            if i == j:
+                cell_color = "var(--text-muted)"  # 同着はあり得ないが念のため
+                bg = "rgba(255,255,255,0.02)"
+            elif i < j:
+                cell_color = "var(--green)"
+                bg = "var(--green-soft)"
+            else:
+                cell_color = "var(--red)"
+                bg = "var(--red-soft)"
+            matrix_html += f'<td style="background:{bg};color:{cell_color};">{val}</td>'
+        matrix_html += '</tr>'
+    matrix_html += '</tbody></table>'
+    st.markdown(matrix_html, unsafe_allow_html=True)
+    st.caption(f"🟢 緑のセル: {p1} が {p2} より上位 ／ 🔴 赤のセル: {p2} が {p1} より上位")
+
+    # 試合一覧
+    st.divider()
+    section_title("📋", "同卓した試合一覧")
+    df_show = df_vs.sort_values("日時Obj", ascending=False).copy()
+    df_show["日付"] = df_show["日時Obj"].dt.strftime("%Y-%m-%d %H:%M")
+    df_show = df_show[["日付", "TableNo", "SetNo", "Aさん", "A着順", "Bさん", "B着順", "Cさん", "C着順", "備考"]]
+    df_show = df_show.rename(columns={"TableNo": "卓", "SetNo": "セット"})
+    st.dataframe(df_show, hide_index=True, use_container_width=True, height=400)
+
+def _page_history_versus_3(df):
+    """3人を選択して、その3人が同卓した試合データを表示"""
+    section_title("👥", "3人を選択")
+    st.caption("選択した3人が同卓(=この3人が席を埋めた)試合のデータを表示します")
+
+    all_players = get_all_member_names()
+    if len(all_players) < 3:
+        st.warning("メンバーが3人以上必要です")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        p1 = st.selectbox("👤 プレイヤー1", ["(選択してください)"] + all_players, key="vs3_p1")
+    with c2:
+        p2_opts = ["(選択してください)"] + [p for p in all_players if p != p1]
+        p2 = st.selectbox("👤 プレイヤー2", p2_opts, key="vs3_p2")
+    with c3:
+        p3_opts = ["(選択してください)"] + [p for p in all_players if p != p1 and p != p2]
+        p3 = st.selectbox("👤 プレイヤー3", p3_opts, key="vs3_p3")
+
+    placeholders = ["(選択してください)"]
+    if p1 in placeholders or p2 in placeholders or p3 in placeholders:
+        st.info("☝️ 3人を選択してください")
+        return
+    if len({p1, p2, p3}) < 3:
+        st.error("3人とも異なるプレイヤーを選択してください")
+        return
+
+    target_set = {p1, p2, p3}
+
+    def is_same_three(row):
+        names = {row["Aさん"], row["Bさん"], row["Cさん"]}
+        return names == target_set
+
+    mask = df.apply(is_same_three, axis=1)
+    df_vs = df[mask].copy()
+
+    if df_vs.empty:
+        st.warning(f"「{p1}」「{p2}」「{p3}」の3人だけで同卓した試合はありません")
+        return
+
+    # 各プレイヤーの着順履歴
+    ranks_map = {p1: [], p2: [], p3: []}
+    win_counts = {p1: 0, p2: 0, p3: 0}  # 1着回数
+    last_counts = {p1: 0, p2: 0, p3: 0}  # 3着回数
+
+    for _, row in df_vs.iterrows():
+        for s in ["A", "B", "C"]:
+            name = row[f"{s}さん"]
+            if name in ranks_map:
+                try:
+                    r = int(float(row[f"{s}着順"]))
+                    if r in [1, 2, 3]:
+                        ranks_map[name].append(r)
+                        if r == 1: win_counts[name] += 1
+                        if r == 3: last_counts[name] += 1
+                except: pass
+
+    total = len(df_vs)
+
+    # サマリー
+    st.markdown(f"""
+    <div class="quick-stat-bar">
+        <div class="quick-stat-item blue">
+            <div class="qs-label">同卓回数</div>
+            <div class="qs-value">{total}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item green">
+            <div class="qs-label">最多トップ</div>
+            <div class="qs-value" style="font-size:1rem;">{max(win_counts, key=win_counts.get)}<br><span style="font-size:0.8rem;color:var(--text-muted);">{max(win_counts.values())}回</span></div>
+        </div>
+        <div class="quick-stat-item red">
+            <div class="qs-label">最多ラス</div>
+            <div class="qs-value" style="font-size:1rem;">{max(last_counts, key=last_counts.get)}<br><span style="font-size:0.8rem;color:var(--text-muted);">{max(last_counts.values())}回</span></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 統計テーブル
+    section_title("📊", "3人の成績")
+    rows = []
+    for name in [p1, p2, p3]:
+        rs = ranks_map[name]
+        c = len(rs)
+        if c == 0:
+            continue
+        r1 = rs.count(1); r2 = rs.count(2); r3_cnt = rs.count(3)
+        rows.append({
+            "プレイヤー": name,
+            "打数": c,
+            "平均着順": f"{sum(rs)/c:.3f}",
+            "1着": f"{r1} ({r1/c*100:.1f}%)",
+            "2着": f"{r2} ({r2/c*100:.1f}%)",
+            "3着": f"{r3_cnt} ({r3_cnt/c*100:.1f}%)",
+            "トップ率": f"{r1/c*100:.2f}%",
+            "ラス回避率": f"{(c-r3_cnt)/c*100:.2f}%",
+        })
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    # 着順パターン分布
+    section_title("🎯", "着順パターン")
+    st.caption(f"3人のうち誰が何着だったかの集計 (全{total}試合)")
+
+    # 6パターン (3!) の組合せ
+    from itertools import permutations
+    pattern_counts = {}
+    for perm in permutations([p1, p2, p3]):
+        pattern_counts[perm] = 0
+
+    for _, row in df_vs.iterrows():
+        rank_to_name = {}
+        for s in ["A", "B", "C"]:
+            name = row[f"{s}さん"]
+            try:
+                r = int(float(row[f"{s}着順"]))
+                if name in target_set and r in [1, 2, 3]:
+                    rank_to_name[r] = name
+            except: pass
+        if len(rank_to_name) == 3:
+            key = (rank_to_name[1], rank_to_name[2], rank_to_name[3])
+            if key in pattern_counts:
+                pattern_counts[key] += 1
+
+    pattern_rows = []
+    for (n1, n2, n3), cnt in sorted(pattern_counts.items(), key=lambda x: -x[1]):
+        if total > 0:
+            pattern_rows.append({
+                "🥇 1着": n1, "🥈 2着": n2, "🥉 3着": n3,
+                "回数": cnt,
+                "割合": f"{cnt/total*100:.1f}%",
+            })
+    st.dataframe(pd.DataFrame(pattern_rows), hide_index=True, use_container_width=True)
+
+    # 試合一覧
+    st.divider()
+    section_title("📋", "同卓した試合一覧")
+    df_show = df_vs.sort_values("日時Obj", ascending=False).copy()
+    df_show["日付"] = df_show["日時Obj"].dt.strftime("%Y-%m-%d %H:%M")
+    df_show = df_show[["日付", "TableNo", "SetNo", "Aさん", "A着順", "Bさん", "B着順", "Cさん", "C着順", "備考"]]
+    df_show = df_show.rename(columns={"TableNo": "卓", "SetNo": "セット"})
+    st.dataframe(df_show, hide_index=True, use_container_width=True, height=400)
+
+
+def _page_history_overview(df):
+    """期間統計と詳細検索 (元のpage_historyの処理)"""
     if "hist_sel_date" not in st.session_state:
         st.session_state.hist_sel_date = "(指定なし)"
     if "hist_sel_time" not in st.session_state:
