@@ -109,28 +109,7 @@ hide_style = """
 st.markdown(hide_style, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証 (全員共通)
-# ==========================================
-def check_password():
-    if "password_correct" not in st.session_state:
-        st.session_state["password_correct"] = False
 
-    if st.session_state["password_correct"]:
-        return True
-    
-    st.title("🔒 ログイン")
-    password = st.text_input("パスワードを入力してください", type="password")
-    
-    if st.button("ログイン"):
-        if password == "2026":
-            st.session_state["password_correct"] = True
-            st.rerun()
-        else:
-            st.error("パスワードが違います")
-    return False
-
-if not check_password():
-    st.stop()
 
 # ==========================================
 # 3. データ管理・レーティング関数
