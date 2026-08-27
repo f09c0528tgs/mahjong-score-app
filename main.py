@@ -1321,28 +1321,29 @@ RANK_POINTS_3 = -9.5        # 3着
 # 段位定義: (段位名, 昇段閾値pt, 降段閾値pt, 1着pt, 2着pt, 3着pt, 表示色)
 # 昇段閾値に到達したら次段へ / 降段閾値を下回ったら前段へ (0未満で降段)
 # 新人はptマイナスなし(降段なし)、初段以上は降段あり
+# 【昇段しやすい設定】平均着順2.0で少しずつ昇段できるようにバランス調整
 DAN_TABLE = [
     # (段位名,    昇段pt, 降段pt, 1着,  2着, 3着, 色)
-    ("新人",       20,   -999,    30,    0, -10, "#8890a8"),   # 降段なし
-    ("9級",        40,   -999,    35,   -5, -15, "#8890a8"),
-    ("8級",        60,   -999,    40,   -5, -20, "#8890a8"),
-    ("7級",        80,   -999,    40,  -10, -25, "#a8a8b8"),
-    ("6級",       100,   -999,    45,  -10, -30, "#a8a8b8"),
-    ("5級",       100,   -999,    45,  -15, -35, "#c0c0c8"),
-    ("4級",       100,   -999,    50,  -15, -40, "#c0c0c8"),
-    ("3級",       100,   -999,    50,  -20, -45, "#d0d0d8"),
-    ("2級",       100,   -999,    55,  -20, -50, "#d0d0d8"),
-    ("1級",       100,   -999,    60,  -25, -55, "#e8e8f0"),
-    ("初段",      200,      0,    60,  -30, -60, "#5b9cf6"),   # 以降降段あり
-    ("二段",      400,      0,    70,  -35, -70, "#5b9cf6"),
-    ("三段",      600,      0,    80,  -40, -80, "#4caf87"),
-    ("四段",      800,      0,    90,  -45, -90, "#4caf87"),
-    ("五段",     1000,      0,   100,  -50,-100, "#f0c040"),
-    ("六段",     1200,      0,   110,  -55,-110, "#f0c040"),
-    ("七段",     1400,      0,   120,  -60,-120, "#e07b39"),
-    ("八段",     1600,      0,   130,  -65,-130, "#e07b39"),
-    ("九段",     1800,      0,   140,  -70,-140, "#e05c5c"),
-    ("十段",   999999,      0,   150,  -75,-150, "#b372e0"),   # 最上位
+    ("新人",       10,   -999,    30,    0,  -5, "#8890a8"),   # 降段なし・1着1回で昇段
+    ("9級",        15,   -999,    30,   -5, -10, "#8890a8"),
+    ("8級",        20,   -999,    35,   -5, -10, "#8890a8"),
+    ("7級",        25,   -999,    35,   -5, -15, "#a8a8b8"),
+    ("6級",        30,   -999,    40,  -10, -15, "#a8a8b8"),
+    ("5級",        30,   -999,    40,  -10, -20, "#c0c0c8"),
+    ("4級",        40,   -999,    45,  -10, -20, "#c0c0c8"),
+    ("3級",        40,   -999,    50,  -15, -25, "#d0d0d8"),
+    ("2級",        50,   -999,    55,  -15, -25, "#d0d0d8"),
+    ("1級",        50,   -999,    60,  -15, -30, "#e8e8f0"),
+    ("初段",      100,      0,    70,  -20, -30, "#5b9cf6"),   # 以降降段あり
+    ("二段",      150,      0,    80,  -25, -35, "#5b9cf6"),
+    ("三段",      200,      0,    90,  -30, -40, "#4caf87"),
+    ("四段",      250,      0,   100,  -35, -45, "#4caf87"),
+    ("五段",      300,      0,   110,  -40, -50, "#f0c040"),
+    ("六段",      400,      0,   120,  -45, -55, "#f0c040"),
+    ("七段",      500,      0,   130,  -50, -60, "#e07b39"),
+    ("八段",      600,      0,   140,  -55, -65, "#e07b39"),
+    ("九段",      800,      0,   150,  -60, -70, "#e05c5c"),
+    ("十段",   999999,      0,   160,  -65, -75, "#b372e0"),   # 最上位
 ]
 
 # レーティング/段位を保存するシートの列
@@ -1815,10 +1816,10 @@ NAV_ITEMS = [
     ("📝", "入力", "input"),
     ("👤", "個人", "personal"),
     ("📊", "データ", "history"),
-    ("🏅", "レート", "rating"),
     ("🏆", "順位", "ranking"),
     ("📇", "メンバー", "members"),
     ("💰", "利益", "profit"),
+    ("📜", "ログ", "logs"),
 ]
 
 def render_top_nav(current_page):
@@ -2148,7 +2149,6 @@ def page_home():
         ("📊", "データ参照", "history"),
         ("🤝", "2人対戦データ", "versus2"),
         ("👥", "3人対戦データ", "versus3"),
-        ("🏅", "レーティング", "rating"),
         ("🏆", "ランキング", "ranking"),
         ("📇", "メンバー管理", "members"),
         ("💰", "利益管理", "profit"),
@@ -3848,16 +3848,116 @@ def page_ranking():
                 else:
                     st.info("データなし")
 
-    t1, t2, t3, t4, t5, t6 = st.tabs(["📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
+    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs([
+        "🏅 レーティング", "🎖️ 段位",
+        "📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率",
+        "💥 最大飜数", "🀅 役満回数"
+    ])
 
-    with t1: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
-    with t2: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
-    with t3: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
-    with t4: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
+    # ---- レーティング/段位用の統計データを準備 ----
+    df_rating = load_ratings_effective()
+    if not df_rating.empty:
+        df_rating_clean = df_rating.copy()
+        # 名前のカッコ内を除去 (stats側と揃える)
+        df_rating_clean["name"] = df_rating_clean["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+        stats_rating = df_rating_clean[["name", "レート", "対局数", "段位名", "段位色", "段位Index", "段位pt", "昇段まで"]].copy()
+        stats_rating = stats_rating.rename(columns={"対局数": "games"})
+        stats_rating["type"] = stats_rating["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+        rating_guest = stats_rating[(stats_rating["type"] == "guest") & (stats_rating["games"] >= min_games)]
+        rating_staff = stats_rating[(stats_rating["type"] == "staff") & (stats_rating["games"] >= min_games)]
+    else:
+        rating_guest = pd.DataFrame()
+        rating_staff = pd.DataFrame()
+
+    def show_rating_ranking(df_g, df_s):
+        """レーティングランキング (段位バッジ + レートの見せ方)"""
+        c1_, c2_ = st.columns(2)
+        for col_obj, df_r, title, icon in [(c1_, df_g, "お客さん", "🧑‍🤝‍🧑"), (c2_, df_s, "スタッフ", "👔")]:
+            with col_obj:
+                st.markdown(f"#### {icon} {title} Top20")
+                if not df_r.empty:
+                    res = df_r.sort_values("レート", ascending=False).reset_index(drop=True).head(20)
+                    res["順位"] = res.index + 1
+                    html = '<table class="stats-table" style="width:100%;">'
+                    html += """<thead><tr>
+                        <th style="width:50px;">順位</th>
+                        <th style="text-align:left;">名前</th>
+                        <th style="width:70px;">段位</th>
+                        <th style="width:90px;">レート</th>
+                        <th style="width:60px;">打数</th>
+                    </tr></thead><tbody>"""
+                    for _, r in res.iterrows():
+                        rank_num = int(r["順位"])
+                        if rank_num == 1: rank_disp = "🥇 1"
+                        elif rank_num == 2: rank_disp = "🥈 2"
+                        elif rank_num == 3: rank_disp = "🥉 3"
+                        else: rank_disp = str(rank_num)
+                        dan_html = render_dan_badge(r["段位名"], r["段位色"], size="small")
+                        rate_col = "var(--accent)" if rank_num <= 3 else "var(--text-primary)"
+                        html += f'''<tr>
+                            <td style="text-align:center;font-weight:800;">{rank_disp}</td>
+                            <td style="text-align:left;font-weight:600;">{r["name"]}</td>
+                            <td style="text-align:center;">{dan_html}</td>
+                            <td style="text-align:center;font-family:'Zen Kaku Gothic New';font-weight:900;color:{rate_col};font-size:1.0rem;">R{r["レート"]:.1f}</td>
+                            <td style="text-align:center;color:var(--text-muted);">{int(r["games"])}</td>
+                        </tr>'''
+                    html += '</tbody></table>'
+                    st.markdown(html, unsafe_allow_html=True)
+                else:
+                    st.info("データなし")
+
+    def show_dan_ranking(df_g, df_s):
+        """段位ランキング (段位Index高い順、同段位は段位pt多い順)"""
+        c1_, c2_ = st.columns(2)
+        for col_obj, df_r, title, icon in [(c1_, df_g, "お客さん", "🧑‍🤝‍🧑"), (c2_, df_s, "スタッフ", "👔")]:
+            with col_obj:
+                st.markdown(f"#### {icon} {title} Top20")
+                if not df_r.empty:
+                    res = df_r.sort_values(["段位Index", "段位pt"], ascending=[False, False]).reset_index(drop=True).head(20)
+                    res["順位"] = res.index + 1
+                    html = '<table class="stats-table" style="width:100%;">'
+                    html += """<thead><tr>
+                        <th style="width:50px;">順位</th>
+                        <th style="text-align:left;">名前</th>
+                        <th style="width:80px;">段位</th>
+                        <th style="width:90px;">段位pt</th>
+                        <th style="width:60px;">打数</th>
+                    </tr></thead><tbody>"""
+                    for _, r in res.iterrows():
+                        rank_num = int(r["順位"])
+                        if rank_num == 1: rank_disp = "🥇 1"
+                        elif rank_num == 2: rank_disp = "🥈 2"
+                        elif rank_num == 3: rank_disp = "🥉 3"
+                        else: rank_disp = str(rank_num)
+                        dan_html = render_dan_badge(r["段位名"], r["段位色"], size="small")
+                        up_needed = int(r["昇段まで"])
+                        pt_disp = f'{r["段位pt"]:.1f} / {up_needed if up_needed < 999999 else "—"}'
+                        html += f'''<tr>
+                            <td style="text-align:center;font-weight:800;">{rank_disp}</td>
+                            <td style="text-align:left;font-weight:600;">{r["name"]}</td>
+                            <td style="text-align:center;">{dan_html}</td>
+                            <td style="text-align:center;color:{r["段位色"]};font-weight:700;">{pt_disp}</td>
+                            <td style="text-align:center;color:var(--text-muted);">{int(r["games"])}</td>
+                        </tr>'''
+                    html += '</tbody></table>'
+                    st.markdown(html, unsafe_allow_html=True)
+                else:
+                    st.info("データなし")
+
+    with t1:
+        st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +15 / 2着 −4.5 / 3着 −9.5 が基本pt。")
+        show_rating_ranking(rating_guest, rating_staff)
+    with t2:
+        st.caption("段位が高い順で表示。同段位内は段位ptの多い順です。")
+        show_dan_ranking(rating_guest, rating_staff)
+    with t3: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
+    with t4: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
+    with t5: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
+    with t6: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
 
     df_mem = load_member_data()
     df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
-    df_mem["名前"] = df_mem["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+    df_mem["名前"] = df_mem["名前"].astype(str).str.replace(r'[(\(].*?[)\)]', '', regex=True)
     mem_g = df_mem[df_mem["type"] == "guest"]
     mem_s = df_mem[df_mem["type"] == "staff"]
 
@@ -3879,133 +3979,21 @@ def page_ranking():
                     else: st.info("データなし")
                 else: st.info("データなし")
 
-    with t5: show_mem_ranking(mem_g, mem_s, "最大飜数")
-    with t6: show_mem_ranking(mem_g, mem_s, "役満回数")
+    with t7: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t8: show_mem_ranking(mem_g, mem_s, "役満回数")
 
-# --- レーティング画面 ---
-def page_rating():
-    render_top_nav("rating")
-    st.title("🏅 レーティング & 段位")
-    render_pending_bar(location_key="rating")
-
-    st.caption("対局データから自動計算されます。1着+15 / 2着-4.5 / 3着-9.5 が基本ptで、卓の平均レートとの差で補正されます。")
-
-    df = load_ratings_effective()
-    if df.empty:
-        st.info("まだ集計できるデータがありません")
-        return
-
-    # --- 段位の分布 ---
-    section_title("📊", "段位別プレイヤー数")
-    dan_counts = df.groupby("段位Index").size().reset_index(name="人数")
-    dan_dist_cols = st.columns(min(6, max(2, len(dan_counts))))
-    for i, (_, row) in enumerate(dan_counts.sort_values("段位Index", ascending=False).iterrows()):
-        idx = int(row["段位Index"])
-        dan_name, _, _, _, _, _, dan_color = DAN_TABLE[idx]
-        with dan_dist_cols[i % len(dan_dist_cols)]:
-            st.markdown(f"""
-            <div style="background:var(--bg-card);border:1px solid {dan_color};
-                        border-radius:var(--radius);padding:0.7rem;text-align:center;
-                        margin-bottom:0.5rem;">
-                <div>{render_dan_badge(dan_name, dan_color, size="small")}</div>
-                <div style="font-family:'Zen Kaku Gothic New';font-size:1.5rem;font-weight:900;
-                            color:{dan_color};margin-top:4px;">{row["人数"]}</div>
-                <div style="font-size:0.7rem;color:var(--text-muted);">人</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    st.divider()
-
-    # --- フィルター ---
-    c1, c2, c3 = st.columns([1, 1, 2])
-    with c1:
-        min_games = st.number_input("規定打数", min_value=0, value=30,
-                                     help="この打数未満のプレイヤーは非表示")
-    with c2:
-        group_type = st.selectbox("表示", ["全員", "お客さんのみ", "スタッフのみ"])
-    with c3:
-        st.write("")
-
-    # スタッフ/お客さん判定 (メンバーシートから取得)
-    df_mem = load_member_data()
-    type_map = dict(zip(df_mem["名前"], df_mem["タイプ"]))
-
-    def get_group(name):
-        t = type_map.get(name, "")
-        if t in ["AS", "BS"]:
-            return "スタッフ"
-        elif t in ["A客", "B客"]:
-            return "お客さん"
-        # メンバー未登録 → 名前末尾sで判定
-        return "スタッフ" if str(name).lower().endswith("s") else "お客さん"
-
-    df["区分"] = df["名前"].apply(get_group)
-    df_filtered = df[df["対局数"] >= min_games].copy()
-    if group_type == "お客さんのみ":
-        df_filtered = df_filtered[df_filtered["区分"] == "お客さん"]
-    elif group_type == "スタッフのみ":
-        df_filtered = df_filtered[df_filtered["区分"] == "スタッフ"]
-
-    if df_filtered.empty:
-        st.warning(f"打数 {min_games} 回以上のプレイヤーがいません")
-        return
-
-    # --- ランキング表 ---
-    section_title("🏆", "レーティングランキング")
-
-    df_show = df_filtered.sort_values("レート", ascending=False).reset_index(drop=True)
-    df_show["順位"] = df_show.index + 1
-
-    # HTMLで段位バッジ付きで描画
-    html = '<table class="stats-table" style="width:100%;text-align:left;">'
-    html += """<thead><tr>
-        <th style="width:60px;">順位</th>
-        <th style="text-align:left;">名前</th>
-        <th style="width:80px;">段位</th>
-        <th style="width:100px;">レート</th>
-        <th style="width:80px;">対局数</th>
-        <th style="width:80px;">区分</th>
-    </tr></thead><tbody>"""
-
-    for _, r in df_show.iterrows():
-        rank_num = int(r["順位"])
-        if rank_num == 1: rank_display = "🥇 1"
-        elif rank_num == 2: rank_display = "🥈 2"
-        elif rank_num == 3: rank_display = "🥉 3"
-        else: rank_display = str(rank_num)
-
-        dan_html = render_dan_badge(r["段位名"], r["段位色"], size="small")
-        rate_color = "var(--accent)" if rank_num <= 3 else "var(--text-primary)"
-
-        html += f'''<tr>
-            <td style="text-align:center;font-weight:800;">{rank_display}</td>
-            <td style="text-align:left;font-weight:600;font-size:1rem;">{r["名前"]}</td>
-            <td style="text-align:center;">{dan_html}</td>
-            <td style="text-align:center;font-family:'Zen Kaku Gothic New';
-                       font-weight:900;color:{rate_color};font-size:1.05rem;">R{r["レート"]:.1f}</td>
-            <td style="text-align:center;color:var(--text-muted);">{r["対局数"]}</td>
-            <td style="text-align:center;font-size:0.85rem;color:var(--text-muted);">{r["区分"]}</td>
-        </tr>'''
-    html += '</tbody></table>'
-    st.markdown(html, unsafe_allow_html=True)
-
-    st.divider()
-
-    # --- 段位一覧 (参考) ---
-    with st.expander("📖 段位・レーティングシステムの詳細", expanded=False):
+    # 段位システム詳細を折りたたみで表示
+    with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
         st.markdown("""
         #### 📐 レーティング計算式
-        - **1着**: +15 pt (基本)
-        - **2着**: -4.5 pt (基本)
-        - **3着**: -9.5 pt (基本)
-        - **卓平均補正**: `(卓平均レート - 自レート) / 40`
-          - 強い相手に勝つと大きく上昇、弱い相手に負けると大きく下降
+        - **1着**: +15 pt / **2着**: −4.5 pt / **3着**: −9.5 pt (基本)
+        - **卓平均補正**: `(卓平均レート − 自レート) ÷ 40`
+          - 強い相手に勝つと大幅アップ、弱い相手に負けると大幅ダウン
         - **調整係数**: 対局数400戦までは徐々に0.2に近づく (安定期は0.2固定)
+        - 初期レート **R1500** から始まります
 
-        初期レートは **R1500** 、対局のたびに再計算されます。
+        #### 🏅 段位表
         """)
-
-        st.markdown("#### 🏅 段位表")
         dan_table_html = '<table class="stats-table" style="width:100%;">'
         dan_table_html += """<thead><tr>
             <th>段位</th><th>昇段pt</th><th>1着 pt</th><th>2着 pt</th><th>3着 pt</th><th>降段</th>
@@ -4013,24 +4001,23 @@ def page_rating():
         for i, dan in enumerate(DAN_TABLE):
             dname, up, down, p1, p2, p3, col = dan
             badge = render_dan_badge(dname, col, size="small")
-            has_down = "❌" if down <= -999 else "✅"
+            has_down = "❌ なし" if down <= -999 else "✅ あり"
+            p2_display = f"{p2:+}" if p2 != 0 else "±0"
             dan_table_html += f'''<tr>
                 <td>{badge}</td>
                 <td style="text-align:center;">{up if up < 999999 else '—'}</td>
                 <td style="text-align:center;color:var(--green);">+{p1}</td>
-                <td style="text-align:center;color:{'var(--accent2)' if p2 < 0 else 'var(--text-muted)'};">{p2:+}</td>
+                <td style="text-align:center;color:{'var(--accent2)' if p2 < 0 else 'var(--text-muted)'};">{p2_display}</td>
                 <td style="text-align:center;color:var(--red);">{p3}</td>
-                <td style="text-align:center;">{has_down}</td>
+                <td style="text-align:center;font-size:0.8rem;">{has_down}</td>
             </tr>'''
         dan_table_html += '</tbody></table>'
         st.markdown(dan_table_html, unsafe_allow_html=True)
 
-    st.divider()
-
-    # --- レーティング再計算ボタン (管理用) ---
-    with st.expander("⚙️ レーティング再計算", expanded=False):
+    # 手動再計算ボタン
+    with st.expander("⚙️ レーティング再計算 (管理用)", expanded=False):
         st.caption("何らかの理由でレーティングがズレた場合、全対局データから再計算できます。通常は「まとめて保存」時に自動再計算されます。")
-        if st.button("🔄 レーティングを再計算する", key="btn_recompute_rating"):
+        if st.button("🔄 レーティングを再計算する", key="btn_recompute_rating_ranking"):
             with st.spinner("再計算中..."):
                 try:
                     recompute_and_save_ratings()
@@ -4074,7 +4061,6 @@ elif page == "versus2":  page_versus2()
 elif page == "versus3":  page_versus3()
 elif page == "edit":     page_edit()
 elif page == "ranking":  page_ranking()
-elif page == "rating":   page_rating()
 elif page == "profit":   page_profit()
 elif page == "logs":     page_logs()
 else:                    page_home()
