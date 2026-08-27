@@ -7,108 +7,626 @@ from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
 
 # ==========================================
-# 1. ページ設定 & デザイン調整
+# 1. ページ設定 & デザイン
 # ==========================================
-st.set_page_config(page_title="ぱいん成績管理", layout="wide")
+st.set_page_config(page_title="ぱいん成績管理", layout="wide", page_icon="🀄")
 
 hide_style = """
     <style>
+    /* ========== Google Fonts ========== */
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=Zen+Kaku+Gothic+New:wght@400;700;900&display=swap');
+
+    /* ========== ベースリセット ========== */
     #MainMenu {visibility: hidden;}
     header {visibility: hidden;}
     footer {visibility: hidden;}
-    
+
+    /* ========== カラーパレット ========== */
+    :root {
+        --bg-base:       #0f1117;
+        --bg-card:       #1a1d2e;
+        --bg-card2:      #222537;
+        --bg-input:      #1e2132;
+        --accent:        #f0c040;
+        --accent-bright: #ffd560;
+        --accent2:       #e07b39;
+        --accent-soft:   rgba(240,192,64,0.12);
+        --accent2-soft:  rgba(224,123,57,0.12);
+        --green:         #4caf87;
+        --green-soft:    rgba(76,175,135,0.12);
+        --red:           #e05c5c;
+        --red-soft:      rgba(224,92,92,0.12);
+        --blue:          #5b9cf6;
+        --blue-soft:     rgba(91,156,246,0.12);
+        --purple:        #b372e0;
+        --purple-soft:   rgba(179,114,224,0.12);
+        --text-primary:  #e8e8f0;
+        --text-muted:    #8890a8;
+        --text-dim:      #5a6175;
+        --border:        rgba(255,255,255,0.07);
+        --border-strong: rgba(255,255,255,0.14);
+        --border-accent: rgba(240,192,64,0.3);
+        --shadow:        0 4px 24px rgba(0,0,0,0.4);
+        --shadow-lg:     0 8px 32px rgba(0,0,0,0.5);
+        --radius:        12px;
+        --radius-sm:     8px;
+        --radius-lg:     16px;
+    }
+
+    /* ========== 全体背景 ========== */
+    .stApp {
+        background-color: var(--bg-base);
+        font-family: 'Noto Sans JP', sans-serif;
+        color: var(--text-primary);
+    }
+    .main .block-container {
+        padding: 1rem 1.5rem 5rem;
+        max-width: 1100px;
+    }
+
+    /* ========== サイドバー非表示 ========== */
+    [data-testid="stSidebar"] { display: none; }
+
+    /* ========== ヘッダー / タイトル ========== */
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        color: var(--text-primary) !important;
+    }
+    h1 { 
+        font-size: 1.7rem !important;
+        font-weight: 900 !important;
+        letter-spacing: 0.02em;
+        margin-bottom: 0.8rem !important;
+        margin-top: 0.3rem !important;
+    }
+    h2 { font-size: 1.25rem !important; font-weight: 700 !important; }
+    h3 { font-size: 1.05rem !important; font-weight: 700 !important; }
+
+    /* ========== Streamlit ボタン ========== */
+    .stButton > button {
+        background: var(--bg-card2) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-sm) !important;
+        font-family: 'Noto Sans JP', sans-serif !important;
+        font-weight: 500 !important;
+        padding: 0.5rem 1rem !important;
+        transition: all 0.15s ease !important;
+    }
+    .stButton > button:hover {
+        border-color: var(--accent) !important;
+        background: var(--accent-soft) !important;
+        color: var(--accent) !important;
+    }
+    .stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%) !important;
+        color: #0f1117 !important;
+        border-color: var(--accent) !important;
+        font-weight: 800 !important;
+        box-shadow: 0 2px 12px rgba(240,192,64,0.3) !important;
+    }
+    .stButton > button[kind="primary"]:hover {
+        box-shadow: 0 4px 20px rgba(240,192,64,0.5) !important;
+        transform: translateY(-1px) !important;
+    }
+
+    /* ========== セレクトボックス / インプット ========== */
+    .stSelectbox > div > div,
+    .stTextInput > div > div > input,
+    .stNumberInput > div > div > input,
+    .stDateInput > div > div > input,
+    .stTextArea > div > div > textarea {
+        background-color: var(--bg-input) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-sm) !important;
+        font-family: 'Noto Sans JP', sans-serif !important;
+    }
+    .stSelectbox > div > div:focus-within,
+    .stTextInput > div > div:focus-within {
+        border-color: var(--accent) !important;
+        box-shadow: 0 0 0 2px var(--accent-soft) !important;
+    }
+    /* 外側のウィジェットラベル */
+    .stSelectbox > label,
+    .stTextInput > label,
+    .stNumberInput > label,
+    .stDateInput > label,
+    .stTextArea > label,
+    .stRadio > label,
+    .stCheckbox > label,
+    [data-testid="stWidgetLabel"] {
+        color: var(--text-muted) !important;
+        font-size: 0.8rem !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.04em !important;
+        text-transform: uppercase !important;
+    }
+
+    /* ========== ラジオボタン ========== */
+    .stRadio > div {
+        gap: 0.4rem !important;
+        flex-wrap: wrap !important;
+    }
+    label[data-baseweb="radio"] {
+        background: var(--bg-card2) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius-sm) !important;
+        padding: 0.45rem 0.9rem !important;
+        color: var(--text-primary) !important;
+        font-size: 0.92rem !important;
+        font-weight: 500 !important;
+        text-transform: none !important;
+        letter-spacing: 0 !important;
+        cursor: pointer !important;
+        transition: all 0.15s ease !important;
+        min-height: 40px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        gap: 0.3rem !important;
+    }
+    label[data-baseweb="radio"],
+    label[data-baseweb="radio"] *,
+    label[data-baseweb="radio"] div,
+    label[data-baseweb="radio"] p,
+    label[data-baseweb="radio"] span {
+        color: var(--text-primary) !important;
+        opacity: 1 !important;
+    }
+    label[data-baseweb="radio"] [data-testid="stMarkdownContainer"],
+    label[data-baseweb="radio"] [data-testid="stMarkdownContainer"] * {
+        background: transparent !important;
+        color: var(--text-primary) !important;
+    }
+    label[data-baseweb="radio"]:hover {
+        border-color: var(--accent) !important;
+        background: var(--bg-card) !important;
+    }
+    label[data-baseweb="radio"]:has(input:checked) {
+        background: var(--accent-soft) !important;
+        border-color: var(--accent) !important;
+        font-weight: 800 !important;
+        box-shadow: 0 0 0 2px rgba(240,192,64,0.2) !important;
+    }
+    label[data-baseweb="radio"]:has(input:checked),
+    label[data-baseweb="radio"]:has(input:checked) *,
+    label[data-baseweb="radio"]:has(input:checked) div,
+    label[data-baseweb="radio"]:has(input:checked) p,
+    label[data-baseweb="radio"]:has(input:checked) span {
+        color: var(--accent-bright) !important;
+    }
+    [data-baseweb="radio"] input { display: none !important; }
+    [data-baseweb="radio"] > div:first-child { display: none !important; }
+
+    /* ========== チェックボックス ========== */
+    .stCheckbox > label {
+        color: var(--text-primary) !important;
+        font-size: 0.9rem !important;
+        text-transform: none !important;
+        letter-spacing: 0 !important;
+    }
+
+    /* ========== タブ ========== */
+    .stTabs [data-baseweb="tab-list"] {
+        background: var(--bg-card) !important;
+        border-radius: var(--radius) var(--radius) 0 0 !important;
+        border: 1px solid var(--border) !important;
+        border-bottom: none !important;
+        padding: 0.3rem 0.5rem !important;
+        gap: 0.2rem !important;
+    }
+    .stTabs [data-baseweb="tab"] {
+        background: transparent !important;
+        color: var(--text-muted) !important;
+        border-radius: var(--radius-sm) !important;
+        font-family: 'Noto Sans JP', sans-serif !important;
+        font-size: 0.85rem !important;
+        font-weight: 500 !important;
+        padding: 0.4rem 0.8rem !important;
+        border: none !important;
+        transition: all 0.15s ease !important;
+    }
+    .stTabs [aria-selected="true"] {
+        background: var(--accent-soft) !important;
+        color: var(--accent) !important;
+        font-weight: 700 !important;
+    }
+    .stTabs [data-baseweb="tab-panel"] {
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border) !important;
+        border-top: none !important;
+        border-radius: 0 0 var(--radius) var(--radius) !important;
+        padding: 1.2rem !important;
+    }
+
+    /* ========== メトリクス ========== */
+    [data-testid="stMetric"] {
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        padding: 0.9rem 1.1rem !important;
+        box-shadow: var(--shadow) !important;
+    }
+    [data-testid="stMetricLabel"] {
+        color: var(--text-muted) !important;
+        font-size: 0.75rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+    }
+    [data-testid="stMetricValue"] {
+        color: var(--accent) !important;
+        font-size: 1.5rem !important;
+        font-weight: 900 !important;
+        font-family: 'Zen Kaku Gothic New', sans-serif !important;
+    }
+    [data-testid="stMetricDelta"] { font-size: 0.78rem !important; }
+
+    /* ========== データフレーム ========== */
+    .stDataFrame {
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        overflow: hidden !important;
+    }
+    [data-testid="stDataFrame"] table {
+        background: var(--bg-card) !important;
+        color: var(--text-primary) !important;
+    }
+    [data-testid="stDataFrame"] th {
+        background: var(--bg-card2) !important;
+        color: var(--text-muted) !important;
+        font-size: 0.78rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase !important;
+        letter-spacing: 0.05em !important;
+        border-bottom: 1px solid var(--border) !important;
+        padding: 0.6rem 0.8rem !important;
+    }
+    [data-testid="stDataFrame"] td {
+        border-bottom: 1px solid var(--border) !important;
+        padding: 0.55rem 0.8rem !important;
+        font-size: 0.88rem !important;
+    }
+    [data-testid="stDataFrame"] tr:hover td {
+        background: var(--accent-soft) !important;
+        cursor: pointer;
+    }
+
+    /* ========== アラート / インフォ ========== */
+    .stSuccess, .stInfo, .stWarning, .stError {
+        border-radius: var(--radius) !important;
+        border: 1px solid !important;
+        font-size: 0.9rem !important;
+        padding: 0.8rem 1rem !important;
+    }
+    .stSuccess { background: var(--green-soft) !important; border-color: var(--green) !important; color: var(--green) !important; }
+    .stInfo { background: var(--blue-soft) !important; border-color: var(--blue) !important; color: var(--blue) !important; }
+    .stWarning { background: var(--accent2-soft) !important; border-color: var(--accent2) !important; color: var(--accent2) !important; }
+    .stError { background: var(--red-soft) !important; border-color: var(--red) !important; color: var(--red) !important; }
+
+    /* ========== フォーム ========== */
+    [data-testid="stForm"] {
+        background: var(--bg-card) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: var(--radius) !important;
+        padding: 1.2rem !important;
+    }
+
+    /* ========== 区切り線 ========== */
+    hr { border-color: var(--border) !important; margin: 1.2rem 0 !important; }
+
+    /* ========== スコアシート テーブル ========== */
     .score-sheet {
         border-collapse: collapse;
         width: 100%;
-        max_width: 1000px;
-        margin-bottom: 20px;
-        font-family: "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
-        color: #000;
-        background-color: #fff;
+        margin-bottom: 1.5rem;
+        font-family: 'Noto Sans JP', sans-serif;
+        color: var(--text-primary);
+        background: var(--bg-card);
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow);
     }
     .score-sheet th, .score-sheet td {
-        border: 1px solid #333;
-        padding: 6px 4px;
+        border: 1px solid var(--border);
+        padding: 7px 6px;
         text-align: center;
-        font-size: 14px;
+        font-size: 13px;
         vertical-align: middle;
     }
     .score-sheet th {
-        background-color: #f2f2f2;
-        font-weight: bold;
+        background: var(--bg-card2);
+        color: var(--text-muted);
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
     .score-sheet .set-header {
-        background-color: #d9edf7;
+        background: linear-gradient(90deg, rgba(240,192,64,0.15) 0%, transparent 100%);
         text-align: left;
-        padding-left: 10px;
-        font-weight: bold;
-        font-size: 15px;
+        padding-left: 14px;
+        font-weight: 700;
+        font-size: 14px;
+        color: var(--accent);
+        border-bottom: 1px solid var(--border-accent);
     }
     .rank-num {
-        font-weight: bold;
-        font-size: 16px;
+        font-weight: 700;
+        font-size: 15px;
         margin-left: 5px;
         display: inline-block;
-        width: 20px;
+        width: 22px;
         text-align: center;
     }
-    .cell-top {
-        background-color: #e6f7ff !important; 
-    }
+    .cell-top { background: rgba(240,192,64,0.07) !important; }
     .rank-special {
-        background-color: #333;
-        color: #fff;
+        background: var(--accent);
+        color: #0f1117;
         border-radius: 50%;
         width: 22px;
         height: 22px;
         line-height: 22px;
-        font-size: 13px;
+        font-size: 12px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
     }
     .score-sheet .summary-row td {
-        background-color: #fffbe6;
-        font-weight: bold;
-        border-top: 2px double #333;
+        background: rgba(240,192,64,0.08);
+        font-weight: 700;
+        border-top: 2px solid var(--border-accent);
+        color: var(--accent);
     }
 
+    /* ========== 統計テーブル ========== */
     .stats-table {
         border-collapse: collapse;
         width: 100%;
-        max_width: 800px;
-        margin-bottom: 20px;
-        font-family: "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+        margin-bottom: 1.2rem;
+        font-family: 'Noto Sans JP', sans-serif;
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: var(--shadow);
     }
     .stats-table th {
-        background-color: #333;
-        color: #fff;
+        background: var(--bg-card2);
+        color: var(--text-muted);
         padding: 10px;
-        border: 1px solid #333;
+        border: 1px solid var(--border);
         text-align: center;
-        font-weight: normal;
+        font-weight: 600;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
     .stats-table td {
-        background-color: #fff;
-        color: #000;
-        padding: 15px;
-        border: 1px solid #ccc;
+        background: var(--bg-card);
+        color: var(--text-primary);
+        padding: 14px;
+        border: 1px solid var(--border);
         text-align: center;
-        font-weight: bold;
-        font-size: 18px;
+        font-weight: 700;
+        font-size: 17px;
     }
     .stats-sub {
-        font-size: 12px;
-        color: #666;
+        font-size: 11px;
+        color: var(--text-muted);
         display: block;
-        margin-top: 4px;
+        margin-top: 3px;
     }
-    /* メンバー一覧のボタンスタイル */
-    .stButton button {
-        text-align: left !important;
+
+    /* ========== クイック統計バー ========== */
+    .quick-stat-bar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 10px;
+        margin-bottom: 1.2rem;
+    }
+    .quick-stat-item {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px 16px;
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+    }
+    .quick-stat-item::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: var(--accent);
+    }
+    .quick-stat-item.green::before { background: var(--green); }
+    .quick-stat-item.red::before { background: var(--red); }
+    .quick-stat-item.blue::before { background: var(--blue); }
+    .quick-stat-item .qs-label {
+        font-size: 10px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        margin-bottom: 4px;
+        font-weight: 600;
+    }
+    .quick-stat-item .qs-value {
+        font-size: 1.4rem;
+        font-weight: 900;
+        color: var(--accent);
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        line-height: 1.1;
+    }
+    .quick-stat-item.green .qs-value { color: var(--green); }
+    .quick-stat-item.red .qs-value { color: var(--red); }
+    .quick-stat-item.blue .qs-value { color: var(--blue); }
+
+    /* ========== ホームヘッダー ========== */
+    .home-header {
+        text-align: center;
+        padding: 1.2rem 0 1.5rem;
+        margin-bottom: 0.5rem;
+    }
+    .home-header .app-title {
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        font-size: 2.2rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 50%, var(--accent2) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: 0.05em;
+        line-height: 1.2;
+    }
+    .home-header .app-sub {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        margin-top: 0.3rem;
+        letter-spacing: 0.18em;
+    }
+
+    /* ========== メインアクションカード ========== */
+    .main-action-card {
+        background: linear-gradient(135deg, rgba(240,192,64,0.15) 0%, rgba(224,123,57,0.1) 100%);
+        border: 2px solid var(--accent);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        text-align: center;
+        box-shadow: 0 4px 20px rgba(240,192,64,0.15);
+    }
+
+    /* ========== 席カード (入力画面) ========== */
+    .seat-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 0.9rem 1.1rem;
+        margin-bottom: 0.7rem;
+        position: relative;
+        overflow: hidden;
+    }
+    .seat-card.seat-a { border-left: 4px solid var(--blue); }
+    .seat-card.seat-b { border-left: 4px solid var(--accent2); }
+    .seat-card.seat-c { border-left: 4px solid var(--green); }
+
+    .seat-header-row {
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        margin-bottom: 0.6rem;
+    }
+    .seat-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        background: var(--accent);
+        color: #0f1117;
+        font-weight: 900;
+        font-size: 1.1rem;
+        border-radius: 50%;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        flex-shrink: 0;
+    }
+    .seat-badge.a { background: var(--blue); color: white; }
+    .seat-badge.b { background: var(--accent2); color: white; }
+    .seat-badge.c { background: var(--green); color: white; }
+    .seat-card-label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        font-weight: 600;
+        letter-spacing: 0.05em;
+    }
+
+    /* ========== 入力ステータスバー ========== */
+    .input-status-bar {
+        background: linear-gradient(135deg, var(--bg-card) 0%, rgba(240,192,64,0.05) 100%);
+        border: 1px solid var(--border-accent);
+        border-radius: var(--radius);
+        padding: 0.85rem 1.2rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    .input-status-bar .isb-main {
+        color: var(--accent);
+        font-weight: 800;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .input-status-bar .isb-sub {
+        color: var(--text-muted);
+        font-size: 0.82rem;
+        margin-left: auto;
+    }
+
+    /* ========== 保存成功通知 ========== */
+    .toast-success {
+        background: linear-gradient(135deg, var(--green-soft) 0%, rgba(76,175,135,0.18) 100%);
+        border: 1px solid var(--green);
+        border-radius: var(--radius);
+        padding: 1rem 1.3rem;
+        margin-bottom: 1rem;
+        color: var(--green);
+        font-weight: 700;
+        font-size: 0.95rem;
+        display: flex;
+        align-items: center;
+        gap: 0.7rem;
+        box-shadow: 0 4px 16px rgba(76,175,135,0.2);
+        animation: slideDown 0.3s ease-out;
+    }
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-12px); }
+        to   { opacity: 1; transform: translateY(0); }
+    }
+    .toast-success .toast-icon { font-size: 1.3rem; }
+
+    /* ========== セクションタイトル ========== */
+    .section-title {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.8rem;
+        margin-top: 0.5rem;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+    }
+    .section-title .section-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        background: var(--accent-soft);
+        border-radius: 8px;
+        color: var(--accent);
+        font-size: 1rem;
+    }
+
+    /* ========== モバイル対応 ========== */
+    @media (max-width: 640px) {
+        .main .block-container { padding: 0.8rem 1rem 5rem; }
+        .home-header .app-title { font-size: 1.7rem; }
+        h1 { font-size: 1.4rem !important; }
+        [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
+        .stats-table td { font-size: 14px; padding: 8px; }
+        .stats-table th { font-size: 10px; padding: 6px; }
+        .seat-badge { width: 32px; height: 32px; font-size: 1rem; }
+        .quick-stat-item .qs-value { font-size: 1.2rem; }
     }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
-
-# ==========================================
 
 
 # ==========================================
@@ -118,6 +636,16 @@ SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
 SHEET_LOG = "logs"
 SHEET_PROFIT = "daily_profits"
+SHEET_PENDING = "pending_buffer"
+
+PENDING_COLS = [
+    "EntryId", "Type", "TargetGameNo", "Timestamp", "Detail", "Info",
+    "GameNo", "TableNo", "SetNo", "日時", "備考",
+    "Aさん", "Aタイプ", "A着順",
+    "Bさん", "Bタイプ", "B着順",
+    "Cさん", "Cタイプ", "C着順",
+    "LogDetail",
+]
 
 EXPECTED_COLS = [
     "GameNo", "TableNo", "SetNo", "日時", "備考",
@@ -141,12 +669,12 @@ def get_dan_name(rating):
     if rating < 1950: return "八段"
     if rating < 2000: return "九段"
     if rating < 2100: return "十段"
-    return "極伝" # 最高段位
+    return "極伝"
 
 def get_conn():
     return st.connection("gsheets", type=GSheetsConnection)
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=60)
 def fetch_data_cached(_conn, sheet_name):
     return _conn.read(worksheet=sheet_name, ttl=0)
 
@@ -165,24 +693,19 @@ def fetch_data_fresh(conn, sheet_name):
 def process_score_df(df):
     if df.empty:
         return pd.DataFrame(columns=EXPECTED_COLS)
-
     df.columns = df.columns.astype(str).str.strip()
     missing_cols = [c for c in EXPECTED_COLS if c not in df.columns]
     if missing_cols:
-        return None 
-
+        return None
     numeric_cols = ["GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]
     for col in numeric_cols:
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
-
     df = df.fillna("")
-
     if "日時" in df.columns:
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
         df = df.sort_values(["論理日付", "TableNo", "日時Obj"]).reset_index(drop=True)
-        
         if not df.empty:
             df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
         else:
@@ -233,7 +756,7 @@ def process_score_df(df):
         opp_B = (rA + rC) / 2.0
         opp_C = (rA + rB) / 2.0
         
-        # 格上・格下補正のKファクター (例: 40)
+        # Kファクター = 40
         dA = base_points[ranks[0]] + (opp_A - rA) / 40.0
         dB = base_points[ranks[1]] + (opp_B - rB) / 40.0
         dC = base_points[ranks[2]] + (opp_C - rC) / 40.0
@@ -252,27 +775,34 @@ def process_score_df(df):
     df["A_Rating_Delta"] = a_delta
     df["B_Rating_Delta"] = b_delta
     df["C_Rating_Delta"] = c_delta
-        
+
     return df
 
-@st.cache_data(ttl=600)
+def get_latest_ratings(df_subset):
+    ratings = {}
+    for _, row in df_subset.iterrows():
+        for s in ["A", "B", "C"]:
+            name = row[f"{s}さん"]
+            if name:
+                if f"{s}_Rating_Before" in row and f"{s}_Rating_Delta" in row:
+                    r_before = row[f"{s}_Rating_Before"]
+                    r_delta = row[f"{s}_Rating_Delta"]
+                    ratings[name] = r_before + r_delta
+    return ratings
+
 def load_score_data():
     conn = get_conn()
     try:
-        df = conn.read(worksheet=SHEET_SCORE, ttl=0)
+        df = fetch_data_cached(conn, SHEET_SCORE)
         processed_df = process_score_df(df)
-        
         if processed_df is None:
-            st.cache_data.clear()
-            df = conn.read(worksheet=SHEET_SCORE, ttl=0)
+            fetch_data_cached.clear()
+            df = fetch_data_cached(conn, SHEET_SCORE)
             processed_df = process_score_df(df)
-            
         if processed_df is None:
             st.error("⚠️ データの読み込みエラー: スプレッドシートの列名が正しく認識できませんでした。")
             st.stop()
-            
         return processed_df
-
     except Exception:
         return pd.DataFrame(columns=EXPECTED_COLS)
 
@@ -283,12 +813,10 @@ def load_score_data_fresh():
     except Exception as e:
         st.error(f"データの読み込みに失敗しました: {e}")
         st.stop()
-    
     processed_df = process_score_df(df)
     if processed_df is None:
         st.error("⚠️ 保存エラー: 最新のスプレッドシート形式が不正です。保存を中止しました。")
         st.stop()
-        
     return processed_df
 
 def save_score_data(df):
@@ -297,16 +825,13 @@ def save_score_data(df):
     if missing_cols:
         st.error("保存データに不備があります。処理を中止しました。")
         st.stop()
-
     df_to_save = df[EXPECTED_COLS]
-    
     if "GameNo" in df_to_save.columns:
         df_to_save["GameNo"] = pd.to_numeric(df_to_save["GameNo"], errors='coerce').fillna(0)
         df_to_save = df_to_save.sort_values("GameNo")
-    
     conn.update(worksheet=SHEET_SCORE, data=df_to_save)
     time.sleep(1)
-    st.cache_data.clear() 
+    fetch_data_cached.clear()
 
 def save_action_log(action, game_no, detail=""):
     conn = get_conn()
@@ -314,18 +839,11 @@ def save_action_log(action, game_no, detail=""):
         df_log = fetch_data_fresh(conn, SHEET_LOG)
     except:
         df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
-    
     jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
-    new_log = pd.DataFrame([{
-        "日時": jst_now,
-        "操作": action,
-        "GameNo": game_no,
-        "詳細": detail
-    }])
-    
+    new_log = pd.DataFrame([{"日時": jst_now, "操作": action, "GameNo": game_no, "詳細": detail}])
     df_log = pd.concat([df_log, new_log], ignore_index=True)
     conn.update(worksheet=SHEET_LOG, data=df_log)
-    st.cache_data.clear()
+    fetch_data_cached.clear()
 
 def load_log_data():
     conn = get_conn()
@@ -342,7 +860,6 @@ def load_member_data():
     conn = get_conn()
     try:
         df = fetch_data_cached(conn, SHEET_MEMBER).fillna("")
-        
         if "名前" not in df.columns: df["名前"] = []
         if "登録日" not in df.columns: df["登録日"] = []
         if "最大飜数" not in df.columns: df["最大飜数"] = 0
@@ -350,10 +867,8 @@ def load_member_data():
         if "タイプ" not in df.columns: df["タイプ"] = "A客"
         if "最大飜数詳細" not in df.columns: df["最大飜数詳細"] = ""
         if "最大飜数記録日" not in df.columns: df["最大飜数記録日"] = ""
-            
         df["最大飜数"] = pd.to_numeric(df["最大飜数"], errors='coerce').fillna(0).astype(int)
         df["役満回数"] = pd.to_numeric(df["役満回数"], errors='coerce').fillna(0).astype(int)
-        
         return df
     except:
         return pd.DataFrame({"名前": [], "登録日": [], "最大飜数": [], "役満回数": [], "タイプ": [], "最大飜数詳細": [], "最大飜数記録日": []})
@@ -361,7 +876,7 @@ def load_member_data():
 def save_member_data(df):
     conn = get_conn()
     conn.update(worksheet=SHEET_MEMBER, data=df)
-    st.cache_data.clear()
+    fetch_data_cached.clear()
 
 def get_all_member_names():
     df_mem = load_member_data()
@@ -369,7 +884,6 @@ def get_all_member_names():
     df_score = load_score_data()
     if df_score.empty:
         return sorted(list(set(all_members)))
-
     last_played = {}
     for _, row in df_score.iterrows():
         dt = row["日時Obj"]
@@ -378,29 +892,15 @@ def get_all_member_names():
             if name:
                 if name not in last_played or dt > last_played[name]:
                     last_played[name] = dt
-    
     formatted_list = []
     for m in all_members:
         last_dt = last_played.get(m, pd.Timestamp("1900-01-01"))
         formatted_list.append({"name": m, "last_dt": last_dt})
-    
     for m in last_played.keys():
         if m not in all_members:
             formatted_list.append({"name": m, "last_dt": last_played[m]})
-
     sorted_data = sorted(formatted_list, key=lambda x: x["last_dt"], reverse=True)
     return [x["name"] for x in sorted_data]
-
-def get_latest_ratings(df_subset):
-    ratings = {}
-    for _, row in df_subset.iterrows():
-        for s in ["A", "B", "C"]:
-            name = row[f"{s}さん"]
-            if name:
-                r_before = row[f"{s}_Rating_Before"]
-                r_delta = row[f"{s}_Rating_Delta"]
-                ratings[name] = r_before + r_delta
-    return ratings
 
 def load_profit_data():
     conn = get_conn()
@@ -416,130 +916,361 @@ def save_profit_data(df):
     try:
         conn.update(worksheet=SHEET_PROFIT, data=df)
         time.sleep(1)
-        st.cache_data.clear()
+        fetch_data_cached.clear()
     except Exception as e:
         if "WorksheetNotFound" in str(e):
-            st.error(f"エラー: スプレッドシートに '{SHEET_PROFIT}' という名前のシートが見つかりません。")
-            st.info("スプレッドシートの下にある「＋」ボタンで新しいシートを追加し、名前を 'daily_profits' に変更してください。")
+            st.error(f"エラー: '{SHEET_PROFIT}' シートが見つかりません。")
         else:
             st.error(f"保存エラー: {e}")
         st.stop()
 
 # ==========================================
-# 4. 集計 & レンダリングロジック
+# 2.5 永続バッファ機構 (一括保存)
 # ==========================================
+import uuid as _uuid
 
-def calculate_set_summary(subset_df):
-    target_types = ["A客", "B客", "AS", "BS"]
-    type_stats = {t: 0 for t in target_types}
-    FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
-    total_fee = 0
+@st.cache_data(ttl=5)
+def _fetch_pending_cached(_conn):
+    try:
+        return _conn.read(worksheet=SHEET_PENDING, ttl=0)
+    except Exception:
+        return None
+
+def _save_pending_df(df):
+    conn = get_conn()
+    for c in PENDING_COLS:
+        if c not in df.columns:
+            df[c] = ""
+    df = df[PENDING_COLS]
+    try:
+        conn.update(worksheet=SHEET_PENDING, data=df)
+        _fetch_pending_cached.clear()
+    except Exception as e:
+        st.error(f"仮保存シートの更新に失敗しました: {e}")
+        if "WorksheetNotFound" in str(e):
+            st.info(f"💡 スプレッドシートに `{SHEET_PENDING}` という名前のシートを作成してください。1行目は空でOKです。")
+        st.stop()
+
+def _load_pending_df():
+    conn = get_conn()
+    df = _fetch_pending_cached(conn)
+    if df is None or df.empty:
+        return pd.DataFrame(columns=PENDING_COLS)
+    for c in PENDING_COLS:
+        if c not in df.columns: df[c] = ""
+    df = df.fillna("")
+    for nc in ["TargetGameNo", "GameNo", "TableNo", "SetNo", "A着順", "B着順", "C着順"]:
+        df[nc] = pd.to_numeric(df[nc], errors='coerce').fillna(0).astype(int)
+    return df
+
+def _df_row_to_entry(row):
+    return {
+        "EntryId": str(row["EntryId"]),
+        "type": str(row["Type"]),
+        "target_game_no": int(row["TargetGameNo"]) if str(row["TargetGameNo"]).strip() else 0,
+        "timestamp": str(row["Timestamp"]),
+        "detail": str(row["Detail"]),
+        "info": str(row["Info"]),
+        "data": {
+            "GameNo": int(row["GameNo"]), "TableNo": int(row["TableNo"]), "SetNo": int(row["SetNo"]),
+            "日時": str(row["日時"]), "備考": str(row["備考"]),
+            "Aさん": str(row["Aさん"]), "Aタイプ": str(row["Aタイプ"]), "A着順": int(row["A着順"]),
+            "Bさん": str(row["Bさん"]), "Bタイプ": str(row["Bタイプ"]), "B着順": int(row["B着順"]),
+            "Cさん": str(row["Cさん"]), "Cタイプ": str(row["Cタイプ"]), "C着順": int(row["C着順"]),
+            "_log_detail": str(row["LogDetail"]),
+        },
+    }
+
+def _entry_to_df_row(entry):
+    data = entry.get("data", {})
+    return {
+        "EntryId": entry.get("EntryId", str(_uuid.uuid4())),
+        "Type": entry["type"], "TargetGameNo": entry.get("target_game_no", 0),
+        "Timestamp": entry.get("timestamp", datetime.now().isoformat()),
+        "Detail": entry.get("detail", ""), "Info": entry.get("info", ""),
+        "GameNo": data.get("GameNo", 0), "TableNo": data.get("TableNo", 0), "SetNo": data.get("SetNo", 0),
+        "日時": data.get("日時", ""), "備考": data.get("備考", ""),
+        "Aさん": data.get("Aさん", ""), "Aタイプ": data.get("Aタイプ", ""), "A着順": data.get("A着順", 0),
+        "Bさん": data.get("Bさん", ""), "Bタイプ": data.get("Bタイプ", ""), "B着順": data.get("B着順", 0),
+        "Cさん": data.get("Cさん", ""), "Cタイプ": data.get("Cタイプ", ""), "C着順": data.get("C着順", 0),
+        "LogDetail": data.get("_log_detail", ""),
+    }
+
+def load_pending_changes():
+    df = _load_pending_df()
+    if df.empty: return []
+    entries = [_df_row_to_entry(row) for _, row in df.iterrows()]
+    entries.sort(key=lambda e: e.get("timestamp", ""))
+    return entries
+
+def save_pending_changes(entries):
+    if not entries:
+        df = pd.DataFrame(columns=PENDING_COLS)
+    else:
+        df = pd.DataFrame([_entry_to_df_row(e) for e in entries])
+    _save_pending_df(df)
+
+def pending_count():
+    return len(load_pending_changes())
+
+def _next_temp_game_no(entries):
+    existing = [e.get("target_game_no", 0) for e in entries if e.get("target_game_no", 0) < 0]
+    return min(existing) - 1 if existing else -1
+
+def buffer_add(new_row):
+    entries = load_pending_changes()
+    temp_no = _next_temp_game_no(entries)
+    new_row = dict(new_row)
+    new_row["GameNo"] = temp_no
+    entries.append({
+        "EntryId": str(_uuid.uuid4()), "type": "add", "target_game_no": temp_no,
+        "data": new_row, "timestamp": datetime.now().isoformat(), "detail": "", "info": "",
+    })
+    save_pending_changes(entries)
+
+def buffer_update(target_game_no, new_data, detail=""):
+    entries = load_pending_changes()
+    for i, e in enumerate(entries):
+        if e.get("target_game_no") == target_game_no:
+            if e["type"] == "add":
+                merged = dict(e["data"])
+                merged.update(new_data)
+                merged["GameNo"] = target_game_no
+                entries[i]["data"] = merged
+                entries[i]["timestamp"] = datetime.now().isoformat()
+            elif e["type"] == "update":
+                entries[i]["data"] = new_data
+                entries[i]["detail"] = detail
+                entries[i]["timestamp"] = datetime.now().isoformat()
+            elif e["type"] == "delete":
+                entries[i] = {
+                    "EntryId": str(_uuid.uuid4()), "type": "update", "target_game_no": target_game_no,
+                    "data": new_data, "detail": detail, "info": "", "timestamp": datetime.now().isoformat(),
+                }
+            save_pending_changes(entries)
+            return
+    entries.append({
+        "EntryId": str(_uuid.uuid4()), "type": "update", "target_game_no": target_game_no,
+        "data": new_data, "detail": detail, "info": "", "timestamp": datetime.now().isoformat(),
+    })
+    save_pending_changes(entries)
+
+def buffer_delete(target_game_no, info=""):
+    entries = load_pending_changes()
+    for i, e in enumerate(entries):
+        if e.get("target_game_no") == target_game_no:
+            if e["type"] == "add":
+                entries.pop(i)
+            elif e["type"] == "update":
+                entries[i] = {
+                    "EntryId": str(_uuid.uuid4()), "type": "delete", "target_game_no": target_game_no,
+                    "data": {}, "detail": "", "info": info, "timestamp": datetime.now().isoformat(),
+                }
+            save_pending_changes(entries)
+            return
+    entries.append({
+        "EntryId": str(_uuid.uuid4()), "type": "delete", "target_game_no": target_game_no,
+        "data": {}, "detail": "", "info": info, "timestamp": datetime.now().isoformat(),
+    })
+    save_pending_changes(entries)
+
+def buffer_clear():
+    save_pending_changes([])
+
+def apply_buffer_to_df(df):
+    changes = load_pending_changes()
+    if not changes: return df
+    df = df.copy() if not df.empty else pd.DataFrame(columns=EXPECTED_COLS)
     
-    for _, row in subset_df.iterrows():
-        w_type = None
-        try:
-            r_a = int(float(row["A着順"]))
-            r_b = int(float(row["B着順"]))
-            r_c = int(float(row["C着順"]))
-        except:
-            r_a, r_b, r_c = 0, 0, 0
-
-        if r_a == 1: w_type = row["Aタイプ"]
-        elif r_b == 1: w_type = row["Bタイプ"]
-        elif r_c == 1: w_type = row["Cタイプ"]
+    delete_ids = [e["target_game_no"] for e in changes if e["type"] == "delete"]
+    if delete_ids and not df.empty:
+        df = df[~df["GameNo"].isin(delete_ids)]
         
-        if w_type in target_types:
-            type_stats[w_type] += 1
-            if w_type in FEE_MAP: total_fee += FEE_MAP[w_type]
+    for e in changes:
+        if e["type"] == "update":
+            target = e["target_game_no"]
+            if not df.empty and target in df["GameNo"].values:
+                idx_pos = df[df["GameNo"] == target].index
+                for col, val in e["data"].items():
+                    if col in df.columns: df.loc[idx_pos, col] = val
+                    
+    add_rows = []
+    for e in changes:
+        if e["type"] == "add":
+            row = {c: e["data"].get(c, "") for c in EXPECTED_COLS}
+            add_rows.append(row)
+    if add_rows:
+        df_add = pd.DataFrame(add_rows)
+        df = df_add if df.empty else pd.concat([df, df_add], ignore_index=True)
         
-        note = str(row["備考"])
-        if note == "東１終了": total_fee -= 1
-        elif note == "２人飛ばし": total_fee -= 2
-        elif note == "５連勝〜": total_fee -= 5
+    df = process_score_df(df[EXPECTED_COLS]) if not df.empty else df
+    return pd.DataFrame(columns=EXPECTED_COLS) if df is None else df
 
-    return total_fee, type_stats
+def load_score_data_effective():
+    base_df = load_score_data()
+    return apply_buffer_to_df(base_df)
 
-def render_paper_sheet(df):
-    if df.empty:
-        st.info("データがありません")
-        return
+def commit_buffer_to_sheet():
+    changes = load_pending_changes()
+    if not changes: return True
+    try: df_latest = load_score_data_fresh()
+    except Exception as e:
+        st.error(f"最新データの取得に失敗しました: {e}")
+        return False
 
-    groups = df.groupby(["TableNo", "SetNo"])
-    sorted_keys = sorted(groups.groups.keys())
+    delete_ids = [e["target_game_no"] for e in changes if e["type"] == "delete"]
+    if delete_ids and not df_latest.empty:
+        df_latest = df_latest[~df_latest["GameNo"].isin(delete_ids)]
 
-    for key in sorted_keys:
-        table_no, set_no = key
-        subset = groups.get_group(key).sort_values("DailyNo")
-        if subset.empty: continue
-        
-        fee, stats = calculate_set_summary(subset)
-        
-        html = f'''
-        <table class="score-sheet">
-            <thead>
-                <tr class="set-header"><td colspan="6">📄 第 {int(set_no)} セット (卓: {int(table_no)})</td></tr>
-                <tr>
-                    <th style="width:5%">No</th>
-                    <th style="width:10%">時刻</th>
-                    <th style="width:23%">A席</th>
-                    <th style="width:23%">B席</th>
-                    <th style="width:23%">C席</th>
-                    <th style="width:16%">備考</th>
-                </tr>
-            </thead>
-            <tbody>'''
-        
-        last_names = {"A": None, "B": None, "C": None}
-        
-        for _, row in subset.iterrows():
-            ranks_html_list = []
-            try:
-                dt_obj = pd.to_datetime(row["日時"])
-                time_str = dt_obj.strftime("%H:%M")
-            except: time_str = ""
+    for e in changes:
+        if e["type"] == "update":
+            target = e["target_game_no"]
+            if not df_latest.empty and target in df_latest["GameNo"].values:
+                idx_pos = df_latest[df_latest["GameNo"] == target].index[0]
+                for col, val in e["data"].items():
+                    if col in df_latest.columns: df_latest.loc[idx_pos, col] = val
 
-            for p_char in ["A", "B", "C"]:
-                try:
-                    r_float = float(row[f"{p_char}着順"])
-                    rank_val = str(int(r_float))
-                except: rank_val = "0"
+    if not df_latest.empty and "GameNo" in df_latest.columns:
+        max_no_series = pd.to_numeric(df_latest["GameNo"], errors='coerce').fillna(0)
+        max_no = int(max_no_series[max_no_series > 0].max()) if (max_no_series > 0).any() else 0
+    else:
+        max_no = 0
 
-                is_1st = (rank_val == "1")
-                SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
-                is_special = (row["備考"] in SPECIAL_NOTES) and is_1st
-                
-                td_class = ' class="cell-top"' if is_1st else ""
-                
-                if is_special:
-                    rank_span = f'<span class="rank-num rank-special">❶</span>'
-                else:
-                    char_map = {"1":"①", "2":"②", "3":"③"}
-                    d_char = char_map.get(rank_val, rank_val)
-                    color_style = "color:#000;"
-                    rank_span = f'<span class="rank-num" style="{color_style}">{d_char}</span>'
-                
-                p_name = row[f"{p_char}さん"]
-                p_type = row[f"{p_char}タイプ"] 
-                
-                if p_name == last_names[p_char]:
-                    display_text = ""
-                else:
-                    display_text = f"{p_name}<span style='font-size:11px; color:#555; margin-left:3px;'>({p_type})</span>"
-                    last_names[p_char] = p_name
-                
-                cell_content = f'<div style="display:flex; justify-content:space-between; align-items:center; padding:0 5px;"><span>{display_text}</span>{rank_span}</div>'
-                ranks_html_list.append(f'<td{td_class}>{cell_content}</td>')
+    add_rows, add_log_entries = [], []
+    for e in changes:
+        if e["type"] == "add":
+            max_no += 1
+            row = {c: e["data"].get(c, "") for c in EXPECTED_COLS}
+            row["GameNo"] = max_no
+            add_rows.append(row)
+            add_log_entries.append({"real_game_no": max_no, "detail": e["data"].get("_log_detail", f"新規: {row.get('TableNo','?')}卓")})
+            
+    if add_rows:
+        df_add = pd.DataFrame(add_rows)
+        df_latest = df_add if df_latest.empty else pd.concat([df_latest[EXPECTED_COLS], df_add], ignore_index=True)
 
-            note_txt = row["備考"] if row["備考"] else ""
-            html += f'<tr><td>{row["DailyNo"]}</td><td>{time_str}</td>{ranks_html_list[0]}{ranks_html_list[1]}{ranks_html_list[2]}<td style="color:red; font-size:12px;">{note_txt}</td></tr>'
+    try: save_score_data(df_latest)
+    except Exception as e:
+        st.error(f"保存に失敗しました: {e}")
+        return False
 
-        html += f'<tr class="summary-row"><td colspan="2" style="text-align:right;">合計</td><td>ゲーム代: <span style="font-size:16px; color:#d9534f;">{fee}</span> 枚</td><td colspan="3" style="font-size:12px; text-align:left;">A客:{stats["A客"]} / B客:{stats["B客"]} / AS:{stats["AS"]} / BS:{stats["BS"]}</td></tr></tbody></table>'
-        
-        st.markdown(html, unsafe_allow_html=True)
+    try:
+        conn = get_conn()
+        try: df_log = fetch_data_fresh(conn, SHEET_LOG)
+        except: df_log = pd.DataFrame(columns=["日時", "操作", "GameNo", "詳細"])
+        jst_now = datetime.now(timezone(timedelta(hours=9), 'JST')).strftime("%Y-%m-%d %H:%M:%S")
+        new_log_rows = []
+        for e in changes:
+            if e["type"] == "update": new_log_rows.append({"日時": jst_now, "操作": "修正", "GameNo": e["target_game_no"], "詳細": e.get("detail", "")})
+            elif e["type"] == "delete": new_log_rows.append({"日時": jst_now, "操作": "削除", "GameNo": e["target_game_no"], "詳細": e.get("info", "")})
+        for entry in add_log_entries:
+            new_log_rows.append({"日時": jst_now, "操作": "新規登録", "GameNo": entry["real_game_no"], "詳細": entry["detail"]})
+        if new_log_rows:
+            df_log = pd.concat([df_log, pd.DataFrame(new_log_rows)], ignore_index=True)
+            conn.update(worksheet=SHEET_LOG, data=df_log)
+            fetch_data_cached.clear()
+    except Exception as e:
+        st.warning(f"ログの保存に一部失敗しました: {e}")
+
+    buffer_clear()
+    return True
 
 # ==========================================
-# 5. 各ページ画面
+# 4. UI ユーティリティ
 # ==========================================
+NAV_ITEMS = [
+    ("🏠", "ホーム", "home"),
+    ("📝", "入力", "input"),
+    ("👤", "個人", "personal"),
+    ("📊", "データ", "history"),
+    ("🏆", "ランキング", "ranking"),
+    ("👥", "メンバー", "members"),
+    ("💰", "利益", "profit"),
+    ("📜", "ログ", "logs"),
+]
+
+def render_top_nav(current_page):
+    display_active = current_page
+    if current_page in ("versus2", "versus3"):
+        display_active = "history"
+
+    cols = st.columns(len(NAV_ITEMS))
+    for i, (icon, label, page) in enumerate(NAV_ITEMS):
+        with cols[i]:
+            is_current = (page == display_active)
+            btn_label = f"{icon}\n{label}"
+            if is_current:
+                st.markdown(
+                    f"""<div style='background:var(--accent-soft);border:1px solid var(--accent);
+                    border-radius:8px;padding:8px 4px;text-align:center;color:var(--accent);
+                    font-weight:700;font-size:0.78rem;line-height:1.3;'>
+                    <div style='font-size:1.15rem;'>{icon}</div>{label}</div>""",
+                    unsafe_allow_html=True
+                )
+            else:
+                if st.button(btn_label, key=f"nav_{page}", use_container_width=True):
+                    st.session_state["page"] = page
+                    st.rerun()
+
+def section_title(icon, text):
+    st.markdown(f'<div class="section-title"><span class="section-icon">{icon}</span>{text}</div>', unsafe_allow_html=True)
+
+def render_pending_bar(location_key=""):
+    cnt = pending_count()
+    if cnt == 0: return
+    if cnt >= 20:
+        bg_grad = "linear-gradient(135deg, rgba(224,92,92,0.18) 0%, rgba(224,123,57,0.15) 100%)"
+        border_col = "var(--red)"
+        text_col = "var(--red)"
+        icon = "⚠️"
+    elif cnt >= 10:
+        bg_grad = "linear-gradient(135deg, rgba(224,123,57,0.18) 0%, rgba(240,192,64,0.12) 100%)"
+        border_col = "var(--accent2)"
+        text_col = "var(--accent2)"
+        icon = "📌"
+    else:
+        bg_grad = "linear-gradient(135deg, rgba(91,156,246,0.15) 0%, rgba(240,192,64,0.1) 100%)"
+        border_col = "var(--blue)"
+        text_col = "var(--blue)"
+        icon = "💾"
+
+    st.markdown(f"""
+    <div style="background:{bg_grad};border:1px solid {border_col};
+                border-radius:var(--radius);padding:0.7rem 1.1rem;margin-bottom:1rem;
+                display:flex;align-items:center;gap:0.7rem;">
+        <span style="font-size:1.2rem;">{icon}</span>
+        <span style="color:{text_col};font-weight:700;font-size:0.95rem;">
+            未保存の変更: <span style="font-size:1.3rem;font-family:'Zen Kaku Gothic New';">{cnt}</span> 件
+        </span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        if st.button(f"💾 まとめて保存する ({cnt} 件)", key=f"commit_btn_{location_key}", type="primary", use_container_width=True):
+            with st.spinner(f"{cnt} 件の変更を保存中..."):
+                ok = commit_buffer_to_sheet()
+            if ok:
+                st.session_state["success_msg"] = f"✨ {cnt} 件の変更を保存しました!"
+                st.rerun()
+    with c2:
+        if st.button("🗑 破棄", key=f"discard_btn_{location_key}", use_container_width=True):
+            st.session_state[f"_confirm_discard_{location_key}"] = True
+            st.rerun()
+
+    if st.session_state.get(f"_confirm_discard_{location_key}", False):
+        st.warning(f"⚠️ {cnt} 件の未保存データをすべて破棄しますか?この操作は取り消せません。")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            if st.button("✅ はい、破棄する", key=f"discard_yes_{location_key}", use_container_width=True):
+                buffer_clear()
+                st.session_state[f"_confirm_discard_{location_key}"] = False
+                st.rerun()
+        with cc2:
+            if st.button("キャンセル", key=f"discard_no_{location_key}", use_container_width=True):
+                st.session_state[f"_confirm_discard_{location_key}"] = False
+                st.rerun()
+    st.write("")
 
 def update_type_by_name(key_name, key_type, type_map):
     name = st.session_state[key_name]
@@ -547,208 +1278,452 @@ def update_type_by_name(key_name, key_type, type_map):
         st.session_state[key_type] = type_map[name]
 
 def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_ranks, key_suffix="", type_map=None):
-    st.markdown(f"**▼ {label}**")
     TYPE_OPTS = ["A客", "B客", "AS", "BS"]
-    
-    def get_idx_in_list(lst, val): return lst.index(val) if val in lst else None
-    def get_idx_in_opts(opts, val): return opts.index(val) if val in opts else 0
+    seat_class_map = {"A席": "a", "B席": "b", "C席": "c"}
+    seat_class = seat_class_map.get(label, "a")
+    rank_emoji = {1: "🥇 1着", 2: "🥈 2着", 3: "🥉 3着"}
+    rank_labels = [rank_emoji.get(r, f"{r}着") for r in available_ranks]
 
-    c1, c2 = st.columns([1, 2])
+    st.markdown(f'<div class="seat-card seat-{seat_class}">', unsafe_allow_html=True)
+    st.markdown(
+        f'''<div class="seat-header-row">
+            <span class="seat-badge {seat_class}">{label[0]}</span>
+            <span class="seat-card-label">{label}</span>
+        </div>''', unsafe_allow_html=True)
+
+    def get_idx_in_list(lst, val): return lst.index(val) if val in lst else None
+
+    c1, c2 = st.columns([1, 1.4])
     with c1:
         idx_val = get_idx_in_list(member_list, def_n) if def_n else None
         k_name = f"n_{label}{key_suffix}"
         k_type = f"t_{label}{key_suffix}"
-        
         name = st.selectbox(
-            "名前", member_list, index=idx_val, key=k_name,
+            "プレイヤー", member_list, index=idx_val, key=k_name,
             on_change=update_type_by_name if type_map else None,
-            args=(k_name, k_type, type_map) if type_map else None
+            args=(k_name, k_type, type_map) if type_map else None,
+            placeholder="名前を選択"
         )
+        if k_type not in st.session_state:
+            st.session_state[k_type] = def_t if def_t in TYPE_OPTS else TYPE_OPTS[0]
+        type_ = st.radio("タイプ", TYPE_OPTS, horizontal=True, key=k_type)
     with c2:
         final_idx = 0
-        if def_r in available_ranks:
-            final_idx = available_ranks.index(def_r)
-        
-        rank = st.radio("着順", available_ranks, index=final_idx, horizontal=True, key=f"r_{label}{key_suffix}")
-        
-        if k_type not in st.session_state:
-             st.session_state[k_type] = def_t if def_t in TYPE_OPTS else TYPE_OPTS[0]
-        
-        type_ = st.radio("タイプ", TYPE_OPTS, horizontal=True, key=k_type)
-    
-    st.markdown("---")
+        if def_r in available_ranks: final_idx = available_ranks.index(def_r)
+        rank_label_to_val = {rank_emoji.get(r, f"{r}着"): r for r in available_ranks}
+        chosen_label = st.radio("着順", rank_labels, index=final_idx, horizontal=True, key=f"r_{label}{key_suffix}")
+        rank = rank_label_to_val.get(chosen_label, available_ranks[0])
+
+    st.markdown('</div>', unsafe_allow_html=True)
     return name, type_, rank
 
-# --- ホーム画面 ---
+def render_today_quick_stats():
+    df = load_score_data_effective()
+    if df.empty:
+        st.markdown(
+            '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);'
+            'background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">'
+            '今日の対局データはまだありません<br>'
+            '<span style="font-size:0.85rem;">📝 「成績をつける」から記録を始めましょう</span>'
+            '</div>', unsafe_allow_html=True)
+        return
+
+    JST = timezone(timedelta(hours=9), 'JST')
+    today_logical = (datetime.now(JST) - timedelta(hours=9)).date()
+    df_today = df[df["論理日付"] == today_logical]
+
+    if df_today.empty:
+        st.markdown(
+            '<div style="text-align:center;padding:1.5rem;color:var(--text-muted);'
+            'background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius);">'
+            '今日の対局データはまだありません<br>'
+            '<span style="font-size:0.85rem;">📝 「成績をつける」から記録を始めましょう</span>'
+            '</div>', unsafe_allow_html=True)
+        return
+
+    total_games = len(df_today)
+    total_fee = 0
+    type_counts = {"A客": 0, "B客": 0, "AS": 0, "BS": 0}
+    FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
+
+    for _, row in df_today.iterrows():
+        try: r_a, r_b, r_c = int(float(row["A着順"])), int(float(row["B着順"])), int(float(row["C着順"]))
+        except: r_a, r_b, r_c = 0, 0, 0
+        winner_type = None
+        if r_a == 1: winner_type = row["Aタイプ"]
+        elif r_b == 1: winner_type = row["Bタイプ"]
+        elif r_c == 1: winner_type = row["Cタイプ"]
+        if winner_type in type_counts:
+            type_counts[winner_type] += 1
+            total_fee += FEE_MAP.get(winner_type, 0)
+        note = str(row["備考"])
+        if note == "東１終了": total_fee -= 1
+        elif note == "２人飛ばし": total_fee -= 2
+        elif note == "５連勝〜": total_fee -= 5
+
+    fee_class = "green" if total_fee >= 0 else "red"
+    st.markdown(f"""
+    <div class="quick-stat-bar">
+        <div class="quick-stat-item blue">
+            <div class="qs-label">本日 ゲーム数</div>
+            <div class="qs-value">{total_games}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item {fee_class}">
+            <div class="qs-label">ゲーム代</div>
+            <div class="qs-value">{total_fee}<span style="font-size:0.8rem;color:var(--text-muted);"> 枚</span></div>
+        </div>
+        <div class="quick-stat-item">
+            <div class="qs-label">A客 / B客</div>
+            <div class="qs-value" style="font-size:1.1rem;">{type_counts['A客']} / {type_counts['B客']}</div>
+        </div>
+        <div class="quick-stat-item green">
+            <div class="qs-label">AS / BS</div>
+            <div class="qs-value" style="font-size:1.1rem;">{type_counts['AS']} / {type_counts['BS']}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ==========================================
+# 6. 各ページ
+# ==========================================
+
+# --- ホーム ---
 def page_home():
-    st.title("🀄 ぱいん成績管理")
-    
-    st.markdown("### 🗂 メニュー")
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("📝 成績をつける", type="primary", use_container_width=True):
-            st.session_state["page"] = "input"
-            st.rerun()
-        st.write("")
-        if st.button("🏆 月間ランキング", use_container_width=True):
-            st.session_state["page"] = "ranking"
-            st.rerun()
-        st.write("")
-        if st.button("💰 利益管理", use_container_width=True):
-            st.session_state["page"] = "profit"
-            st.rerun()
-        st.write("")
-        if st.button("⚔️ 直接対決 (vs)", use_container_width=True):
-            st.session_state["page"] = "vs"
-            st.rerun()
-    with c2:
-        if st.button("📊 データを見る", use_container_width=True):
-            st.session_state["page"] = "history"
-            st.rerun()
-        st.write("")
-        if st.button("👥 メンバー管理", use_container_width=True):
-            st.session_state["page"] = "members"
-            st.rerun()
-        st.write("")
-        if st.button("📜 操作ログ", use_container_width=True):
-            st.session_state["page"] = "logs"
-            st.rerun()
-        st.write("")
+    st.markdown("""
+    <div class="home-header">
+        <div class="app-title">🀄 ぱいん成績管理</div>
+        <div class="app-sub">PINE SCORE MANAGER</div>
+    </div>
+    """, unsafe_allow_html=True)
+    render_pending_bar(location_key="home")
+    render_today_quick_stats()
 
-# --- 直接対決 (vs) 画面 ---
-def page_vs():
-    st.title("⚔️ 直接対決 (Head-to-Head)")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
+    st.markdown('<div class="main-action-card">', unsafe_allow_html=True)
+    st.markdown('<div style="margin-bottom:0.7rem;font-size:0.85rem;color:var(--text-muted);letter-spacing:0.08em;font-weight:600;">MAIN ACTION</div>', unsafe_allow_html=True)
+    if st.button("📝 成績をつける", key="home_main_input", use_container_width=True, type="primary"):
+        st.session_state["page"] = "input"
         st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
-    df = load_score_data()
+    section_title("📂", "メニュー")
+    sub_nav_items = [
+        ("👤", "個人成績", "personal"), ("📊", "データ参照", "history"),
+        ("🤝", "2人対戦データ", "versus2"), ("👥", "3人対戦データ", "versus3"),
+        ("🏆", "ランキング", "ranking"), ("📇", "メンバー管理", "members"),
+        ("💰", "利益管理", "profit"), ("📜", "操作ログ", "logs"),
+    ]
+    cols = st.columns(2)
+    for i, (icon, label, page) in enumerate(sub_nav_items):
+        with cols[i % 2]:
+            if st.button(f"{icon} {label}", key=f"home_{page}", use_container_width=True):
+                st.session_state["page"] = page
+                st.rerun()
+
+# --- 個人成績 ---
+def page_personal():
+    render_top_nav("personal")
+    st.title("👤 個人成績")
+    render_pending_bar(location_key="personal")
+
+    df = load_score_data_effective()
+    if df.empty:
+        st.info("データがありません")
+        return
+
     all_players = get_all_member_names()
+    if not all_players:
+        st.info("メンバーが登録されていません")
+        return
+
+    default_player_idx = 0
+    if "personal_player" in st.session_state and st.session_state["personal_player"] in all_players:
+        default_player_idx = all_players.index(st.session_state["personal_player"])
+
+    selected_player = st.selectbox("👤 プレイヤーを選択", all_players, index=default_player_idx, key="personal_player_select")
+    st.session_state["personal_player"] = selected_player
+    if not selected_player: return
+
+    # 現在の全体レーティングを取得
     overall_ratings = get_latest_ratings(df)
+    my_rating = overall_ratings.get(selected_player, 1500.0)
+    my_dan = get_dan_name(my_rating)
 
-    if df.empty or len(all_players) < 2:
-        st.info("比較するデータが不足しています。")
+    df_player = df[(df["Aさん"] == selected_player) | (df["Bさん"] == selected_player) | (df["Cさん"] == selected_player)]
+    if df_player.empty:
+        st.warning(f"「{selected_player}」さんの対局データはありません")
         return
 
-    st.markdown("#### 比較したい2人を選択してください")
-    c1, c2 = st.columns(2)
-    with c1: 
-        p1 = st.selectbox("プレイヤー1 (🟥)", all_players, index=0)
-    with c2: 
-        p2 = st.selectbox("プレイヤー2 (🟦)", all_players, index=1 if len(all_players)>1 else 0)
+    df_player = df_player.copy()
+    df_player["年月"] = df_player["日時Obj"].dt.to_period("M")
+    available_months = sorted(df_player["年月"].dropna().unique(), reverse=True)
+    month_labels = ["全期間"] + [str(m) for m in available_months]
 
-    if p1 == p2:
-        st.warning("⚠️ 異なるプレイヤーを選択してください")
+    c_filter1, c_filter2 = st.columns([1, 2])
+    with c_filter1:
+        selected_month_label = st.selectbox("📅 期間", month_labels, index=0, key="personal_month")
+    with c_filter2:
+        time_range = st.selectbox("⏰ 時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="personal_time")
+
+    df_filtered = df_player.copy()
+    if selected_month_label != "全期間":
+        df_filtered = df_filtered[df_filtered["年月"].astype(str) == selected_month_label]
+    if time_range == "9:00-21:00":
+        df_filtered = df_filtered[df_filtered["日時Obj"].dt.hour.between(9, 20)]
+    elif time_range == "21:00-33:00(翌9:00)":
+        df_filtered = df_filtered[~df_filtered["日時Obj"].dt.hour.between(9, 20)]
+
+    if df_filtered.empty:
+        st.warning("選択した条件のデータはありません")
         return
 
-    p1_rate = overall_ratings.get(p1, 1500.0)
-    p2_rate = overall_ratings.get(p2, 1500.0)
+    period_label = selected_month_label if selected_month_label != "全期間" else "全期間"
+    section_title("📊", f"{selected_player} さん — {period_label}")
 
-    # 同卓データの抽出
-    mask_p1 = (df["Aさん"] == p1) | (df["Bさん"] == p1) | (df["Cさん"] == p1)
-    mask_p2 = (df["Aさん"] == p2) | (df["Bさん"] == p2) | (df["Cさん"] == p2)
-    df_vs = df[mask_p1 & mask_p2].copy()
+    ranks = []
+    played_dates = set()
+    compatibility = {}
+    player_seat_ranks = {"A": [], "B": [], "C": []}
+    monthly_data = {}
+    rate_history = []
+
+    for _, row in df_filtered.iterrows():
+        my_rank = None
+        my_seat = None
+        for s in ["A", "B", "C"]:
+            if row[f"{s}さん"] == selected_player:
+                try:
+                    my_rank = int(float(row[f"{s}着順"]))
+                    my_seat = s
+                    if not rate_history:
+                        rate_history.append(row[f"{s}_Rating_Before"])
+                    rate_history.append(row[f"{s}_Rating_Before"] + row[f"{s}_Rating_Delta"])
+                except: pass
+                break
+        if my_rank:
+            ranks.append(my_rank)
+            played_dates.add(row["論理日付"])
+            if my_seat in player_seat_ranks:
+                player_seat_ranks[my_seat].append(my_rank)
+
+            ym = str(row["年月"])
+            if ym not in monthly_data: monthly_data[ym] = {"ranks": [], "dates": set()}
+            monthly_data[ym]["ranks"].append(my_rank)
+            monthly_data[ym]["dates"].add(row["論理日付"])
+
+            for s in ["A", "B", "C"]:
+                if s == my_seat: continue
+                opp_name = row[f"{s}さん"]
+                if not opp_name: continue
+                try: opp_rank = int(float(row[f"{s}着順"]))
+                except: opp_rank = 0
+                if opp_rank == 0: continue
+                if opp_name not in compatibility: compatibility[opp_name] = {"count": 0, "score": 0}
+                compatibility[opp_name]["count"] += 1
+                compatibility[opp_name]["score"] += opp_rank - my_rank
+
+    if not ranks:
+        st.warning("着順データが見つかりません")
+        return
+
+    games = len(ranks)
+    avg = sum(ranks) / games
+    c1_cnt = ranks.count(1)
+    c2_cnt = ranks.count(2)
+    c3_cnt = ranks.count(3)
+    top_rate = c1_cnt / games * 100
+    last_avoid = (games - c3_cnt) / games * 100
+
+    c_m1, c_m2, c_m3 = st.columns(3)
+    c_m1.metric("段位", my_dan)
+    c_m2.metric("レーティング", f"{my_rating:.1f}")
+    c_m3.metric("総回数", f"{games} 回")
+
+    stats_html = f"""
+    <table class="stats-table">
+        <thead><tr>
+            <th>平均着順</th><th>トップ率</th><th>ラス回避率</th>
+            <th>🥇 1着</th><th>🥈 2着</th><th>🥉 3着</th>
+        </tr></thead>
+        <tbody><tr>
+            <td style="color:var(--accent)">{avg:.4f}</td>
+            <td style="color:var(--green)">{top_rate:.2f}%</td>
+            <td style="color:var(--blue)">{last_avoid:.2f}%</td>
+            <td>{c1_cnt}<span class="stats-sub">{c1_cnt/games*100:.2f}%</span></td>
+            <td>{c2_cnt}<span class="stats-sub">{c2_cnt/games*100:.2f}%</span></td>
+            <td>{c3_cnt}<span class="stats-sub">{c3_cnt/games*100:.2f}%</span></td>
+        </tr></tbody>
+    </table>
+    """
+    st.markdown(stats_html, unsafe_allow_html=True)
+
+    with st.expander("🪑 席別成績", expanded=False):
+        p_seat_rows = []
+        for s in ["A", "B", "C"]:
+            rs = player_seat_ranks[s]
+            c = len(rs)
+            if c > 0:
+                p_seat_rows.append({
+                    "席": f"{s}席", "打数": c, "平均着順": f"{sum(rs)/c:.4f}",
+                    "1着": f"{rs.count(1)} ({rs.count(1)/c*100:.2f}%)",
+                    "2着": f"{rs.count(2)} ({rs.count(2)/c*100:.2f}%)",
+                    "3着": f"{rs.count(3)} ({rs.count(3)/c*100:.2f}%)"
+                })
+        if p_seat_rows:
+            st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
+
+    if len(monthly_data) > 1 or selected_month_label == "全期間":
+        with st.expander("📅 月別成績", expanded=False):
+            month_rows = []
+            for ym in sorted(monthly_data.keys(), reverse=True):
+                md = monthly_data[ym]
+                rs = md["ranks"]
+                g = len(rs)
+                if g == 0: continue
+                r1, r2, r3 = rs.count(1), rs.count(2), rs.count(3)
+                month_rows.append({
+                    "年月": ym, "打数": g, "稼働日数": len(md["dates"]),
+                    "平均着順": f"{sum(rs)/g:.4f}",
+                    "トップ率": f"{r1/g*100:.2f}%", "ラス回避率": f"{(g-r3)/g*100:.2f}%",
+                    "1着": f"{r1} ({r1/g*100:.2f}%)", "2着": f"{r2} ({r2/g*100:.2f}%)", "3着": f"{r3} ({r3/g*100:.2f}%)",
+                })
+            if month_rows:
+                st.dataframe(pd.DataFrame(month_rows), hide_index=True, use_container_width=True)
 
     st.divider()
-    st.markdown(f"#### 🥊 {p1} (Rate: {p1_rate:.1f} / {get_dan_name(p1_rate)}) 🆚 {p2} (Rate: {p2_rate:.1f} / {get_dan_name(p2_rate)})")
+    c_graph1, c_graph2 = st.columns(2)
+    with c_graph1:
+        chart_count = min(len(ranks), 30)
+        section_title("📈", f"直近{chart_count}戦の着順推移")
+        recent_ranks = ranks[-chart_count:]
+        df_trend = pd.DataFrame({"戦数": range(1, len(recent_ranks) + 1), "着順": recent_ranks})
+        if len(recent_ranks) >= 5:
+            df_trend["移動平均(5戦)"] = df_trend["着順"].rolling(window=5, min_periods=1).mean()
+        base = alt.Chart(df_trend).encode(x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"))
+        line_main = base.mark_line(point=alt.OverlayMarkDef(color="#f0c040", size=80), color="#f0c040", strokeWidth=2).encode(
+            y=alt.Y("着順", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"), tooltip=["戦数", "着順"]
+        )
+        chart = line_main
+        if "移動平均(5戦)" in df_trend.columns:
+            line_avg = base.mark_line(color="#5b9cf6", strokeWidth=1.5, strokeDash=[5, 3]).encode(
+                y=alt.Y("移動平均(5戦)"), tooltip=["戦数", alt.Tooltip("移動平均(5戦)", format=".3f")]
+            )
+            chart = alt.layer(line_main, line_avg)
+        chart = chart.properties(height=280).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8")
+        st.altair_chart(chart, use_container_width=True)
 
-    if df_vs.empty:
-        st.info(f"「{p1}」さんと「{p2}」さんが同卓した記録はありません。")
-        return
+    with c_graph2:
+        section_title("📈", "レーティング推移")
+        if not rate_history: rate_history = [1500.0]
+        df_rate = pd.DataFrame({"戦数": range(len(rate_history)), "Rate": rate_history})
+        rate_chart = alt.Chart(df_rate).mark_line(color="#f0c040", point=False).encode(
+            x=alt.X("戦数", title="ゲーム数"),
+            y=alt.Y("Rate", scale=alt.Scale(zero=False), title="レーティング"),
+            tooltip=["戦数", alt.Tooltip("Rate", format=".1f")]
+        ).properties(height=280).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8")
+        st.altair_chart(rate_chart, use_container_width=True)
 
-    def get_rank(row, p):
-        if row["Aさん"] == p: return int(float(row["A着順"]))
-        if row["Bさん"] == p: return int(float(row["B着順"]))
-        if row["Cさん"] == p: return int(float(row["C着順"]))
-        return 99
+    st.divider()
+    c_dates, _ = st.columns([1, 1])
+    with c_dates:
+        section_title("📅", "稼働日リスト")
+        date_list = sorted(list(played_dates), reverse=True)
+        st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True, height=200)
 
-    df_vs["P1_Rank"] = df_vs.apply(lambda row: get_rank(row, p1), axis=1)
-    df_vs["P2_Rank"] = df_vs.apply(lambda row: get_rank(row, p2), axis=1)
+    if compatibility:
+        st.divider()
+        section_title("🤝", "対戦相手データ (TOP5)")
+        comp_data = [{"名前": n, "同卓回数": d["count"], "相性スコア": d["score"]} for n, d in compatibility.items()]
+        df_comp = pd.DataFrame(comp_data)
+        c_freq, c_good, c_bad = st.columns(3)
+        with c_freq:
+            st.markdown("**👬 同卓回数**")
+            st.dataframe(df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
+        with c_good:
+            st.markdown("**💖 相性が良い**")
+            st.dataframe(df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+        with c_bad:
+            st.markdown("**💀 相性が悪い**")
+            st.dataframe(df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
 
-    total_games = len(df_vs)
-    p1_wins = (df_vs["P1_Rank"] < df_vs["P2_Rank"]).sum()
-    p2_wins = (df_vs["P2_Rank"] < df_vs["P1_Rank"]).sum()
+    st.divider()
+    with st.expander("🀄 個人記録の更新", expanded=False):
+        df_mem = load_member_data()
+        current_max, current_yaku = 0, 0
+        current_detail, current_date_str = "", ""
+        target_idx = df_mem.index[df_mem["名前"] == selected_player].tolist()
 
-    p1_avg = df_vs["P1_Rank"].mean()
-    p2_avg = df_vs["P2_Rank"].mean()
+        if target_idx:
+            idx = target_idx[0]
+            current_max = int(df_mem.at[idx, "最大飜数"])
+            current_yaku = int(df_mem.at[idx, "役満回数"])
+            current_detail = df_mem.at[idx, "最大飜数詳細"] if "最大飜数詳細" in df_mem.columns else ""
+            current_date_str = df_mem.at[idx, "最大飜数記録日"] if "最大飜数記録日" in df_mem.columns else ""
+            c_d1, c_d2, c_d3 = st.columns(3)
+            c_d1.metric("最大飜数", f"{current_max} 飜", current_detail if current_detail else None)
+            c_d2.metric("役満回数", f"{current_yaku} 回")
+            if current_date_str: c_d3.metric("記録日", current_date_str)
 
-    p1_r1 = (df_vs["P1_Rank"] == 1).sum()
-    p1_r2 = (df_vs["P1_Rank"] == 2).sum()
-    p1_r3 = (df_vs["P1_Rank"] == 3).sum()
+        with st.form("update_personal_stats_page"):
+            c_in1, c_in2 = st.columns(2)
+            with c_in1:
+                new_max = st.number_input("最大飜数", min_value=0, value=current_max, key="ps_max")
+                new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail, key="ps_detail")
+                new_date_val = st.text_input("記録日 (例: 2026/02/20)", value=current_date_str, key="ps_date")
+            with c_in2:
+                new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku, key="ps_yaku")
+            if st.form_submit_button("💾 更新する", type="primary"):
+                if target_idx:
+                    df_mem.at[idx, "最大飜数"] = new_max
+                    df_mem.at[idx, "役満回数"] = new_yaku
+                    if "最大飜数詳細" not in df_mem.columns: df_mem["最大飜数詳細"] = ""
+                    if "最大飜数記録日" not in df_mem.columns: df_mem["最大飜数記録日"] = ""
+                    df_mem.at[idx, "最大飜数詳細"] = new_detail
+                    df_mem.at[idx, "最大飜数記録日"] = new_date_val
+                    save_member_data(df_mem)
+                    st.success(f"✅ {selected_player}さんの記録を更新しました！")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
 
-    p2_r1 = (df_vs["P2_Rank"] == 1).sum()
-    p2_r2 = (df_vs["P2_Rank"] == 2).sum()
-    p2_r3 = (df_vs["P2_Rank"] == 3).sum()
-
-    st.caption(f"同卓: {total_games} 回")
-    c_vs1, c_vs2 = st.columns(2)
-    c_vs1.metric(f"🟥 {p1} の先着数", f"{p1_wins} 勝", f"直接対決 勝率: {p1_wins/total_games*100:.2f}%")
-    c_vs2.metric(f"🟦 {p2} の先着数", f"{p2_wins} 勝", f"直接対決 勝率: {p2_wins/total_games*100:.2f}%")
-
-    st.markdown("#### 📊 同卓時の成績比較")
-    comp_data = {
-        "プレイヤー": [f"🟥 {p1}", f"🟦 {p2}"],
-        "平均着順": [f"{p1_avg:.4f}", f"{p2_avg:.4f}"],
-        "1着回数": [f"{p1_r1} ({p1_r1/total_games*100:.2f}%)", f"{p2_r1} ({p2_r1/total_games*100:.2f}%)"],
-        "2着回数": [f"{p1_r2} ({p1_r2/total_games*100:.2f}%)", f"{p2_r2} ({p2_r2/total_games*100:.2f}%)"],
-        "3着回数": [f"{p1_r3} ({p1_r3/total_games*100:.2f}%)", f"{p2_r3} ({p2_r3/total_games*100:.2f}%)"],
-    }
-    st.dataframe(pd.DataFrame(comp_data), hide_index=True, use_container_width=True)
-
-    st.markdown("#### 📜 最近の同卓ログ (直近10件)")
-    recent_vs = df_vs.sort_values("日時Obj", ascending=False).head(10)
-    render_paper_sheet(recent_vs)
-
-# --- 利益管理専用ページ ---
+# --- 利益管理 ---
 def page_profit():
+    render_top_nav("profit")
     st.title("💰 利益管理")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
-
-    st.write("対象の日付を選択して、利益データを登録・更新してください。")
-    
+    render_pending_bar(location_key="profit")
     JST = timezone(timedelta(hours=9), 'JST')
     current_dt = datetime.now(JST)
     default_date_obj = (current_dt - timedelta(hours=9)).date()
-    
-    input_date = st.date_input("日付を選択 (朝9時切替)", value=default_date_obj)
-
+    input_date = st.date_input("対象日付 (朝9時切替)", value=default_date_obj)
     df_profit = load_profit_data()
     search_date_str = input_date.strftime("%Y-%m-%d")
-    
     init_day_mix, init_day_real = 0, 0
     init_night_mix, init_night_real = 0, 0
-    
+
     if not df_profit.empty:
         row_day = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Day")]
         if not row_day.empty:
-            init_day_mix = int(row_day.iloc[0]["MixDiff"])
-            init_day_real = int(row_day.iloc[0]["RealProfit"])
-        
+            init_day_mix, init_day_real = int(row_day.iloc[0]["MixDiff"]), int(row_day.iloc[0]["RealProfit"])
         row_night = df_profit[(df_profit["Date"] == search_date_str) & (df_profit["TimeSlot"] == "Night")]
         if not row_night.empty:
-            init_night_mix = int(row_night.iloc[0]["MixDiff"])
-            init_night_real = int(row_night.iloc[0]["RealProfit"])
+            init_night_mix, init_night_real = int(row_night.iloc[0]["MixDiff"]), int(row_night.iloc[0]["RealProfit"])
 
     with st.form("daily_profit_form"):
-        st.markdown(f"### 対象日: **{input_date}**")
+        section_title("📅", f"{input_date} の利益データ")
         col_d, col_n = st.columns(2)
-        
         with col_d:
-            st.info("🌞 9:00 - 21:00")
+            st.info("🌞 昼の部 9:00 - 21:00")
             d_mix = st.number_input("MIX差", value=init_day_mix, key="d_mix")
             d_real = st.number_input("実利益", value=init_day_real, key="d_real")
-            
         with col_n:
-            st.success("🌙 21:00 - 33:00")
+            st.success("🌙 夜の部 21:00 - 33:00")
             n_mix = st.number_input("MIX差", value=init_night_mix, key="n_mix")
             n_real = st.number_input("実利益", value=init_night_real, key="n_real")
-            
-        st.markdown("---")
-        profit_pass = st.text_input("🔒 保存用パスワード", type="password", help="利益データを更新するにはパスワードが必要です")
-        
-        if st.form_submit_button("利益を保存"):
+
+        st.divider()
+        profit_pass = st.text_input("🔒 保存用パスワード", type="password")
+        if st.form_submit_button("💾 保存する", type="primary", use_container_width=True):
             if profit_pass == "7777":
                 df_new = df_profit[df_profit["Date"] != search_date_str].copy()
                 new_rows = [
@@ -757,127 +1732,99 @@ def page_profit():
                 ]
                 df_new = pd.concat([df_new, pd.DataFrame(new_rows)], ignore_index=True)
                 save_profit_data(df_new)
-                st.success(f"{input_date} の利益データを保存しました！")
+                st.success(f"✅ {input_date} のデータを保存しました！")
                 time.sleep(1)
                 st.rerun()
             else:
-                st.error("パスワードが違います。権限がありません。")
+                st.error("パスワードが違います")
 
-# --- メンバー管理画面 ---
+# --- メンバー管理 ---
 def page_members():
+    render_top_nav("members")
     st.title("👥 メンバー管理")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
-        
+    render_pending_bar(location_key="members")
     df_mem = load_member_data()
+    tab_list, tab_add = st.tabs(["📋 一覧・編集", "➕ 新規追加"])
 
-    with st.tabs(["📋 メンバー一覧 & 編集", "➕ 新規追加"])[0]:
-        st.markdown("### メンバー情報の編集")
-        st.caption("ここで「タイプ」を設定すると、成績入力時に自動で反映されます。")
-        
+    with tab_list:
+        section_title("✏️", "メンバー情報の編集")
+        st.caption("「タイプ」を設定すると、成績入力時に自動で反映されます。")
         if not df_mem.empty:
             edited_df = st.data_editor(
                 df_mem[["名前", "タイプ", "最大飜数", "最大飜数詳細", "最大飜数記録日", "役満回数"]],
                 column_config={
-                    "タイプ": st.column_config.SelectboxColumn(
-                        "タイプ",
-                        help="デフォルトの客層タイプ",
-                        width="medium",
-                        options=["A客", "B客", "AS", "BS"],
-                        required=True,
-                    ),
-                    "最大飜数詳細": st.column_config.TextColumn(
-                        "最大飜数詳細",
-                        help="役名などを記入",
-                        width="medium"
-                    ),
-                    "最大飜数記録日": st.column_config.TextColumn(
-                        "最大飜数記録日",
-                        help="記録日を記入",
-                        width="small"
-                    )
+                    "タイプ": st.column_config.SelectboxColumn("タイプ", width="medium", options=["A客", "B客", "AS", "BS"], required=True),
+                    "最大飜数詳細": st.column_config.TextColumn("最大飜数詳細", width="medium"),
+                    "最大飜数記録日": st.column_config.TextColumn("最大飜数記録日", width="small"),
                 },
-                hide_index=True,
-                use_container_width=True,
-                num_rows="dynamic"
+                hide_index=True, use_container_width=True, num_rows="dynamic"
             )
-            
-            if st.button("💾 変更を保存する"):
+            st.write("")
+            if st.button("💾 変更を保存する", type="primary"):
                 df_merged = pd.merge(edited_df, df_mem[["名前", "登録日"]], on="名前", how="left")
                 df_merged["登録日"] = df_merged["登録日"].fillna(date.today())
                 save_member_data(df_merged)
-                st.success("メンバー情報を更新しました！")
+                st.success("✅ メンバー情報を更新しました！")
                 time.sleep(1)
                 st.rerun()
         else:
             st.info("メンバーがいません")
 
-    with st.tabs(["📋 メンバー一覧 & 編集", "➕ 新規追加"])[1]:
-        st.markdown("### 新規メンバー追加")
-        with st.form("add_member_form"):
+        st.divider()
+        section_title("🔗", "メンバーリンク一覧")
+        st.caption("名前をクリックすると詳細データへ移動します")
+        if not df_mem.empty:
+            guests = df_mem[df_mem["タイプ"].isin(["A客", "B客"])].reset_index(drop=True)
+            staffs = df_mem[df_mem["タイプ"].isin(["AS", "BS"])].reset_index(drop=True)
             c1, c2 = st.columns(2)
             with c1:
-                new_name = st.text_input("名前")
+                st.markdown("#### 🧑‍🤝‍🧑 お客さん")
+                for i, row in guests.iterrows():
+                    if st.button(f"👤 {row['名前']}", key=f"lnk_g_{i}", use_container_width=True):
+                        st.session_state["page"] = "personal"
+                        st.session_state["personal_player"] = row['名前']
+                        st.rerun()
             with c2:
-                new_type = st.selectbox("タイプ", ["A客", "B客", "AS", "BS"])
-            
-            submitted = st.form_submit_button("追加する")
-            if submitted and new_name:
+                st.markdown("#### 👔 スタッフ")
+                for i, row in staffs.iterrows():
+                    if st.button(f"👔 {row['名前']}", key=f"lnk_s_{i}", use_container_width=True):
+                        st.session_state["page"] = "personal"
+                        st.session_state["personal_player"] = row['名前']
+                        st.rerun()
+
+    with tab_add:
+        section_title("➕", "新規メンバー追加")
+        with st.form("add_member_form"):
+            c1, c2 = st.columns(2)
+            with c1: new_name = st.text_input("名前", placeholder="名前を入力")
+            with c2: new_type = st.selectbox("タイプ", ["A客", "B客", "AS", "BS"])
+            if st.form_submit_button("➕ 追加する", type="primary", use_container_width=True) and new_name:
                 if new_name in df_mem["名前"].values:
                     st.error(f"「{new_name}」は既に登録されています")
                 else:
-                    new_row = {
-                        "名前": new_name, "登録日": date.today(), "タイプ": new_type, 
-                        "最大飜数": 0, "最大飜数詳細": "", "最大飜数記録日": "", "役満回数": 0
-                    }
+                    new_row = {"名前": new_name, "登録日": date.today(), "タイプ": new_type, "最大飜数": 0, "最大飜数詳細": "", "最大飜数記録日": "", "役満回数": 0}
                     df_mem = pd.concat([df_mem, pd.DataFrame([new_row])], ignore_index=True)
                     save_member_data(df_mem)
-                    st.success(f"「{new_name}」を追加しました")
+                    st.success(f"✅「{new_name}」を追加しました")
                     st.rerun()
 
-    st.divider()
-    st.markdown("### リンク用リスト")
-    if not df_mem.empty:
-        st.caption("名前をクリックすると詳細データへ飛びます")
-        
-        guests = df_mem[df_mem["タイプ"].isin(["A客", "B客"])].reset_index(drop=True)
-        staffs = df_mem[df_mem["タイプ"].isin(["AS", "BS"])].reset_index(drop=True)
-
-        c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("#### 🧑‍🤝‍🧑 お客さん (A客/B客)")
-            for i, row in guests.iterrows():
-                if st.button(f"👤 {row['名前']}", key=f"lnk_g_{i}"):
-                    st.session_state["page"] = "history"
-                    st.session_state["jump_to_player"] = row['名前']
-                    st.rerun()
-        with c2:
-            st.markdown("#### 👔 スタッフ (AS/BS)")
-            for i, row in staffs.iterrows():
-                if st.button(f"👔 {row['名前']}", key=f"lnk_s_{i}"):
-                    st.session_state["page"] = "history"
-                    st.session_state["jump_to_player"] = row['名前']
-                    st.rerun()
-
-# --- 編集専用画面 ---
+# --- 編集画面 ---
 def page_edit():
-    st.title("🔧 データの修正・削除")
-    
+    st.title("🔧 データ修正・削除")
     edit_id = st.session_state.get("editing_game_id")
     if not edit_id:
         st.error("編集対象が選択されていません")
-        if st.button("戻る"):
+        if st.button("← 入力画面に戻る"):
             st.session_state["page"] = "input"
             st.rerun()
         return
 
-    df = load_score_data()
+    df = load_score_data_effective()
     target_row = df[df["GameNo"] == edit_id]
-    
+
     if target_row.empty:
         st.error("データが見つかりません（削除された可能性があります）")
-        if st.button("戻る"):
+        if st.button("← 入力画面に戻る"):
             st.session_state["page"] = "input"
             st.rerun()
         return
@@ -886,30 +1833,34 @@ def page_edit():
     df_mem = load_member_data()
     member_list = get_all_member_names()
     type_map = dict(zip(df_mem["名前"], df_mem["タイプ"]))
-    
-    st.info(f"編集中: No.{row['DailyNo']} (卓: {row['TableNo']}, セット: {row['SetNo']})")
+    is_unsaved = edit_id < 0
+    status_badge = "🆕 未保存(新規)" if is_unsaved else "💾 保存済み"
+
+    st.markdown(f"""
+    <div class="input-status-bar">
+        <span class="isb-main">📝 編集中: No.{row['DailyNo']}</span>
+        <span class="isb-sub">{status_badge} ／ 卓: {row['TableNo']} ／ セット: {row['SetNo']} ／ 時刻: {pd.to_datetime(row['日時']).strftime('%H:%M') if row['日時'] else '-'}</span>
+    </div>
+    """, unsafe_allow_html=True)
+    st.info("📌 編集内容は「未保存」状態になります。入力画面の「💾 まとめて保存」ボタンで一括反映してください。")
 
     with st.form("edit_form"):
         p1_n, p1_t, p1_r = player_input_row_dynamic("A席", member_list, row["Aさん"], row["Aタイプ"], int(float(row["A着順"])), [1, 2, 3], "_edit", type_map)
         p2_n, p2_t, p2_r = player_input_row_dynamic("B席", member_list, row["Bさん"], row["Bタイプ"], int(float(row["B着順"])), [1, 2, 3], "_edit", type_map)
         p3_n, p3_t, p3_r = player_input_row_dynamic("C席", member_list, row["Cさん"], row["Cタイプ"], int(float(row["C着順"])), [1, 2, 3], "_edit", type_map)
 
-        st.markdown("**▼ 備考**")
+        st.markdown("**📋 備考**")
         NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
         def idx(opts, val): return opts.index(val) if val in opts else 0
         cur_note = row["備考"] if row["備考"] else "なし"
         opts = NOTE_OPTS if cur_note in NOTE_OPTS else NOTE_OPTS + [cur_note]
-        note = st.radio("内容を選択", opts, index=idx(opts, cur_note), horizontal=True)
-        
+        note = st.radio("内容", opts, index=idx(opts, cur_note), horizontal=True)
+
         st.divider()
-        
         c_up, c_del, c_can = st.columns(3)
-        with c_up:
-            submit_update = st.form_submit_button("🔄 更新して保存", type="primary", use_container_width=True)
-        with c_del:
-            submit_delete = st.form_submit_button("🗑 このデータを削除", type="secondary", use_container_width=True)
-        with c_can:
-            submit_cancel = st.form_submit_button("キャンセル", use_container_width=True)
+        with c_up: submit_update = st.form_submit_button("🔄 更新を一時保存", type="primary", use_container_width=True)
+        with c_del: submit_delete = st.form_submit_button("🗑 削除を一時保存", use_container_width=True)
+        with c_can: submit_cancel = st.form_submit_button("キャンセル", use_container_width=True)
 
         if submit_cancel:
             st.session_state["page"] = "input"
@@ -917,352 +1868,514 @@ def page_edit():
             st.rerun()
 
         if submit_update:
-            st.cache_data.clear()
-            df_latest = load_score_data_fresh()
-            
-            if edit_id not in df_latest["GameNo"].values:
-                st.error("データが他で削除された可能性があります")
+            if not p1_n or not p2_n or not p3_n: st.error("名前を選択してください")
+            elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]: st.error("着順が重複しています")
             else:
-                if not p1_n or not p2_n or not p3_n:
-                    st.error("名前を選択してください")
-                elif sorted([p1_r, p2_r, p3_r]) != [1, 2, 3]:
-                    st.error("着順が重複しています")
-                else:
-                    new_data = {
-                        "GameNo": row["GameNo"], "TableNo": row["TableNo"], "SetNo": row["SetNo"],
-                        "日時": row["日時"], "備考": ("" if note == "なし" else note),
-                        "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
-                        "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
-                        "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
-                    }
-                    
-                    changes = []
-                    compare_keys = [
-                        ("備考", "備考"),
-                        ("A名前", "Aさん"), ("A着順", "A着順"), ("Aタイプ", "Aタイプ"),
-                        ("B名前", "Bさん"), ("B着順", "B着順"), ("Bタイプ", "Bタイプ"),
-                        ("C名前", "Cさん"), ("C着順", "C着順"), ("Cタイプ", "Cタイプ"),
-                    ]
-                    for label, key in compare_keys:
-                        old_val = row[key]
-                        new_val = new_data[key]
-                        if str(old_val) != str(new_val):
-                            changes.append(f"{label}: {old_val}→{new_val}")
-                    
-                    diff_text = ", ".join(changes) if changes else "変更なし"
-                    
-                    idx = df_latest[df_latest["GameNo"] == edit_id].index[0]
-                    df_latest.loc[idx, list(new_data.keys())] = list(new_data.values())
-                    save_score_data(df_latest)
-                    
-                    save_action_log("修正", row["DailyNo"], diff_text)
-                    
-                    st.session_state["success_msg"] = "✅ 修正しました！"
-                    st.session_state["page"] = "input"
-                    st.session_state["editing_game_id"] = None
-                    st.rerun()
-        
-        if submit_delete:
-            st.cache_data.clear()
-            df_latest = load_score_data_fresh()
-            
-            if edit_id in df_latest["GameNo"].values:
-                df_latest = df_latest[df_latest["GameNo"] != edit_id]
-                save_score_data(df_latest)
-                
-                del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']} (A:{row['Aさん']}, B:{row['Bさん']}, C:{row['Cさん']})"
-                save_action_log("削除", row["DailyNo"], del_info)
-                
-                st.session_state["success_msg"] = "🗑 削除しました"
+                new_data = {
+                    "GameNo": row["GameNo"], "TableNo": row["TableNo"], "SetNo": row["SetNo"],
+                    "日時": row["日時"], "備考": ("" if note == "なし" else note),
+                    "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
+                    "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
+                    "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
+                }
+                changes_list = []
+                compare_keys = [("備考", "備考"), ("A名前", "Aさん"), ("A着順", "A着順"), ("Aタイプ", "Aタイプ"),
+                                ("B名前", "Bさん"), ("B着順", "B着順"), ("Bタイプ", "Bタイプ"),
+                                ("C名前", "Cさん"), ("C着順", "C着順"), ("Cタイプ", "Cタイプ")]
+                for label_, key in compare_keys:
+                    if str(row[key]) != str(new_data[key]): changes_list.append(f"{label_}: {row[key]}→{new_data[key]}")
+                diff_text = ", ".join(changes_list) if changes_list else "変更なし"
+
+                buffer_update(edit_id, new_data, detail=diff_text)
+                st.session_state["success_msg"] = f"🔄 修正を一時保存しました — 未保存: {pending_count()}件"
                 st.session_state["page"] = "input"
                 st.session_state["editing_game_id"] = None
                 st.rerun()
-            else:
-                st.error("既に削除されています")
+
+        if submit_delete:
+            del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']}"
+            buffer_delete(edit_id, info=del_info)
+            st.session_state["success_msg"] = f"🗑 削除を一時保存しました — 未保存: {pending_count()}件"
+            st.session_state["page"] = "input"
+            st.session_state["editing_game_id"] = None
+            st.rerun()
 
 # --- 入力画面 ---
 def page_input():
+    render_top_nav("input")
     st.title("📝 成績入力")
-    if "success_msg" in st.session_state and st.session_state.get("success_msg"):
-        st.success(st.session_state["success_msg"])
-        components.html("""<script>try{var main=window.parent.document.querySelector('section.main');if(main){main.scrollTo(0,0);}window.parent.scrollTo(0,0);}catch(e){console.log(e);}</script>""", height=0)
-        st.session_state["success_msg"] = None 
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
 
-    df = load_score_data()
+    if "success_msg" in st.session_state and st.session_state.get("success_msg"):
+        msg = st.session_state["success_msg"]
+        st.markdown(f"""
+        <div class="toast-success">
+            <span class="toast-icon">✨</span><span>{msg}</span>
+        </div>
+        """, unsafe_allow_html=True)
+        components.html("""<script>try{var main=window.parent.document.querySelector('section.main');if(main){main.scrollTo(0,0);}window.parent.scrollTo(0,0);}catch(e){}</script>""", height=0)
+        st.session_state["success_msg"] = None
+
+    render_pending_bar(location_key="input")
+
+    df = load_score_data_effective()
     df_mem = load_member_data()
     member_list = get_all_member_names()
     type_map = dict(zip(df_mem["名前"], df_mem["タイプ"]))
-    
     JST = timezone(timedelta(hours=9), 'JST')
-    
+
     c_top1, c_top2 = st.columns(2)
-    with c_top1:
-        current_table = st.selectbox("入力する卓を選択してください", [1, 2, 3], index=0)
+    with c_top1: current_table = st.selectbox("🀄 対局卓", [1, 2, 3], index=0)
     with c_top2:
         current_dt = datetime.now(JST)
         default_date_obj = (current_dt - timedelta(hours=9)).date()
-        input_date = st.date_input("日付 (朝9時切替)", value=default_date_obj)
+        input_date = st.date_input("📅 日付 (朝9時切替)", value=default_date_obj)
 
-    mask_all = df["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
-    df_all_today = df[mask_all]
-    
-    df_table_today = df_all_today[df_all_today["TableNo"] == current_table]
+    mask_all = df["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False) if not df.empty else pd.Series([], dtype=bool)
+    df_all_today = df[mask_all] if not df.empty else df
+    df_table_today = df_all_today[df_all_today["TableNo"] == current_table] if not df_all_today.empty else df_all_today
 
-    st.subheader("🆕 新しい対局の入力")
-    
-    if not df_table_today.empty and "SetNo" in df_table_today.columns:
-        current_set_no = int(df_table_today["SetNo"].max())
-    else:
-        current_set_no = 1
+    if not df_table_today.empty and "SetNo" in df_table_today.columns: current_set_no = int(df_table_today["SetNo"].max())
+    else: current_set_no = 1
+    if not df_table_today.empty and "DailyNo" in df_table_today.columns: next_display_no = int(df_table_today["DailyNo"].max()) + 1
+    else: next_display_no = 1
 
-    if not df_table_today.empty and "DailyNo" in df_table_today.columns:
-        next_display_no = int(df_table_today["DailyNo"].max()) + 1
-    else:
-        next_display_no = 1
-    
-    if not df.empty and "GameNo" in df.columns:
-        next_internal_game_no = df["GameNo"].max() + 1
-    else:
-        next_internal_game_no = 1
-    
     last_n1, last_t1 = None, "A客"
     last_n2, last_t2 = None, "B客"
     last_n3, last_t3 = None, "AS"
-
     if not df_table_today.empty:
         last_game = df_table_today.iloc[-1]
-        last_n1 = last_game["Aさん"]
-        last_t1 = last_game["Aタイプ"]
-        last_n2 = last_game["Bさん"]
-        last_t2 = last_game["Bタイプ"]
-        last_n3 = last_game["Cさん"]
-        last_t3 = last_game["Cタイプ"]
+        last_n1, last_t1 = last_game["Aさん"], last_game["Aタイプ"]
+        last_n2, last_t2 = last_game["Bさん"], last_game["Bタイプ"]
+        last_n3, last_t3 = last_game["Cさん"], last_game["Cタイプ"]
+
+    st.markdown(f"""
+    <div class="input-status-bar">
+        <span class="isb-main">🀄 {current_table}卓 — 第 {current_set_no} セット</span>
+        <span class="isb-sub">📌 次の記録: No.{next_display_no}</span>
+    </div>
+    """, unsafe_allow_html=True)
 
     n1, t1, r1 = player_input_row_dynamic("A席", member_list, last_n1, last_t1, 1, [1, 2, 3], "_input", type_map)
-    
     ranks_for_2 = [x for x in [1, 2, 3] if x != r1]
     def_r2 = 2 if 2 in ranks_for_2 else ranks_for_2[0]
     n2, t2, r2 = player_input_row_dynamic("B席", member_list, last_n2, last_t2, def_r2, ranks_for_2, "_input", type_map)
-    
     ranks_for_3 = [x for x in ranks_for_2 if x != r2]
     def_r3 = 3 if 3 in ranks_for_3 else (ranks_for_3[0] if ranks_for_3 else 0)
     n3, t3, r3 = player_input_row_dynamic("C席", member_list, last_n3, last_t3, def_r3, ranks_for_3, "_input", type_map)
 
-    st.markdown("**▼ 備考**")
-    NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
-    note = st.radio("内容を選択", NOTE_OPTS, index=0, horizontal=True)
-    st.write(f"**次の記録: No.{next_display_no}**")
-    
-    st.caption(f"【{current_table}卓】 第 {current_set_no} セット")
-    start_new_set = st.checkbox(f"🆕 ここから新しいセットにする ({current_table}卓の第{current_set_no+1}セットへ)")
-    
-    st.divider()
-    
-    if st.button("📝 記録する", type="primary", use_container_width=True):
-        if not n1 or not n2 or not n3:
-            st.error("⚠️ 名前が選択されていません！")
+    st.markdown("**📋 備考**")
+    note = st.radio("内容を選択", ["なし", "東１終了", "２人飛ばし", "５連勝〜"], index=0, horizontal=True, label_visibility="collapsed")
+    start_new_set = st.checkbox(f"🆕 新しいセットへ ({current_table}卓 → 第{current_set_no+1}セット)")
+
+    st.write("")
+    if st.button("📝 記録する (一時保存)", type="primary", use_container_width=True):
+        if not n1 or not n2 or not n3: st.error("⚠️ 名前が選択されていません！")
+        elif sorted([r1, r2, r3]) != [1, 2, 3]: st.error("⚠️ 着順が重複しています！")
         else:
-            with st.spinner("サーバーに書き込み中..."):
-                st.cache_data.clear()
-                try:
-                    df_latest = load_score_data_fresh()
-                except:
-                    st.error("データの読み込みに失敗しました。再試行してください。")
-                    st.stop()
-                
-                if not df.empty and df_latest.empty:
-                    st.error("🚨 エラー：最新データの取得に失敗しました。データ消失を防ぐため保存を中止しました。")
-                    st.stop()
+            now_jst = datetime.now(JST)
+            save_date_obj = input_date
+            if now_jst.hour < 9: save_date_obj = input_date + timedelta(days=1)
+            save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
+            final_set_no = current_set_no + (1 if start_new_set else 0)
 
-                if not df_latest.empty and "GameNo" in df_latest.columns:
-                    next_internal_game_no = df_latest["GameNo"].max() + 1
-                else:
-                    next_internal_game_no = 1
-                
-                df_table_latest = df_latest[df_latest["TableNo"] == current_table]
-                mask_latest = df_table_latest["論理日付"].apply(lambda x: x == input_date if pd.notnull(x) else False)
-                df_today_latest = df_table_latest[mask_latest]
-                
-                if not df_today_latest.empty:
-                    next_display_no = int(df_today_latest["DailyNo"].max()) + 1
-                else:
-                    next_display_no = 1
-
-                now_jst = datetime.now(JST)
-                save_date_obj = input_date
-                if now_jst.hour < 9:
-                    save_date_obj = input_date + timedelta(days=1)
-                
-                save_date_str = save_date_obj.strftime("%Y-%m-%d") + " " + now_jst.strftime("%H:%M")
-                final_set_no = current_set_no
-                if start_new_set: final_set_no += 1
-                
-                new_row = {
-                    "GameNo": next_internal_game_no, "TableNo": current_table, "SetNo": final_set_no,
-                    "日時": save_date_str, "備考": ("" if note == "なし" else note),
-                    "Aさん": n1, "Aタイプ": t1, "A着順": r1,
-                    "Bさん": n2, "Bタイプ": t2, "B着順": r2,
-                    "Cさん": n3, "Cタイプ": t3, "C着順": r3
-                }
-                
-                df_final = pd.concat([df_latest, pd.DataFrame([new_row])], ignore_index=True)
-                save_score_data(df_final)
-                log_detail = f"新規: {current_table}卓 No.{next_display_no}"
-                save_action_log("新規登録", next_internal_game_no, log_detail)
-                
+            new_row = {
+                "TableNo": current_table, "SetNo": final_set_no,
+                "日時": save_date_str, "備考": ("" if note == "なし" else note),
+                "Aさん": n1, "Aタイプ": t1, "A着順": r1,
+                "Bさん": n2, "Bタイプ": t2, "B着順": r2,
+                "Cさん": n3, "Cタイプ": t3, "C着順": r3,
+                "_log_detail": f"新規: {current_table}卓 No.{next_display_no}",
+            }
+            buffer_add(new_row)
             time_str = now_jst.strftime("%H:%M")
-            st.session_state["success_msg"] = f"✅ 記録しました！ ({time_str} / No.{next_display_no})"
+            st.session_state["success_msg"] = f"一時保存しました ({time_str} / {current_table}卓 No.{next_display_no}) — 未保存: {pending_count()}件"
             st.rerun()
 
     st.divider()
 
     if not df_all_today.empty:
-        st.markdown("### 📋 本日の履歴 (全卓)")
-
         total_games_today = len(df_all_today)
         total_fee_today = 0
         type_counts = {"A客": 0, "B客": 0, "AS": 0, "BS": 0}
-        total_back_a = 0
-        total_back_b = 0
+        total_back_a, total_back_b = 0, 0
         FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
 
         for _, row in df_all_today.iterrows():
-            w_type = None
-            try:
-                r_a = int(float(row["A着順"]))
-                r_b = int(float(row["B着順"]))
-                r_c = int(float(row["C着順"]))
-            except:
-                r_a, r_b, r_c = 0, 0, 0
-
+            try: r_a, r_b, r_c = int(float(row["A着順"])), int(float(row["B着順"])), int(float(row["C着順"]))
+            except: r_a, r_b, r_c = 0, 0, 0
             winner_type = None
             if r_a == 1: winner_type = row["Aタイプ"]
             elif r_b == 1: winner_type = row["Bタイプ"]
             elif r_c == 1: winner_type = row["Cタイプ"]
-
-            if r_a == 1: w_type = row["Aタイプ"]
-            elif r_b == 1: w_type = row["Bタイプ"]
-            elif r_c == 1: w_type = row["Cタイプ"]
-
-            if w_type in type_counts:
-                type_counts[w_type] += 1
-                total_fee_today += FEE_MAP[w_type]
-
-            note = str(row["備考"])
+            if winner_type in type_counts:
+                type_counts[winner_type] += 1
+                total_fee_today += FEE_MAP[winner_type]
+            note_val = str(row["備考"])
             discount = 0
-            if note == "東１終了": discount = 1
-            elif note == "２人飛ばし": discount = 2
-            elif note == "５連勝〜": discount = 5
-            
+            if note_val == "東１終了": discount = 1
+            elif note_val == "２人飛ばし": discount = 2
+            elif note_val == "５連勝〜": discount = 5
             total_fee_today -= discount
-            
             if discount > 0 and winner_type:
                 if winner_type == "A客": total_back_a += discount
                 elif winner_type == "B客": total_back_b += discount
 
-        st.info(f"💰 **本日の合計:** ゲーム代 **{total_fee_today}** 枚  \n"
-                f"🎁 **バック:** A客: **{total_back_a}** 枚 / B客: **{total_back_b}** 枚  \n"
-                f"📈 **合計回数:** **{total_games_today}** 回  \n"
-                f"📊 **回数内訳:** A客:{type_counts['A客']} / B客:{type_counts['B客']} / AS:{type_counts['AS']} / BS:{type_counts['BS']}")
-        
+        section_title("📋", "本日の集計 (全卓)")
+        fee_class = "green" if total_fee_today >= 0 else "red"
+        st.markdown(f"""
+        <div class="quick-stat-bar">
+            <div class="quick-stat-item {fee_class}">
+                <div class="qs-label">ゲーム代</div>
+                <div class="qs-value">{total_fee_today}<span style="font-size:0.8rem;color:var(--text-muted);"> 枚</span></div>
+            </div>
+            <div class="quick-stat-item blue">
+                <div class="qs-label">総回数</div>
+                <div class="qs-value">{total_games_today}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+            </div>
+            <div class="quick-stat-item">
+                <div class="qs-label">A客 バック</div>
+                <div class="qs-value">{total_back_a}<span style="font-size:0.8rem;color:var(--text-muted);"> 枚</span></div>
+            </div>
+            <div class="quick-stat-item">
+                <div class="qs-label">B客 バック</div>
+                <div class="qs-value">{total_back_b}<span style="font-size:0.8rem;color:var(--text-muted);"> 枚</span></div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        st.caption(f"内訳: A客 {type_counts['A客']} / B客 {type_counts['B客']} / AS {type_counts['AS']} / BS {type_counts['BS']}")
+
+        st.write("")
         render_paper_sheet(df_all_today)
         st.write("")
-        
-        st.caption("👇 修正したい行をクリックすると、編集画面に移動します")
-        df_display = df_all_today.sort_values(["TableNo", "DailyNo"], ascending=[True, True])[["TableNo", "DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
-        
-        def safe_strftime(x):
-            try: return pd.to_datetime(x).strftime('%H:%M')
-            except: return ""
-        df_display["日時"] = df_display["日時"].apply(safe_strftime)
-        
-        event = st.dataframe(
-            df_display, 
-            use_container_width=True, 
-            hide_index=True,
-            on_select="rerun",
-            selection_mode="single-row"
-        )
-        
-        if len(event.selection.rows) > 0:
-            selected_idx = event.selection.rows[0]
-            target_daily_no = df_display.iloc[selected_idx]["DailyNo"]
-            target_table_no = df_display.iloc[selected_idx]["TableNo"]
-            target_rows = df_all_today[(df_all_today["DailyNo"] == target_daily_no) & (df_all_today["TableNo"] == target_table_no)]
-            if not target_rows.empty:
-                target_row = target_rows.iloc[0]
-                st.session_state["editing_game_id"] = target_row["GameNo"]
+
+        with st.expander("✏️ 過去のゲームを修正・削除する", expanded=False):
+            st.caption("👇 修正したい行をクリックすると編集画面へ移動します")
+            df_display = df_all_today.sort_values(["TableNo", "DailyNo"])[["GameNo", "TableNo", "DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん"]].copy()
+            def safe_strftime(x):
+                try: return pd.to_datetime(x).strftime('%H:%M')
+                except: return ""
+            df_display["日時"] = df_display["日時"].apply(safe_strftime)
+            df_display["状態"] = df_display["GameNo"].apply(lambda x: "🆕 未保存" if x < 0 else "")
+            df_display = df_display[["状態", "TableNo", "DailyNo", "SetNo", "日時", "Aさん", "Bさん", "Cさん", "GameNo"]]
+            df_show = df_display.drop(columns=["GameNo"])
+
+            event = st.dataframe(df_show, use_container_width=True, hide_index=True, on_select="rerun", selection_mode="single-row")
+            if len(event.selection.rows) > 0:
+                selected_idx = event.selection.rows[0]
+                target_game_no = df_display.iloc[selected_idx]["GameNo"]
+                st.session_state["editing_game_id"] = int(target_game_no)
                 st.session_state["page"] = "edit"
                 st.rerun()
-
     else:
         st.info("今日のデータはまだありません")
 
 # --- 履歴画面 ---
 def page_history():
+    render_top_nav("history")
     st.title("📊 過去データ参照")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
-        
-    df = load_score_data()
+    render_pending_bar(location_key="history")
+
+    df = load_score_data_effective()
     if df.empty:
         st.info("データがありません")
         return
 
-    if "論理日付" in df.columns:
-        min_date = df["論理日付"].min()
-        max_date = df["論理日付"].max()
-    else:
-        min_date = date.today()
-        max_date = date.today()
+    tab1, tab2, tab3 = st.tabs(["📈 期間統計・詳細検索", "👥 2人対戦データ", "👥👤 3人対戦データ"])
+    with tab1: _page_history_overview(df)
+    with tab2: _page_history_versus_2(df)
+    with tab3: _page_history_versus_3(df)
 
-    # --- セッションステート初期化 (状態維持用) ---
-    if "hist_sel_start" not in st.session_state:
-        st.session_state.hist_sel_start = min_date
-    if "hist_sel_end" not in st.session_state:
-        st.session_state.hist_sel_end = max_date
-    if "hist_sel_time" not in st.session_state:
-        st.session_state.hist_sel_time = "全日"
-    if "hist_sel_player" not in st.session_state:
-        st.session_state.hist_sel_player = "(指定なし)"
+def page_versus2():
+    render_top_nav("versus2")
+    st.title("🤝 2人対戦データ")
+    render_pending_bar(location_key="versus2")
+    df = load_score_data_effective()
+    if df.empty:
+        st.info("データがありません")
+        return
+    _page_history_versus_2(df)
+
+def page_versus3():
+    render_top_nav("versus3")
+    st.title("👥 3人対戦データ")
+    render_pending_bar(location_key="versus3")
+    df = load_score_data_effective()
+    if df.empty:
+        st.info("データがありません")
+        return
+    _page_history_versus_3(df)
+
+def _page_history_versus_2(df):
+    section_title("👥", "2人を選択")
+    st.caption("選択した2人が同卓した試合のデータを表示します")
+
+    all_players = get_all_member_names()
+    if len(all_players) < 2:
+        st.warning("メンバーが2人以上必要です")
+        return
+
+    c1, c2 = st.columns(2)
+    with c1: p1 = st.selectbox("👤 プレイヤー1", ["(選択してください)"] + all_players, key="vs2_p1")
+    with c2:
+        p2_options = ["(選択してください)"] + [p for p in all_players if p != p1]
+        p2 = st.selectbox("👤 プレイヤー2", p2_options, key="vs2_p2")
+
+    if p1 == "(選択してください)" or p2 == "(選択してください)" or p1 == p2:
+        st.info("☝️ 2人を選択してください")
+        return
+
+    overall_ratings = get_latest_ratings(df)
+    p1_rate = overall_ratings.get(p1, 1500.0)
+    p2_rate = overall_ratings.get(p2, 1500.0)
+
+    def has_both(row, a, b):
+        names = [row["Aさん"], row["Bさん"], row["Cさん"]]
+        return a in names and b in names
+
+    mask = df.apply(lambda r: has_both(r, p1, p2), axis=1)
+    df_vs = df[mask].copy()
+
+    st.divider()
+    st.markdown(f"#### 🥊 {p1} (Rate: {p1_rate:.1f} / {get_dan_name(p1_rate)}) 🆚 {p2} (Rate: {p2_rate:.1f} / {get_dan_name(p2_rate)})")
+
+    if df_vs.empty:
+        st.warning(f"「{p1}」と「{p2}」が同卓した試合はありません")
+        return
+
+    p1_ranks, p2_ranks = [], []
+    p1_wins, p2_wins, draws = 0, 0, 0
+
+    for _, row in df_vs.iterrows():
+        r1, r2 = None, None
+        for s in ["A", "B", "C"]:
+            if row[f"{s}さん"] == p1:
+                try: r1 = int(float(row[f"{s}着順"]))
+                except: pass
+            if row[f"{s}さん"] == p2:
+                try: r2 = int(float(row[f"{s}着順"]))
+                except: pass
+        if r1 and r2 and r1 > 0 and r2 > 0:
+            p1_ranks.append(r1)
+            p2_ranks.append(r2)
+            if r1 < r2: p1_wins += 1
+            elif r1 > r2: p2_wins += 1
+            else: draws += 1
+
+    total = len(p1_ranks)
+    if total == 0:
+        st.warning("有効なデータがありません")
+        return
+
+    st.markdown(f"""
+    <div class="quick-stat-bar">
+        <div class="quick-stat-item blue">
+            <div class="qs-label">同卓回数</div>
+            <div class="qs-value">{total}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item green">
+            <div class="qs-label">{p1} 直接対決 勝</div>
+            <div class="qs-value">{p1_wins}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item red">
+            <div class="qs-label">{p2} 直接対決 勝</div>
+            <div class="qs-value">{p2_wins}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item">
+            <div class="qs-label">{p1} 勝率</div>
+            <div class="qs-value" style="font-size:1.2rem;">{p1_wins/total*100:.2f}%</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    section_title("📊", "着順の分布")
+    def calc_stats(ranks, name):
+        c = len(ranks)
+        if c == 0: return None
+        r1, r2, r3 = ranks.count(1), ranks.count(2), ranks.count(3)
+        return {
+            "プレイヤー": name, "打数": c, "平均着順": f"{sum(ranks)/c:.4f}",
+            "1着": f"{r1} ({r1/c*100:.2f}%)", "2着": f"{r2} ({r2/c*100:.2f}%)", "3着": f"{r3} ({r3/c*100:.2f}%)",
+            "トップ率": f"{r1/c*100:.2f}%", "ラス回避率": f"{(c-r3)/c*100:.2f}%",
+        }
+    rows = []
+    s1, s2 = calc_stats(p1_ranks, p1), calc_stats(p2_ranks, p2)
+    if s1: rows.append(s1)
+    if s2: rows.append(s2)
+    st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    section_title("⚔️", "直接対決の内訳")
+    st.caption(f"{p1} の着順 × {p2} の着順 (同卓した全試合)")
+    matrix = [[0]*3 for _ in range(3)]
+    for a, b in zip(p1_ranks, p2_ranks):
+        if 1 <= a <= 3 and 1 <= b <= 3: matrix[a-1][b-1] += 1
+    matrix_html = f"""
+    <table class="stats-table" style="width:auto;margin:0 auto;">
+        <thead>
+            <tr><th rowspan="2" style="background:var(--bg-card2);"></th><th colspan="3" style="background:var(--accent-soft);color:var(--accent);">{p2} 着順</th></tr>
+            <tr><th>1着</th><th>2着</th><th>3着</th></tr>
+        </thead><tbody>
+    """
+    rank_labels = ["1着", "2着", "3着"]
+    for i in range(3):
+        matrix_html += f'<tr><th style="background:var(--accent-soft);color:var(--accent);">{p1}<br>{rank_labels[i]}</th>'
+        for j in range(3):
+            val = matrix[i][j]
+            if i == j: cell_color, bg = "var(--text-muted)", "rgba(255,255,255,0.02)"
+            elif i < j: cell_color, bg = "var(--green)", "var(--green-soft)"
+            else: cell_color, bg = "var(--red)", "var(--red-soft)"
+            matrix_html += f'<td style="background:{bg};color:{cell_color};">{val}</td>'
+        matrix_html += '</tr>'
+    matrix_html += '</tbody></table>'
+    st.markdown(matrix_html, unsafe_allow_html=True)
+
+    st.divider()
+    section_title("📋", "同卓した試合一覧")
+    df_show = df_vs.sort_values("日時Obj", ascending=False).copy()
+    df_show["日付"] = df_show["日時Obj"].dt.strftime("%Y-%m-%d %H:%M")
+    df_show = df_show[["日付", "TableNo", "SetNo", "Aさん", "A着順", "Bさん", "B着順", "Cさん", "C着順", "備考"]]
+    df_show = df_show.rename(columns={"TableNo": "卓", "SetNo": "セット"})
+    st.dataframe(df_show, hide_index=True, use_container_width=True, height=400)
+
+def _page_history_versus_3(df):
+    section_title("👥", "3人を選択")
+    st.caption("選択した3人が同卓(=この3人が席を埋めた)試合のデータを表示します")
+    all_players = get_all_member_names()
+    if len(all_players) < 3:
+        st.warning("メンバーが3人以上必要です")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    with c1: p1 = st.selectbox("👤 プレイヤー1", ["(選択してください)"] + all_players, key="vs3_p1")
+    with c2: p2_opts = ["(選択してください)"] + [p for p in all_players if p != p1]; p2 = st.selectbox("👤 プレイヤー2", p2_opts, key="vs3_p2")
+    with c3: p3_opts = ["(選択してください)"] + [p for p in all_players if p != p1 and p != p2]; p3 = st.selectbox("👤 プレイヤー3", p3_opts, key="vs3_p3")
+
+    placeholders = ["(選択してください)"]
+    if p1 in placeholders or p2 in placeholders or p3 in placeholders:
+        st.info("☝️ 3人を選択してください")
+        return
+    if len({p1, p2, p3}) < 3:
+        st.error("3人とも異なるプレイヤーを選択してください")
+        return
+
+    target_set = {p1, p2, p3}
+    def is_same_three(row):
+        return {row["Aさん"], row["Bさん"], row["Cさん"]} == target_set
+
+    mask = df.apply(is_same_three, axis=1)
+    df_vs = df[mask].copy()
+
+    if df_vs.empty:
+        st.warning(f"「{p1}」「{p2}」「{p3}」の3人だけで同卓した試合はありません")
+        return
+
+    ranks_map = {p1: [], p2: [], p3: []}
+    win_counts = {p1: 0, p2: 0, p3: 0}
+    last_counts = {p1: 0, p2: 0, p3: 0}
+
+    for _, row in df_vs.iterrows():
+        for s in ["A", "B", "C"]:
+            name = row[f"{s}さん"]
+            if name in ranks_map:
+                try:
+                    r = int(float(row[f"{s}着順"]))
+                    if r in [1, 2, 3]:
+                        ranks_map[name].append(r)
+                        if r == 1: win_counts[name] += 1
+                        if r == 3: last_counts[name] += 1
+                except: pass
+
+    total = len(df_vs)
+    st.markdown(f"""
+    <div class="quick-stat-bar">
+        <div class="quick-stat-item blue">
+            <div class="qs-label">同卓回数</div>
+            <div class="qs-value">{total}<span style="font-size:0.8rem;color:var(--text-muted);"> 回</span></div>
+        </div>
+        <div class="quick-stat-item green">
+            <div class="qs-label">最多トップ</div>
+            <div class="qs-value" style="font-size:1rem;">{max(win_counts, key=win_counts.get)}<br><span style="font-size:0.8rem;color:var(--text-muted);">{max(win_counts.values())}回</span></div>
+        </div>
+        <div class="quick-stat-item red">
+            <div class="qs-label">最多ラス</div>
+            <div class="qs-value" style="font-size:1rem;">{max(last_counts, key=last_counts.get)}<br><span style="font-size:0.8rem;color:var(--text-muted);">{max(last_counts.values())}回</span></div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    section_title("📊", "3人の成績")
+    rows = []
+    for name in [p1, p2, p3]:
+        rs = ranks_map[name]
+        c = len(rs)
+        if c == 0: continue
+        r1, r2, r3_cnt = rs.count(1), rs.count(2), rs.count(3)
+        rows.append({
+            "プレイヤー": name, "打数": c, "平均着順": f"{sum(rs)/c:.4f}",
+            "1着": f"{r1} ({r1/c*100:.2f}%)", "2着": f"{r2} ({r2/c*100:.2f}%)", "3着": f"{r3_cnt} ({r3_cnt/c*100:.2f}%)",
+            "トップ率": f"{r1/c*100:.2f}%", "ラス回避率": f"{(c-r3_cnt)/c*100:.2f}%",
+        })
+    if rows: st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+    section_title("🎯", "着順パターン")
+    from itertools import permutations
+    pattern_counts = {perm: 0 for perm in permutations([p1, p2, p3])}
+    for _, row in df_vs.iterrows():
+        rank_to_name = {}
+        for s in ["A", "B", "C"]:
+            name = row[f"{s}さん"]
+            try:
+                r = int(float(row[f"{s}着順"]))
+                if name in target_set and r in [1, 2, 3]: rank_to_name[r] = name
+            except: pass
+        if len(rank_to_name) == 3:
+            key = (rank_to_name[1], rank_to_name[2], rank_to_name[3])
+            if key in pattern_counts: pattern_counts[key] += 1
+
+    pattern_rows = []
+    for (n1, n2, n3), cnt in sorted(pattern_counts.items(), key=lambda x: -x[1]):
+        if total > 0:
+            pattern_rows.append({"🥇 1着": n1, "🥈 2着": n2, "🥉 3着": n3, "回数": cnt, "割合": f"{cnt/total*100:.2f}%"})
+    st.dataframe(pd.DataFrame(pattern_rows), hide_index=True, use_container_width=True)
+
+    st.divider()
+    section_title("📋", "同卓した試合一覧")
+    df_show = df_vs.sort_values("日時Obj", ascending=False).copy()
+    df_show["日付"] = df_show["日時Obj"].dt.strftime("%Y-%m-%d %H:%M")
+    df_show = df_show[["日付", "TableNo", "SetNo", "Aさん", "A着順", "Bさん", "B着順", "Cさん", "C着順", "備考"]]
+    df_show = df_show.rename(columns={"TableNo": "卓", "SetNo": "セット"})
+    st.dataframe(df_show, hide_index=True, use_container_width=True, height=400)
+
+
+def _page_history_overview(df):
+    if "hist_sel_date" not in st.session_state: st.session_state.hist_sel_date = "(指定なし)"
+    if "hist_sel_time" not in st.session_state: st.session_state.hist_sel_time = "全日"
+    if "hist_sel_player" not in st.session_state: st.session_state.hist_sel_player = "(指定なし)"
 
     if "jump_to_player" in st.session_state:
         st.session_state.hist_sel_player = st.session_state["jump_to_player"]
-        st.session_state.hist_sel_start = min_date
-        st.session_state.hist_sel_end = max_date
+        st.session_state.hist_sel_date = "(指定なし)"
         st.session_state.hist_sel_time = "全日"
         del st.session_state["jump_to_player"]
 
-    # --- 期間別統計 (全体集計) ---
-    st.markdown("### 📈 期間別統計 (集計)")
+    section_title("📈", "期間別統計")
+    if "論理日付" in df.columns: min_date, max_date = df["論理日付"].min(), df["論理日付"].max()
+    else: min_date = max_date = date.today()
 
     c1, c2 = st.columns([2, 1])
-    with c1:
-        stats_range = st.date_input("集計期間", value=(min_date, max_date))
-    with c2:
-        stats_time_range = st.selectbox("時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="stats_time")
-    
-    # フィルタリング
+    with c1: stats_range = st.date_input("集計期間", value=(min_date, max_date))
+    with c2: stats_time_range = st.selectbox("時間帯", ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"], key="stats_time")
+
     df_target = df.copy()
-    
     if isinstance(stats_range, tuple) and len(stats_range) == 2:
-        start_dt, end_dt = stats_range
-        df_target = df_target[(df_target["論理日付"] >= start_dt) & (df_target["論理日付"] <= end_dt)]
+        start, end = stats_range
+        df_target = df_target[(df_target["論理日付"] >= start) & (df_target["論理日付"] <= end)]
     elif isinstance(stats_range, tuple) and len(stats_range) == 1:
-        start_dt = stats_range[0]
-        end_dt = start_dt 
-        df_target = df_target[df_target["論理日付"] == start_dt]
-    else:
-        start_dt, end_dt = min_date, max_date
-    
-    if stats_time_range == "9:00-21:00":
-        df_target = df_target[df_target["日時Obj"].dt.hour.between(9, 20)]
-    elif stats_time_range == "21:00-33:00(翌9:00)":
-        df_target = df_target[~df_target["日時Obj"].dt.hour.between(9, 20)]
+        start = end = stats_range[0]
+        df_target = df_target[df_target["論理日付"] == start]
+    else: start, end = min_date, max_date
+
+    if stats_time_range == "9:00-21:00": df_target = df_target[df_target["日時Obj"].dt.hour.between(9, 20)]
+    elif stats_time_range == "21:00-33:00(翌9:00)": df_target = df_target[~df_target["日時Obj"].dt.hour.between(9, 20)]
 
     if df_target.empty:
         st.warning("指定期間のデータはありません")
@@ -1271,12 +2384,10 @@ def page_history():
         unique_days = df_target["論理日付"].nunique()
         avg_games_day = total_games / unique_days if unique_days > 0 else 0
 
-        total_back_a = 0
-        total_back_b = 0
+        total_back_a, total_back_b = 0, 0
         pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
         pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
-        
-        seat_counts = {s: {"1":0, "2":0, "3":0, "sum":0, "count":0} for s in ["A", "B", "C"]}
+        seat_counts = {s: {"1": 0, "2": 0, "3": 0, "sum": 0, "count": 0} for s in ["A", "B", "C"]}
         type_data = []
 
         for _, row in df_target.iterrows():
@@ -1286,38 +2397,30 @@ def page_history():
             elif note == "２人飛ばし": discount = 2
             elif note == "５連勝〜": discount = 5
 
-            winner_is_a = False
-            winner_type = None
+            winner_is_a, winner_type = False, None
             try:
-                r_a = int(float(row["A着順"]))
-                r_b = int(float(row["B着順"]))
-                r_c = int(float(row["C着順"]))
-                
+                r_a, r_b, r_c = int(float(row["A着順"])), int(float(row["B着順"])), int(float(row["C着順"]))
                 if r_a == 1: winner_type = row["Aタイプ"]
                 elif r_b == 1: winner_type = row["Bタイプ"]
                 elif r_c == 1: winner_type = row["Cタイプ"]
-                
                 if winner_type in ["A客", "AS"]: winner_is_a = True
-            except:
-                pass
-                
+            except: pass
+
             if discount > 0 and winner_type:
                 if winner_type == "A客": total_back_a += discount
                 elif winner_type == "B客": total_back_b += discount
-            
+
             p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
             a_side = sum(1 for t in p_types if t in ["A客", "AS"])
-            
             key = None
             if a_side == 3: key = "A3人"
             elif a_side == 2: key = "A2人B1人"
             elif a_side == 1: key = "A1人B2人"
             elif a_side == 0: key = "B3人"
-            
             if key:
                 pattern_counts[key] += 1
                 if winner_is_a: pattern_wins_a[key] += 1
-            
+
             for seat in ["A", "B", "C"]:
                 t = row[f"{seat}タイプ"]
                 r_str = row[f"{seat}着順"]
@@ -1335,510 +2438,386 @@ def page_history():
 
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("総ゲーム数", f"{total_games} 回")
-        c2.metric("平均ゲーム数/日", f"{avg_games_day:.1f} 回")
-        c3.metric("総バック (A)", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f} 枚/日")
-        c4.metric("総バック (B)", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f} 枚/日")
+        c2.metric("平均/日", f"{avg_games_day:.1f} 回")
+        c3.metric("A客バック累計", f"{total_back_a} 枚", f"平均 {avg_back_a:.1f}/日")
+        c4.metric("B客バック累計", f"{total_back_b} 枚", f"平均 {avg_back_b:.1f}/日")
 
         df_profit = load_profit_data()
         if not df_profit.empty:
             df_profit["MixDiff"] = pd.to_numeric(df_profit["MixDiff"], errors='coerce').fillna(0)
             df_profit["RealProfit"] = pd.to_numeric(df_profit["RealProfit"], errors='coerce').fillna(0)
             df_profit["DateObj"] = pd.to_datetime(df_profit["Date"]).dt.date
-
             df_p_target = df_profit.copy()
             if isinstance(stats_range, tuple) and len(stats_range) == 2:
-                df_p_target = df_p_target[(df_p_target["DateObj"] >= start_dt) & (df_p_target["DateObj"] <= end_dt)]
-            elif isinstance(stats_range, tuple) and len(stats_range) == 1:
-                df_p_target = df_p_target[df_p_target["DateObj"] == start_dt]
-            
-            if stats_time_range == "9:00-21:00":
-                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Day"]
-            elif stats_time_range == "21:00-33:00(翌9:00)":
-                df_p_target = df_p_target[df_p_target["TimeSlot"] == "Night"]
-                
-            sum_mix = int(df_p_target["MixDiff"].sum())
-            sum_real = int(df_p_target["RealProfit"].sum())
-            
-            st.markdown("##### 💰 利益集計")
-            cp1, cp2 = st.columns(2)
-            cp1.metric("MIX差 (合計)", f"{sum_mix:,}")
-            cp2.metric("実利益 (合計)", f"{sum_real:,}")
+                df_p_target = df_p_target[(df_p_target["DateObj"] >= start) & (df_p_target["DateObj"] <= end)]
+            if stats_time_range == "9:00-21:00": df_p_target = df_p_target[df_p_target["TimeSlot"] == "Day"]
+            elif stats_time_range == "21:00-33:00(翌9:00)": df_p_target = df_p_target[df_p_target["TimeSlot"] == "Night"]
+            sum_mix, sum_real = int(df_p_target["MixDiff"].sum()), int(df_p_target["RealProfit"].sum())
+            with st.expander("💰 利益集計", expanded=False):
+                cp1, cp2 = st.columns(2)
+                cp1.metric("MIX差 合計", f"{sum_mix:,}")
+                cp2.metric("実利益 合計", f"{sum_real:,}")
 
-        st.caption(f"卓組構成の割合 ({start_dt} 〜 {end_dt})")
-        df_pattern = pd.DataFrame({
-            "構成": list(pattern_counts.keys()),
-            "回数": list(pattern_counts.values())
-        })
-        total_p = df_pattern["回数"].sum()
-        if total_p > 0:
-            df_pattern["割合"] = (df_pattern["回数"] / total_p * 100).map('{:.2f}%'.format)
-        else:
-            df_pattern["割合"] = "0.00%"
-        
-        win_rates = []
-        for k in df_pattern["構成"]:
-            cnt = pattern_counts[k]
-            wins_a = pattern_wins_a[k]
-            wins_b = cnt - wins_a
-            if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
-                rate_a = (wins_a / cnt) * 100
-                rate_b = (wins_b / cnt) * 100
-                win_rates.append(f"A: {rate_a:.2f}% / B: {rate_b:.2f}%")
-            else:
-                win_rates.append("-")
-        
-        df_pattern["勝率データ"] = win_rates
-        st.dataframe(df_pattern, hide_index=True, use_container_width=True)
-
-        if type_data:
-            st.markdown("##### 📊 タイプ別成績")
-            df_type_raw = pd.DataFrame(type_data)
-            stats_by_type = df_type_raw.groupby("Type")["Rank"].agg(
-                games="count",
-                avg="mean",
-                r1=lambda x: (x==1).sum(),
-                r2=lambda x: (x==2).sum(),
-                r3=lambda x: (x==3).sum()
-            ).reset_index()
-
-            def fmt(row, col):
-                return f"{row[col]} ({row[col]/row['games']*100:.2f}%)"
-
-            stats_by_type["avg"] = stats_by_type["avg"].map('{:.4f}'.format)
-            stats_by_type["1着"] = stats_by_type.apply(lambda x: fmt(x, "r1"), axis=1)
-            stats_by_type["2着"] = stats_by_type.apply(lambda x: fmt(x, "r2"), axis=1)
-            stats_by_type["3着"] = stats_by_type.apply(lambda x: fmt(x, "r3"), axis=1)
-
-            display_cols = {
-                "Type": "タイプ", "games": "打数", "avg": "平均着順"
-            }
-            type_order = {"A客": 0, "B客": 1, "AS": 2, "BS": 3}
-            stats_by_type["order"] = stats_by_type["Type"].map(lambda x: type_order.get(x, 99))
-            stats_by_type = stats_by_type.sort_values("order").drop("order", axis=1)
-
-            st.dataframe(stats_by_type.rename(columns=display_cols)[["タイプ", "打数", "平均着順", "1着", "2着", "3着"]],
-                         hide_index=True, use_container_width=True)
-        
-        seat_rows = []
-        for s in ["A", "B", "C"]:
-            d = seat_counts[s]
-            c = d["count"]
-            if c > 0:
-                avg = d["sum"] / c
-                r1_r = d["1"]/c*100
-                r2_r = d["2"]/c*100
-                r3_r = d["3"]/c*100
-                seat_rows.append({
-                    "席": f"{s}席",
-                    "打数": c,
-                    "平均着順": f"{avg:.4f}",
-                    "1着": f"{d['1']} ({r1_r:.2f}%)",
-                    "2着": f"{d['2']} ({r2_r:.2f}%)",
-                    "3着": f"{d['3']} ({r3_r:.2f}%)"
-                })
-        
-        if seat_rows:
-            st.markdown("##### 🪑 席別成績")
-            st.dataframe(pd.DataFrame(seat_rows), hide_index=True, use_container_width=True)
-
-    st.divider()
-
-    # --- 詳細検索 (期間 & 個人) ---
-    all_players = get_all_member_names()
-    time_options = ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"]
-    player_options = ["(指定なし)"] + list(all_players)
-
-    def get_idx(lst, val):
-        return lst.index(val) if val in lst else 0
-
-    st.markdown("### 🔍 期間・人物ごとの詳細")
-    with st.form("history_search_form"):
-        c1, c2, c3 = st.columns([1.5, 1, 1]) 
-        with c1: 
-            sel_date_range = st.date_input(
-                "📅 期間を選択", 
-                value=(st.session_state.hist_sel_start, st.session_state.hist_sel_end)
-            )
-        with c2:
-            sel_time = st.selectbox("⏰ 時間帯", time_options, index=get_idx(time_options, st.session_state.hist_sel_time))
-        with c3: 
-            sel_player = st.selectbox("👤 プレイヤーを選択", player_options, index=get_idx(player_options, st.session_state.hist_sel_player))
-        submitted = st.form_submit_button("🔍 絞り込み表示")
-    
-    st.divider()
-
-    if submitted:
-        if isinstance(sel_date_range, tuple) and len(sel_date_range) == 2:
-            st.session_state.hist_sel_start = sel_date_range[0]
-            st.session_state.hist_sel_end = sel_date_range[1]
-        elif isinstance(sel_date_range, tuple) and len(sel_date_range) == 1:
-            st.session_state.hist_sel_start = sel_date_range[0]
-            st.session_state.hist_sel_end = sel_date_range[0]
-        elif isinstance(sel_date_range, date): 
-            st.session_state.hist_sel_start = sel_date_range
-            st.session_state.hist_sel_end = sel_date_range
-            
-        st.session_state.hist_sel_time = sel_time
-        st.session_state.hist_sel_player = sel_player
-        st.rerun() 
-
-    active_start = st.session_state.hist_sel_start
-    active_end = st.session_state.hist_sel_end
-    active_time = st.session_state.hist_sel_time
-    active_player = st.session_state.hist_sel_player
-
-    if not active_start and active_player == "(指定なし)":
-        st.info("☝️ 上のボックスから条件を選択し、「絞り込み表示」ボタンを押してください")
-        return
-
-    df_filtered = df.copy()
-    
-    if active_start and active_end:
-        df_filtered = df_filtered[(df_filtered["論理日付"] >= active_start) & (df_filtered["論理日付"] <= active_end)]
-    
-    if active_player != "(指定なし)":
-        df_filtered = df_filtered[
-            (df_filtered["Aさん"] == active_player) | 
-            (df_filtered["Bさん"] == active_player) | 
-            (df_filtered["Cさん"] == active_player)
-        ]
-    
-    if active_time == "9:00-21:00":
-        df_filtered = df_filtered[df_filtered["日時Obj"].dt.hour.between(9, 20)]
-    elif active_time == "21:00-33:00(翌9:00)":
-        df_filtered = df_filtered[~df_filtered["日時Obj"].dt.hour.between(9, 20)]
-
-    if df_filtered.empty:
-        st.warning("条件に一致するデータが見つかりませんでした")
-    else:
-        if not df_filtered.empty:
-            st.markdown("### 📅 選択期間の集計")
-            total_games_day = len(df_filtered)
-            day_back_a = 0
-            day_back_b = 0
-            pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
-            pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
-
-            for _, row in df_filtered.iterrows():
-                note = str(row["備考"])
-                discount = 0
-                if note == "東１終了": discount = 1
-                elif note == "２人飛ばし": discount = 2
-                elif note == "５連勝〜": discount = 5
-                
-                winner_is_a = False
-                winner_type = None
-                try:
-                    r_a = int(float(row["A着順"]))
-                    r_b = int(float(row["B着順"]))
-                    r_c = int(float(row["C着順"]))
-                    
-                    if r_a == 1: winner_type = row["Aタイプ"]
-                    elif r_b == 1: winner_type = row["Bタイプ"]
-                    elif r_c == 1: winner_type = row["Cタイプ"]
-                    
-                    if winner_type in ["A客", "AS"]: winner_is_a = True
-                except:
-                    pass
-
-                if discount > 0 and winner_type:
-                    if winner_type == "A客": day_back_a += discount
-                    elif winner_type == "B客": day_back_b += discount
-                
-                p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
-                a_side = sum(1 for t in p_types if t in ["A客", "AS"])
-                
-                key = None
-                if a_side == 3: key = "A3人"
-                elif a_side == 2: key = "A2人B1人"
-                elif a_side == 1: key = "A1人B2人"
-                elif a_side == 0: key = "B3人"
-                
-                if key:
-                    pattern_counts[key] += 1
-                    if winner_is_a: pattern_wins_a[key] += 1
-            
-            c_s1, c_s2, c_s3 = st.columns(3)
-            c_s1.metric("ゲーム回数", f"{total_games_day} 回")
-            c_s2.metric("A客バック", f"{day_back_a} 枚")
-            c_s3.metric("B客バック", f"{day_back_b} 枚")
-            
-            st.caption("卓組構成の割合")
-            df_pattern = pd.DataFrame({
-                "構成": list(pattern_counts.keys()),
-                "回数": list(pattern_counts.values())
-            })
-            total = df_pattern["回数"].sum()
-            if total > 0:
-                df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.2f}%'.format)
-            else:
-                df_pattern["割合"] = "0.00%"
-
+        with st.expander("📊 卓組構成・タイプ別・席別成績", expanded=False):
+            st.caption(f"卓組構成の割合 ({start} 〜 {end})")
+            df_pattern = pd.DataFrame({"構成": list(pattern_counts.keys()), "回数": list(pattern_counts.values())})
+            total_p = df_pattern["回数"].sum()
+            df_pattern["割合"] = (df_pattern["回数"] / total_p * 100).map('{:.2f}%'.format) if total_p > 0 else "0.00%"
             win_rates = []
             for k in df_pattern["構成"]:
                 cnt = pattern_counts[k]
                 wins_a = pattern_wins_a[k]
-                wins_b = cnt - wins_a
-                if k in ["A2人B1人", "A1人B2人"] and cnt > 0:
-                    rate_a = (wins_a / cnt) * 100
-                    rate_b = (wins_b / cnt) * 100
-                    win_rates.append(f"A: {rate_a:.2f}% / B: {rate_b:.2f}%")
-                else:
-                    win_rates.append("-")
-            
-            df_pattern["勝率データ"] = win_rates
+                if k in ["A2人B1人", "A1人B2人"] and cnt > 0: win_rates.append(f"A: {wins_a/cnt*100:.2f}% / B: {(cnt-wins_a)/cnt*100:.2f}%")
+                else: win_rates.append("-")
+            df_pattern["勝率"] = win_rates
             st.dataframe(df_pattern, hide_index=True, use_container_width=True)
-            st.divider()
 
-        if active_player != "(指定なし)":
-            st.markdown(f"#### 👤 {active_player} さんの成績")
-            
-            # --- レーティング & 基本情報 ---
-            latest_ratings = get_latest_ratings(df_filtered)
-            my_rating = latest_ratings.get(active_player, 1500.0)
-            my_dan = get_dan_name(my_rating)
-            
-            ranks = []
-            played_dates = set()
-            compatibility = {}
-            player_seat_ranks = {"A": [], "B": [], "C": []}
-            rate_history = []
+            if type_data:
+                st.markdown("##### 📊 タイプ別成績")
+                df_type_raw = pd.DataFrame(type_data)
+                stats_by_type = df_type_raw.groupby("Type")["Rank"].agg(
+                    games="count", avg="mean",
+                    r1=lambda x: (x==1).sum(), r2=lambda x: (x==2).sum(), r3=lambda x: (x==3).sum()
+                ).reset_index()
+                stats_by_type["avg"] = stats_by_type["avg"].map('{:.4f}'.format)
+                stats_by_type["1着"] = stats_by_type.apply(lambda x: f"{x['r1']} ({x['r1']/x['games']*100:.2f}%)", axis=1)
+                stats_by_type["2着"] = stats_by_type.apply(lambda x: f"{x['r2']} ({x['r2']/x['games']*100:.2f}%)", axis=1)
+                stats_by_type["3着"] = stats_by_type.apply(lambda x: f"{x['r3']} ({x['r3']/x['games']*100:.2f}%)", axis=1)
+                type_order = {"A客": 0, "B客": 1, "AS": 2, "BS": 3}
+                stats_by_type["order"] = stats_by_type["Type"].map(lambda x: type_order.get(x, 99))
+                stats_by_type = stats_by_type.sort_values("order").drop("order", axis=1)
+                st.dataframe(stats_by_type.rename(columns={"Type": "タイプ", "games": "打数", "avg": "平均着順"})[["タイプ", "打数", "平均着順", "1着", "2着", "3着"]], hide_index=True, use_container_width=True)
 
-            for _, row in df_filtered.iterrows():
-                my_rank = None
-                my_seat = None
-                seats = ["A", "B", "C"]
-                
-                for s in seats:
-                    if row[f"{s}さん"] == active_player:
-                        try:
-                            my_rank = int(float(row[f"{s}着順"]))
-                            my_seat = s
-                            if not rate_history:
-                                rate_history.append(row[f"{s}_Rating_Before"])
-                            rate_history.append(row[f"{s}_Rating_Before"] + row[f"{s}_Rating_Delta"])
-                        except: pass
-                        break
-                
-                if my_rank:
-                    ranks.append(my_rank)
-                    played_dates.add(row["論理日付"])
-                    
-                    if my_seat in player_seat_ranks:
-                        player_seat_ranks[my_seat].append(my_rank)
-                    
-                    for s in seats:
-                        if s == my_seat: continue
-                        opp_name = row[f"{s}さん"]
-                        if not opp_name: continue
-                        try:
-                            opp_rank = int(float(row[f"{s}着順"]))
-                        except: opp_rank = 0
-                        if opp_rank == 0: continue
-                        
-                        if opp_name not in compatibility:
-                            compatibility[opp_name] = {"count": 0, "score": 0}
-                        compatibility[opp_name]["count"] += 1
-                        score = opp_rank - my_rank
-                        compatibility[opp_name]["score"] += score
+            seat_rows = []
+            for s in ["A", "B", "C"]:
+                d = seat_counts[s]
+                c = d["count"]
+                if c > 0:
+                    avg = d["sum"] / c
+                    seat_rows.append({
+                        "席": f"{s}席", "打数": c, "平均着順": f"{avg:.4f}",
+                        "1着": f"{d['1']} ({d['1']/c*100:.2f}%)", "2着": f"{d['2']} ({d['2']/c*100:.2f}%)", "3着": f"{d['3']} ({d['3']/c*100:.2f}%)"
+                    })
+            if seat_rows:
+                st.markdown("##### 🪑 席別成績")
+                st.dataframe(pd.DataFrame(seat_rows), hide_index=True, use_container_width=True)
 
-            if not rate_history:
-                rate_history = [1500.0]
+    st.divider()
 
-            if ranks:
-                games = len(ranks)
-                avg = sum(ranks)/games
-                c1 = ranks.count(1)
-                c2_cnt = ranks.count(2)
-                c3 = ranks.count(3)
-                r1_rate = (c1 / games) * 100
-                r2_rate = (c2_cnt / games) * 100
-                r3_rate = (c3 / games) * 100
-                
-                c_m1, c_m2, c_m3 = st.columns(3)
-                c_m1.metric("段位", my_dan)
-                c_m2.metric("レーティング", f"{my_rating:.1f}")
-                c_m3.metric("総回数", f"{games} 回")
-                
-                stats_html = f"""
-                <table class="stats-table"><thead><tr><th>平均着順</th><th>1着回数</th><th>2着回数</th><th>3着回数</th></tr></thead>
-                <tbody><tr><td>{avg:.4f}</td><td>{c1} 回<span class="stats-sub">({r1_rate:.2f}%)</span></td><td>{c2_cnt} 回<span class="stats-sub">({r2_rate:.2f}%)</span></td><td>{c3} 回<span class="stats-sub">({r3_rate:.2f}%)</span></td></tr></tbody></table>
-                """
-                st.markdown(stats_html, unsafe_allow_html=True)
-                st.divider()
-                
+    if "論理日付" in df.columns:
+        valid_dates = [d for d in df["論理日付"].unique() if pd.notnull(d) and d != pd.Timestamp("1900-01-01").date()]
+        unique_dates = sorted(valid_dates, reverse=True)
+    else: unique_dates = []
+
+    all_players = get_all_member_names()
+    date_options = ["(指定なし)"] + list(unique_dates)
+    time_options = ["全日", "9:00-21:00", "21:00-33:00(翌9:00)"]
+    player_options = ["(指定なし)"] + list(all_players)
+
+    def get_idx(lst, val): return lst.index(val) if val in lst else 0
+
+    section_title("🔍", "詳細検索")
+    with st.form("history_search_form"):
+        c1, c2, c3 = st.columns(3)
+        with c1: sel_date = st.selectbox("📅 日付", date_options, index=get_idx(date_options, st.session_state.hist_sel_date))
+        with c2: sel_time = st.selectbox("⏰ 時間帯", time_options, index=get_idx(time_options, st.session_state.hist_sel_time))
+        with c3: sel_player = st.selectbox("👤 プレイヤー", player_options, index=get_idx(player_options, st.session_state.hist_sel_player))
+        submitted = st.form_submit_button("🔍 絞り込み", type="primary", use_container_width=True)
+
+    st.divider()
+
+    if submitted:
+        st.session_state.hist_sel_date = sel_date
+        st.session_state.hist_sel_time = sel_time
+        st.session_state.hist_sel_player = sel_player
+        st.rerun()
+
+    active_date = st.session_state.hist_sel_date
+    active_time = st.session_state.hist_sel_time
+    active_player = st.session_state.hist_sel_player
+
+    if active_date == "(指定なし)" and active_player == "(指定なし)":
+        st.info("☝️ 条件を選択して「絞り込み」を押してください")
+        return
+
+    df_filtered = df.copy()
+    if active_date != "(指定なし)": df_filtered = df_filtered[df_filtered["論理日付"] == active_date]
+    if active_player != "(指定なし)":
+        df_filtered = df_filtered[(df_filtered["Aさん"] == active_player) | (df_filtered["Bさん"] == active_player) | (df_filtered["Cさん"] == active_player)]
+    if active_time == "9:00-21:00": df_filtered = df_filtered[df_filtered["日時Obj"].dt.hour.between(9, 20)]
+    elif active_time == "21:00-33:00(翌9:00)": df_filtered = df_filtered[~df_filtered["日時Obj"].dt.hour.between(9, 20)]
+
+    if df_filtered.empty:
+        st.warning("条件に一致するデータが見つかりませんでした")
+        return
+
+    section_title("📅", "選択期間の集計")
+    total_games_day = len(df_filtered)
+    day_back_a, day_back_b = 0, 0
+    pattern_counts = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+    pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
+
+    for _, row in df_filtered.iterrows():
+        note = str(row["備考"])
+        discount = 0
+        if note == "東１終了": discount = 1
+        elif note == "２人飛ばし": discount = 2
+        elif note == "５連勝〜": discount = 5
+        winner_is_a, winner_type = False, None
+        try:
+            r_a, r_b, r_c = int(float(row["A着順"])), int(float(row["B着順"])), int(float(row["C着順"]))
+            if r_a == 1: winner_type = row["Aタイプ"]
+            elif r_b == 1: winner_type = row["Bタイプ"]
+            elif r_c == 1: winner_type = row["Cタイプ"]
+            if winner_type in ["A客", "AS"]: winner_is_a = True
+        except: pass
+        if discount > 0 and winner_type:
+            if winner_type == "A客": day_back_a += discount
+            elif winner_type == "B客": day_back_b += discount
+        p_types = [row["Aタイプ"], row["Bタイプ"], row["Cタイプ"]]
+        a_side = sum(1 for t in p_types if t in ["A客", "AS"])
+        key = None
+        if a_side == 3: key = "A3人"
+        elif a_side == 2: key = "A2人B1人"
+        elif a_side == 1: key = "A1人B2人"
+        elif a_side == 0: key = "B3人"
+        if key:
+            pattern_counts[key] += 1
+            if winner_is_a: pattern_wins_a[key] += 1
+
+    c_s1, c_s2, c_s3 = st.columns(3)
+    c_s1.metric("ゲーム回数", f"{total_games_day} 回")
+    c_s2.metric("A客バック", f"{day_back_a} 枚")
+    c_s3.metric("B客バック", f"{day_back_b} 枚")
+
+    with st.expander("📋 卓組構成", expanded=False):
+        df_pattern = pd.DataFrame({"構成": list(pattern_counts.keys()), "回数": list(pattern_counts.values())})
+        total = df_pattern["回数"].sum()
+        df_pattern["割合"] = (df_pattern["回数"] / total * 100).map('{:.2f}%'.format) if total > 0 else "0.00%"
+        win_rates = []
+        for k in df_pattern["構成"]:
+            cnt = pattern_counts[k]
+            wins_a = pattern_wins_a[k]
+            if k in ["A2人B1人", "A1人B2人"] and cnt > 0: win_rates.append(f"A: {wins_a/cnt*100:.2f}% / B: {(cnt-wins_a)/cnt*100:.2f}%")
+            else: win_rates.append("-")
+        df_pattern["勝率"] = win_rates
+        st.dataframe(df_pattern, hide_index=True, use_container_width=True)
+    st.divider()
+
+    if active_player != "(指定なし)":
+        section_title("👤", f"{active_player} さんの成績")
+
+        overall_ratings = get_latest_ratings(df)
+        my_rating = overall_ratings.get(active_player, 1500.0)
+        my_dan = get_dan_name(my_rating)
+
+        ranks, played_dates, compatibility, player_seat_ranks = [], set(), {}, {"A": [], "B": [], "C": []}
+        rate_history = []
+
+        for _, row in df_filtered.iterrows():
+            my_rank, my_seat = None, None
+            for s in ["A", "B", "C"]:
+                if row[f"{s}さん"] == active_player:
+                    try:
+                        my_rank = int(float(row[f"{s}着順"]))
+                        my_seat = s
+                        if not rate_history: rate_history.append(row[f"{s}_Rating_Before"])
+                        rate_history.append(row[f"{s}_Rating_Before"] + row[f"{s}_Rating_Delta"])
+                    except: pass
+                    break
+            if my_rank:
+                ranks.append(my_rank)
+                played_dates.add(row["論理日付"])
+                if my_seat in player_seat_ranks: player_seat_ranks[my_seat].append(my_rank)
+                for s in ["A", "B", "C"]:
+                    if s == my_seat: continue
+                    opp_name = row[f"{s}さん"]
+                    if not opp_name: continue
+                    try: opp_rank = int(float(row[f"{s}着順"]))
+                    except: opp_rank = 0
+                    if opp_rank == 0: continue
+                    if opp_name not in compatibility: compatibility[opp_name] = {"count": 0, "score": 0}
+                    compatibility[opp_name]["count"] += 1
+                    compatibility[opp_name]["score"] += opp_rank - my_rank
+
+        if ranks:
+            games = len(ranks)
+            avg = sum(ranks) / games
+            c1_cnt, c2_cnt, c3_cnt = ranks.count(1), ranks.count(2), ranks.count(3)
+            top_rate, last_avoid = c1_cnt / games * 100, (games - c3_cnt) / games * 100
+
+            c_m1, c_m2, c_m3 = st.columns(3)
+            c_m1.metric("段位", my_dan)
+            c_m2.metric("レーティング", f"{my_rating:.1f}")
+            c_m3.metric("総回数", f"{games} 回")
+
+            stats_html = f"""
+            <table class="stats-table">
+                <thead><tr>
+                    <th>平均着順</th><th>トップ率</th><th>ラス回避率</th>
+                    <th>🥇 1着</th><th>🥈 2着</th><th>🥉 3着</th>
+                </tr></thead>
+                <tbody><tr>
+                    <td style="color:var(--accent)">{avg:.4f}</td>
+                    <td style="color:var(--green)">{top_rate:.2f}%</td>
+                    <td style="color:var(--blue)">{last_avoid:.2f}%</td>
+                    <td>{c1_cnt}<span class="stats-sub">{c1_cnt/games*100:.2f}%</span></td>
+                    <td>{c2_cnt}<span class="stats-sub">{c2_cnt/games*100:.2f}%</span></td>
+                    <td>{c3_cnt}<span class="stats-sub">{c3_cnt/games*100:.2f}%</span></td>
+                </tr></tbody>
+            </table>
+            """
+            st.markdown(stats_html, unsafe_allow_html=True)
+
+            with st.expander("🪑 席別成績", expanded=False):
                 p_seat_rows = []
                 for s in ["A", "B", "C"]:
                     rs = player_seat_ranks[s]
                     c = len(rs)
                     if c > 0:
-                        r1 = rs.count(1)
-                        r2 = rs.count(2)
-                        r3 = rs.count(3)
-                        avg_s = sum(rs)/c
                         p_seat_rows.append({
-                            "席": f"{s}席",
-                            "打数": c,
-                            "平均着順": f"{avg_s:.4f}",
-                            "1着": f"{r1} ({r1/c*100:.2f}%)",
-                            "2着": f"{r2} ({r2/c*100:.2f}%)",
-                            "3着": f"{r3} ({r3/c*100:.2f}%)"
+                            "席": f"{s}席", "打数": c, "平均着順": f"{sum(rs)/c:.4f}",
+                            "1着": f"{rs.count(1)} ({rs.count(1)/c*100:.2f}%)",
+                            "2着": f"{rs.count(2)} ({rs.count(2)/c*100:.2f}%)",
+                            "3着": f"{rs.count(3)} ({rs.count(3)/c*100:.2f}%)"
                         })
-                if p_seat_rows:
-                    st.markdown("##### 🪑 席別成績")
-                    st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
-                
-                st.divider()
-                
-                c_graph1, c_graph2 = st.columns(2)
-                with c_graph1:
-                    st.markdown("##### 📈 直近10戦の着順推移")
-                    recent_ranks = ranks[-10:]
-                    df_trend = pd.DataFrame({
-                        "戦数": range(1, len(recent_ranks) + 1),
-                        "着順": recent_ranks
-                    })
-                    line_chart = alt.Chart(df_trend).mark_line(point=True).encode(
-                        x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
-                        y=alt.Y("着順", scale=alt.Scale(domain=[3, 1]), title="着順"),
-                        tooltip=["戦数", "着順"]
-                    ).properties(height=300)
-                    st.altair_chart(line_chart, use_container_width=True)
-
-                with c_graph2:
-                    st.markdown("##### 📈 レーティング推移")
-                    df_rate = pd.DataFrame({
-                        "戦数": range(len(rate_history)),
-                        "Rate": rate_history
-                    })
-                    rate_chart = alt.Chart(df_rate).mark_line(color="orange", point=False).encode(
-                        x=alt.X("戦数", title="ゲーム数"),
-                        y=alt.Y("Rate", scale=alt.Scale(zero=False), title="レーティング"),
-                        tooltip=["戦数", "Rate"]
-                    ).properties(height=300)
-                    st.altair_chart(rate_chart, use_container_width=True)
-            
-            if compatibility:
-                st.divider()
-                st.subheader("🤝 対戦相手データ (TOP5)")
-                comp_data = []
-                for name, data in compatibility.items():
-                    comp_data.append({"名前": name, "同卓回数": data["count"], "相性スコア": data["score"]})
-                
-                df_comp = pd.DataFrame(comp_data)
-                
-                c_freq, c_good, c_bad = st.columns(3)
-                
-                with c_freq:
-                    st.markdown("**👬 同卓回数が多い**")
-                    df_freq = df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)
-                    st.dataframe(df_freq[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
-                with c_good:
-                    st.markdown("**💖 相性が良い (カモ)**")
-                    df_good = df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)
-                    st.dataframe(df_good[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
-                with c_bad:
-                    st.markdown("**💀 相性が悪い (天敵)**")
-                    df_bad = df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)
-                    st.dataframe(df_bad[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+                if p_seat_rows: st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
 
             st.divider()
-            st.markdown("#### 🀄 個人記録の更新")
-            df_mem = load_member_data()
-            
-            current_max = 0
-            current_yaku = 0
-            target_idx = df_mem.index[df_mem["名前"] == active_player].tolist()
-            
-            if target_idx:
-                idx = target_idx[0]
-                current_max = int(df_mem.at[idx, "最大飜数"])
-                current_yaku = int(df_mem.at[idx, "役満回数"])
-                
-                current_detail = ""
-                current_date = ""
-                if "最大飜数詳細" in df_mem.columns:
-                    current_detail = df_mem.at[idx, "最大飜数詳細"]
-                if "最大飜数記録日" in df_mem.columns:
-                    current_date = df_mem.at[idx, "最大飜数記録日"]
-            
-            with st.form("update_personal_stats"):
-                c_in1, c_in2 = st.columns(2)
-                with c_in1:
-                    new_max = st.number_input("最大飜数", min_value=0, value=current_max)
-                    new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail)
-                    new_date = st.text_input("記録日 (例: 2026/02/20)", value=current_date)
-                with c_in2:
-                    new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku)
-                
-                if st.form_submit_button("更新する"):
-                    if target_idx:
-                        df_mem.at[idx, "最大飜数"] = new_max
-                        df_mem.at[idx, "役満回数"] = new_yaku
-                        
-                        if "最大飜数詳細" in df_mem.columns:
-                            df_mem.at[idx, "最大飜数詳細"] = new_detail
-                        else:
-                            df_mem["最大飜数詳細"] = ""
-                            df_mem.at[idx, "最大飜数詳細"] = new_detail
-                            
-                        if "最大飜数記録日" in df_mem.columns:
-                            df_mem.at[idx, "最大飜数記録日"] = new_date
-                        else:
-                            df_mem["最大飜数記録日"] = ""
-                            df_mem.at[idx, "最大飜数記録日"] = new_date
-                            
-                        save_member_data(df_mem)
-                        st.success(f"{active_player}さんの記録を更新しました！")
-                        time.sleep(1)
-                        st.rerun()
-                    else:
-                        st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
+            c_graph1, c_graph2 = st.columns(2)
+            with c_graph1:
+                chart_count = min(len(ranks), 30)
+                section_title("📈", f"直近{chart_count}戦の着順推移")
+                recent_ranks = ranks[-chart_count:]
+                df_trend = pd.DataFrame({"戦数": range(1, len(recent_ranks) + 1), "着順": recent_ranks})
+                if len(recent_ranks) >= 5: df_trend["移動平均(5戦)"] = df_trend["着順"].rolling(window=5, min_periods=1).mean()
+                base = alt.Chart(df_trend).encode(x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"))
+                line_main = base.mark_line(point=alt.OverlayMarkDef(color="#f0c040", size=80), color="#f0c040", strokeWidth=2).encode(
+                    y=alt.Y("着順", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"), tooltip=["戦数", "着順"]
+                )
+                chart = line_main
+                if "移動平均(5戦)" in df_trend.columns:
+                    line_avg = base.mark_line(color="#5b9cf6", strokeWidth=1.5, strokeDash=[5, 3]).encode(
+                        y=alt.Y("移動平均(5戦)"), tooltip=["戦数", alt.Tooltip("移動平均(5戦)", format=".3f")]
+                    )
+                    chart = alt.layer(line_main, line_avg)
+                chart = chart.properties(height=280).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8")
+                st.altair_chart(chart, use_container_width=True)
 
-        else:
-            st.markdown(f"#### 📝 集計表")
-            render_paper_sheet(df_filtered)
+            with c_graph2:
+                section_title("📈", "レーティング推移")
+                if not rate_history: rate_history = [1500.0]
+                df_rate = pd.DataFrame({"戦数": range(len(rate_history)), "Rate": rate_history})
+                rate_chart = alt.Chart(df_rate).mark_line(color="#f0c040", point=False).encode(
+                    x=alt.X("戦数", title="ゲーム数"),
+                    y=alt.Y("Rate", scale=alt.Scale(zero=False), title="レーティング"),
+                    tooltip=["戦数", alt.Tooltip("Rate", format=".1f")]
+                ).properties(height=280).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8")
+                st.altair_chart(rate_chart, use_container_width=True)
+
+            if compatibility:
+                st.divider()
+                section_title("🤝", "対戦相手データ (TOP5)")
+                comp_data = [{"名前": n, "同卓回数": d["count"], "相性スコア": d["score"]} for n, d in compatibility.items()]
+                df_comp = pd.DataFrame(comp_data)
+                c_freq, c_good, c_bad = st.columns(3)
+                with c_freq:
+                    st.markdown("**👬 同卓回数**")
+                    st.dataframe(df_comp.sort_values("同卓回数", ascending=False).head(5).reset_index(drop=True)[["名前", "同卓回数"]], hide_index=True, use_container_width=True)
+                with c_good:
+                    st.markdown("**💖 相性が良い**")
+                    st.dataframe(df_comp.sort_values("相性スコア", ascending=False).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+                with c_bad:
+                    st.markdown("**💀 相性が悪い**")
+                    st.dataframe(df_comp.sort_values("相性スコア", ascending=True).head(5).reset_index(drop=True)[["名前", "相性スコア"]], hide_index=True, use_container_width=True)
+
+            st.divider()
+            with st.expander("🀄 個人記録の更新", expanded=False):
+                df_mem = load_member_data()
+                current_max, current_yaku = 0, 0
+                current_detail, current_date_str = "", ""
+                target_idx = df_mem.index[df_mem["名前"] == active_player].tolist()
+
+                if target_idx:
+                    idx = target_idx[0]
+                    current_max = int(df_mem.at[idx, "最大飜数"])
+                    current_yaku = int(df_mem.at[idx, "役満回数"])
+                    current_detail = df_mem.at[idx, "最大飜数詳細"] if "最大飜数詳細" in df_mem.columns else ""
+                    current_date_str = df_mem.at[idx, "最大飜数記録日"] if "最大飜数記録日" in df_mem.columns else ""
+
+                with st.form("update_personal_stats_page"):
+                    c_in1, c_in2 = st.columns(2)
+                    with c_in1:
+                        new_max = st.number_input("最大飜数", min_value=0, value=current_max, key="ps_max2")
+                        new_detail = st.text_input("最大飜数詳細 (役名など)", value=current_detail, key="ps_detail2")
+                        new_date_val = st.text_input("記録日 (例: 2026/02/20)", value=current_date_str, key="ps_date2")
+                    with c_in2:
+                        new_yaku = st.number_input("役満回数", min_value=0, value=current_yaku, key="ps_yaku2")
+                    if st.form_submit_button("💾 更新する", type="primary"):
+                        if target_idx:
+                            df_mem.at[idx, "最大飜数"] = new_max
+                            df_mem.at[idx, "役満回数"] = new_yaku
+                            if "最大飜数詳細" not in df_mem.columns: df_mem["最大飜数詳細"] = ""
+                            if "最大飜数記録日" not in df_mem.columns: df_mem["最大飜数記録日"] = ""
+                            df_mem.at[idx, "最大飜数詳細"] = new_detail
+                            df_mem.at[idx, "最大飜数記録日"] = new_date_val
+                            save_member_data(df_mem)
+                            st.success(f"✅ {active_player}さんの記録を更新しました！")
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("メンバー登録されていません。「メンバー管理」から登録してください。")
+    else:
+        section_title("📝", "集計表")
+        render_paper_sheet(df_filtered)
+
 
 # --- ランキング画面 ---
 def page_ranking():
+    render_top_nav("ranking")
     st.title("🏆 月間・通算ランキング")
-    
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
+    render_pending_bar(location_key="ranking")
 
-    df = load_score_data()
+    df = load_score_data_effective()
     if df.empty:
         st.info("データがありません")
         return
 
-    # 日付から「YYYY年MM月」のリストを作成
     valid_dates = pd.to_datetime(df["日時Obj"], errors='coerce').dropna()
     if not valid_dates.empty:
         year_months = valid_dates.dt.strftime('%Y年%m月').unique().tolist()
         year_months = sorted(year_months, reverse=True)
+        min_date, max_date = valid_dates.min().date(), valid_dates.max().date()
     else:
         year_months = [datetime.now(timezone(timedelta(hours=9), 'JST')).strftime('%Y年%m月')]
+        min_date = max_date = date.today()
 
-    c1, c2 = st.columns(2)
+    c1, c2 = st.columns([2, 1])
     with c1:
-        options = year_months + ["通算"]
-        selected_month = st.selectbox("📅 集計月を選択", options, index=0)
+        options = year_months + ["通算", "カスタム期間"]
+        selected_period = st.selectbox("📅 集計期間", options, index=0, key="ranking_period")
+    with c2:
+        min_games = st.number_input("規定打数", min_value=1, value=5, help="これ未満は非表示")
 
-    # 選択された月でデータをフィルタリング
-    if selected_month != "通算":
-        df["年月"] = pd.to_datetime(df["日時Obj"], errors='coerce').dt.strftime('%Y年%m月')
-        df_filtered = df[df["年月"] == selected_month].copy()
-    else:
+    if selected_period == "カスタム期間":
+        date_range = st.date_input("📅 期間を指定", value=(min_date, max_date), min_value=min_date, max_value=max_date, key="ranking_custom_date")
+        if isinstance(date_range, tuple) and len(date_range) == 2:
+            start_d, end_d = date_range
+            mask = (df["論理日付"] >= start_d) & (df["論理日付"] <= end_d)
+            df_filtered = df[mask]
+        else: df_filtered = df
+    elif selected_period == "通算":
         df_filtered = df.copy()
+    else:
+        df_tmp = df.copy()
+        df_tmp["年月"] = pd.to_datetime(df_tmp["日時Obj"], errors='coerce').dt.strftime('%Y年%m月')
+        df_filtered = df_tmp[df_tmp["年月"] == selected_period].copy()
 
     if df_filtered.empty:
         st.warning("指定された期間のデータはありません")
         return
 
-    # 時系列順を保証 (最初の100回計算のため)
     df_filtered = df_filtered.sort_values(["論理日付", "TableNo", "DailyNo"])
-
     records = []
     player_ranks = {}
     
@@ -1851,8 +2830,7 @@ def page_ranking():
                 except: r = 0
                 if r > 0:
                     records.append({"name": name, "rank": r, "date": row["論理日付"]})
-                    if name not in player_ranks:
-                        player_ranks[name] = []
+                    if name not in player_ranks: player_ranks[name] = []
                     player_ranks[name].append(r)
     
     if not records:
@@ -1860,66 +2838,46 @@ def page_ranking():
         return
 
     df_raw = pd.DataFrame(records)
-    
     stats = df_raw.groupby("name").agg(
-        games=("rank", "count"),
-        avg_rank=("rank", "mean"),
-        first_count=("rank", lambda x: (x==1).sum()),
-        third_count=("rank", lambda x: (x==3).sum()),
+        games=("rank", "count"), avg_rank=("rank", "mean"),
+        first_count=("rank", lambda x: (x==1).sum()), third_count=("rank", lambda x: (x==3).sum()),
         days=("date", "nunique") 
     ).reset_index()
 
-    # 最初の100回平均の計算
     def get_first_100_avg(name):
         ranks = player_ranks.get(name, [])
         first_100 = ranks[:100]
-        if len(first_100) > 0:
-            return sum(first_100) / len(first_100)
+        if len(first_100) > 0: return sum(first_100) / len(first_100)
         return 0.0
 
     stats["first_100_avg"] = stats["name"].apply(get_first_100_avg)
-
     stats["games_per_day"] = stats["games"] / stats["days"]
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     
-    # レーティングと段位の追加
     latest_ratings = get_latest_ratings(df_filtered)
     stats["rating"] = stats["name"].map(lambda x: latest_ratings.get(x, 1500.0))
     stats["dan"] = stats["rating"].apply(get_dan_name)
 
-    # ゲスト/スタッフ分類
     stats["type"] = stats["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
-    
-    # 名前の（）を削除
     stats["name"] = stats["name"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
 
-    stats_guest = stats[stats["type"] == "guest"]
-    stats_staff = stats[stats["type"] == "staff"]
-    
-    min_games = st.slider("規定打数 (これ以下の人はランキングに表示しません)", 1, 50, 5)
-    
-    # フィルタリング
-    stats_guest = stats_guest[stats_guest["games"] >= min_games]
-    stats_staff = stats_staff[stats_staff["games"] >= min_games]
+    stats_guest = stats[(stats["type"] == "guest") & (stats["games"] >= min_games)]
+    stats_staff = stats[(stats["type"] == "staff") & (stats["games"] >= min_games)]
     
     if stats_guest.empty and stats_staff.empty:
         st.warning(f"打数が {min_games} 回以上のプレイヤーがいません。")
         return
 
     st.write("---")
-    
     t1, t2, t3, t4, t5, t6, t7 = st.tabs(["📊 打数", "📈 レート", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率", "💥 最大飜数", "🀅 役満回数"])
     
     def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None):
         c1, c2 = st.columns(2)
-        
         def render_table(df_subset):
             if not df_subset.empty:
-                res = df_subset.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(10)
+                res = df_subset.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
                 res["順位"] = res.index + 1
-                
-                # 指定されたフォーマットの適用
                 if format_func and val_col and val_col not in ["games", "avg_rank"]:
                     res[val_col] = res[val_col].map(format_func)
                 elif val_col == "avg_rank":
@@ -1927,8 +2885,6 @@ def page_ranking():
                     res["first_100_avg"] = res["first_100_avg"].map('{:.4f}'.format)
                 
                 cols = ["順位", "name"]
-                
-                # 表示項目の切り替え
                 if val_col == "games":
                     cols.extend(["games", "games_per_day"])
                     rename_map = {"name":"名前", "games":"打数", "games_per_day":"平均打数/日"}
@@ -1950,83 +2906,54 @@ def page_ranking():
                 st.info("データなし")
 
         with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
+            st.markdown("### 🧑‍🤝‍🧑 お客さん Top20")
             render_table(df_g)
         with c2:
-            st.markdown("### 👔 スタッフ Top10")
+            st.markdown("### 👔 スタッフ Top20")
             render_table(df_s)
 
-    with t1:
-        show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
-    with t2:
-        show_ranking_split(stats_guest, stats_staff, "rating", False, '{:.1f}'.format, "rating")
-    with t3:
-        show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.4f}'.format, "avg_rank")
-    with t4:
-        show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.2f}%'.format, "top_rate")
-    with t5:
-        show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.2f}%'.format, "last_avoid_rate")
+    with t1: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
+    with t2: show_ranking_split(stats_guest, stats_staff, "rating", False, '{:.1f}'.format, "rating")
+    with t3: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.4f}'.format, "avg_rank")
+    with t4: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.2f}%'.format, "top_rate")
+    with t5: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.2f}%'.format, "last_avoid_rate")
 
-    # --- メンバーデータのランキング ---
     df_mem = load_member_data()
     df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
     df_mem["名前"] = df_mem["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
     mem_g = df_mem[df_mem["type"] == "guest"]
     mem_s = df_mem[df_mem["type"] == "staff"]
     
-    def show_mem_ranking(df_g, df_s, col, label):
+    def show_mem_ranking(df_g, df_s, col):
         c1, c2 = st.columns(2)
-        with c1:
-            st.markdown("### 🧑‍🤝‍🧑 お客さん Top10")
-            if not df_g.empty:
-                res = df_g.sort_values(col, ascending=False).reset_index(drop=True).head(10)
-                res = res[res[col] > 0]
-                if not res.empty:
-                    res["順位"] = res.index + 1
-                    cols = ["順位", "名前", col]
-                    if col == "最大飜数" and "最大飜数詳細" in res.columns:
-                        cols.append("最大飜数詳細")
-                    if col == "最大飜数" and "最大飜数記録日" in res.columns:
-                        cols.append("最大飜数記録日")
-                        
-                    st.dataframe(res[cols], hide_index=True, use_container_width=True)
+        for col_obj, df_r, title, icon in [(c1, df_g, "お客さん", "🧑‍🤝‍🧑"), (c2, df_s, "スタッフ", "👔")]:
+            with col_obj:
+                st.markdown(f"#### {icon} {title} Top20")
+                if not df_r.empty:
+                    res = df_r.sort_values(col, ascending=False).reset_index(drop=True).head(20)
+                    res = res[res[col] > 0]
+                    if not res.empty:
+                        res["順位"] = res.index + 1
+                        cols = ["順位", "名前", col]
+                        if col == "最大飜数":
+                            for extra in ["最大飜数詳細", "最大飜数記録日"]:
+                                if extra in res.columns: cols.append(extra)
+                        st.dataframe(res[cols], hide_index=True, use_container_width=True)
+                    else: st.info("データなし")
                 else: st.info("データなし")
-            else: st.info("データなし")
-        with c2:
-            st.markdown("### 👔 スタッフ Top10")
-            if not df_s.empty:
-                res = df_s.sort_values(col, ascending=False).reset_index(drop=True).head(10)
-                res = res[res[col] > 0]
-                if not res.empty:
-                    res["順位"] = res.index + 1
-                    cols = ["順位", "名前", col]
-                    if col == "最大飜数" and "最大飜数詳細" in res.columns:
-                        cols.append("最大飜数詳細")
-                    if col == "最大飜数" and "最大飜数記録日" in res.columns:
-                        cols.append("最大飜数記録日")
-                        
-                    st.dataframe(res[cols], hide_index=True, use_container_width=True)
-                else: st.info("データなし")
-            else: st.info("データなし")
 
-    with t6:
-        show_mem_ranking(mem_g, mem_s, "最大飜数", "最大飜数")
-    with t7:
-        show_mem_ranking(mem_g, mem_s, "役満回数", "役満回数")
+    with t6: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t7: show_mem_ranking(mem_g, mem_s, "役満回数")
 
-# --- ログ閲覧画面 ---
+# --- ログ画面 ---
 def page_logs():
-    st.title("📜 修正・削除ログ")
-    if st.button("🏠 ホームに戻る"):
-        st.session_state["page"] = "home"
-        st.rerun()
-    
+    render_top_nav("logs")
+    st.title("📜 操作ログ")
+    render_pending_bar(location_key="logs")
+
     df_logs = load_log_data()
-    
     if not df_logs.empty and "操作" in df_logs.columns:
-        target_actions = ["修正", "削除"]
-        df_logs = df_logs[df_logs["操作"].isin(target_actions)]
-    
+        df_logs = df_logs[df_logs["操作"].isin(["修正", "削除"])]
     if not df_logs.empty and "GameNo" in df_logs.columns:
         df_logs = df_logs.rename(columns={"GameNo": "DailyNo"})
 
@@ -2036,28 +2963,21 @@ def page_logs():
         st.dataframe(df_logs, use_container_width=True, hide_index=True)
 
 # ==========================================
-# 6. メインルーティング
+# 7. メインルーティング
 # ==========================================
 if "page" not in st.session_state:
     st.session_state["page"] = "home"
 
-if st.session_state["page"] == "home":
-    page_home()
-elif st.session_state["page"] == "members":
-    page_members()
-elif st.session_state["page"] == "input":
-    page_input()
-elif st.session_state["page"] == "history":
-    page_history()
-elif st.session_state["page"] == "edit":
-    page_edit()
-elif st.session_state["page"] == "ranking":
-    page_ranking()
-elif st.session_state["page"] == "profit":
-    page_profit()
-elif st.session_state["page"] == "vs":
-    page_vs()
-elif st.session_state["page"] == "logs":
-    page_logs()
-else:
-    page_home()
+page = st.session_state["page"]
+if page == "home":       page_home()
+elif page == "personal": page_personal()
+elif page == "members":  page_members()
+elif page == "input":    page_input()
+elif page == "history":  page_history()
+elif page == "versus2":  page_versus2()
+elif page == "versus3":  page_versus3()
+elif page == "edit":     page_edit()
+elif page == "ranking":  page_ranking()
+elif page == "profit":   page_profit()
+elif page == "logs":     page_logs()
+else:                    page_home()
