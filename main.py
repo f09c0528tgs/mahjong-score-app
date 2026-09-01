@@ -223,63 +223,89 @@ hide_style = """
         overflow-x: auto !important;
         flex-wrap: nowrap !important;
     }
-    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
-        height: 4px;
-    }
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar { height: 4px; }
     .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb {
         background: var(--border-strong);
         border-radius: 2px;
     }
-    /* 非選択タブ: 明るいカード背景 + 白テキスト */
-    .stTabs [data-baseweb="tab"] {
-        background: #2a2e42 !important;
+
+    /* ========== 非選択タブ: 明るいカード背景 ========== */
+    .stTabs [data-baseweb="tab"],
+    .stTabs [role="tab"],
+    .stTabs button[role="tab"] {
+        background: #2f3550 !important;
         border-radius: var(--radius-sm) !important;
         font-family: 'Noto Sans JP', sans-serif !important;
-        font-size: 0.85rem !important;
-        font-weight: 600 !important;
-        padding: 0.5rem 1rem !important;
-        border: 1px solid rgba(255,255,255,0.15) !important;
+        font-size: 0.9rem !important;
+        font-weight: 700 !important;
+        padding: 0.55rem 1.1rem !important;
+        border: 1.5px solid rgba(255,255,255,0.25) !important;
         transition: all 0.15s ease !important;
         white-space: nowrap !important;
         flex-shrink: 0 !important;
+        min-height: 42px !important;
     }
-    /* 内部のテキスト要素 (button/p/div/span/label) に白色を強制 */
-    .stTabs button[data-baseweb="tab"],
-    .stTabs button[data-baseweb="tab"] > *,
-    .stTabs button[data-baseweb="tab"] p,
-    .stTabs button[data-baseweb="tab"] div,
-    .stTabs button[data-baseweb="tab"] span,
-    .stTabs button[data-baseweb="tab"] [data-testid="stMarkdownContainer"],
-    .stTabs button[data-baseweb="tab"] [data-testid="stMarkdownContainer"] * {
+
+    /* 【最強セレクタ】タブ内部のあらゆる要素に白色を強制 */
+    .stTabs [data-baseweb="tab"] *,
+    .stTabs [role="tab"] *,
+    .stTabs button[role="tab"] *,
+    .stTabs [data-baseweb="tab"] p,
+    .stTabs [data-baseweb="tab"] div,
+    .stTabs [data-baseweb="tab"] span,
+    .stTabs [data-baseweb="tab"] label,
+    .stTabs [role="tab"] p,
+    .stTabs [role="tab"] div,
+    .stTabs [role="tab"] span,
+    .stTabs [role="tab"] label,
+    .stTabs [data-baseweb="tab"] [data-testid="stMarkdownContainer"],
+    .stTabs [data-baseweb="tab"] [data-testid="stMarkdownContainer"] *,
+    .stTabs [role="tab"] [data-testid="stMarkdownContainer"],
+    .stTabs [role="tab"] [data-testid="stMarkdownContainer"] * {
         color: #ffffff !important;
         opacity: 1 !important;
+        font-weight: 700 !important;
     }
-    /* ホバー時 */
-    .stTabs button[data-baseweb="tab"]:hover {
-        background: rgba(240,192,64,0.15) !important;
+
+    /* タブ本体そのものの文字色も指定 (直接テキストが入っているケース) */
+    .stTabs [data-baseweb="tab"],
+    .stTabs [role="tab"] {
+        color: #ffffff !important;
+    }
+
+    /* ========== ホバー時 ========== */
+    .stTabs [data-baseweb="tab"]:hover,
+    .stTabs [role="tab"]:hover {
+        background: rgba(240,192,64,0.2) !important;
         border-color: var(--accent) !important;
     }
-    .stTabs button[data-baseweb="tab"]:hover,
-    .stTabs button[data-baseweb="tab"]:hover *,
-    .stTabs button[data-baseweb="tab"]:hover p,
-    .stTabs button[data-baseweb="tab"]:hover div,
-    .stTabs button[data-baseweb="tab"]:hover span {
+    .stTabs [data-baseweb="tab"]:hover *,
+    .stTabs [role="tab"]:hover * {
         color: var(--accent-bright) !important;
     }
-    /* 選択中のタブ - 金背景に黒文字で最大限強調 */
-    .stTabs button[data-baseweb="tab"][aria-selected="true"] {
+
+    /* ========== 選択中のタブ: 金背景+黒文字で最大強調 ========== */
+    .stTabs [data-baseweb="tab"][aria-selected="true"],
+    .stTabs [role="tab"][aria-selected="true"] {
         background: var(--accent) !important;
         border-color: var(--accent) !important;
-        font-weight: 800 !important;
-        box-shadow: 0 2px 10px rgba(240,192,64,0.4) !important;
-    }
-    .stTabs button[data-baseweb="tab"][aria-selected="true"],
-    .stTabs button[data-baseweb="tab"][aria-selected="true"] *,
-    .stTabs button[data-baseweb="tab"][aria-selected="true"] p,
-    .stTabs button[data-baseweb="tab"][aria-selected="true"] div,
-    .stTabs button[data-baseweb="tab"][aria-selected="true"] span {
+        font-weight: 900 !important;
+        box-shadow: 0 3px 12px rgba(240,192,64,0.5) !important;
         color: #0f1117 !important;
     }
+    .stTabs [data-baseweb="tab"][aria-selected="true"] *,
+    .stTabs [role="tab"][aria-selected="true"] *,
+    .stTabs [data-baseweb="tab"][aria-selected="true"] p,
+    .stTabs [data-baseweb="tab"][aria-selected="true"] div,
+    .stTabs [data-baseweb="tab"][aria-selected="true"] span,
+    .stTabs [role="tab"][aria-selected="true"] p,
+    .stTabs [role="tab"][aria-selected="true"] div,
+    .stTabs [role="tab"][aria-selected="true"] span {
+        color: #0f1117 !important;
+        font-weight: 900 !important;
+    }
+
+    /* ========== タブパネル ========== */
     .stTabs [data-baseweb="tab-panel"] {
         background: var(--bg-card) !important;
         border: 1px solid var(--border) !important;
@@ -287,7 +313,8 @@ hide_style = """
         border-radius: 0 0 var(--radius) var(--radius) !important;
         padding: 1.2rem !important;
     }
-    /* 標準の下線ハイライトを非表示 */
+
+    /* 標準のハイライト下線は非表示 */
     .stTabs [data-baseweb="tab-highlight"],
     .stTabs [data-baseweb="tab-border"] {
         display: none !important;
@@ -1421,7 +1448,7 @@ def _rating_adjust_factor(games):
         return 0.2
     return max(0.2, 1.0 - games * 0.002)
 
-def compute_ratings_from_scratch(df_score, until_dt=None):
+def compute_ratings_from_scratch(df_score, until_dt=None, from_dt=None):
     """
     scoreデータから全プレイヤーのレーティング/段位を1試合ずつ順に計算して返す。
     Returns: dict {name: {"レート": float, "対局数": int, "段位Index": int, "段位pt": float}}
@@ -1431,6 +1458,7 @@ def compute_ratings_from_scratch(df_score, until_dt=None):
     Args:
         df_score: 対局データDataFrame
         until_dt: 指定した場合、この日時 (pd.Timestamp) 以前の対局のみを集計対象とする
+        from_dt: 指定した場合、この日時以降の対局のみを集計対象とする
     """
     ratings = {}  # name -> dict
 
@@ -1449,7 +1477,11 @@ def compute_ratings_from_scratch(df_score, until_dt=None):
     # 時系列で並べる (GameNoを最終キーにして順序を確定)
     df = df_score.copy()
     if "日時Obj" in df.columns:
-        # 期間指定
+        # NaTを含む行を除外 (比較でエラーになるため)
+        df = df[df["日時Obj"].notna()]
+        # 期間指定 (from/until)
+        if from_dt is not None:
+            df = df[df["日時Obj"] >= from_dt]
         if until_dt is not None:
             df = df[df["日時Obj"] <= until_dt]
         # GameNoを最終ソートキーにして順序を確定 (同時刻の対局でも一貫した順序)
@@ -1469,6 +1501,7 @@ def compute_ratings_from_scratch(df_score, until_dt=None):
         valid = True
         for seat in ["A", "B", "C"]:
             n = row.get(f"{seat}さん", "")
+            n = str(n).strip() if n else ""
             try:
                 r = int(float(row.get(f"{seat}着順", 0)))
             except:
@@ -1512,12 +1545,12 @@ def compute_ratings_from_scratch(df_score, until_dt=None):
             ratings[name]["レート"] = cur + delta
             ratings[name]["対局数"] = games + 1
 
-            # 段位ポイント
+            # ---- 段位ポイント計算 ----
             dan_idx = ratings[name]["段位Index"]
             dan_pts = _get_dan_rank_points(dan_idx, rank)
             new_pts = ratings[name]["段位pt"] + dan_pts
 
-            # 昇段判定: 昇段閾値以上ならその分を消費して次段へ
+            # 昇段判定: 昇段閾値以上ならその分を消費して次段へ (連鎖昇段対応)
             up_threshold = DAN_TABLE[dan_idx][1]
             while new_pts >= up_threshold and dan_idx < len(DAN_TABLE) - 1:
                 new_pts -= up_threshold
@@ -1525,14 +1558,19 @@ def compute_ratings_from_scratch(df_score, until_dt=None):
                 up_threshold = DAN_TABLE[dan_idx][1]
 
             # 降段判定: 降段閾値未満なら前段へ (初段以上のみ降段対象)
-            # 降段時は「前段位の昇段閾値の半分」ではなく、
-            # 「新段位の昇段閾値 - 1」= 昇段直前の位置から再スタート (再降段しやすいが再昇段もしやすい)
-            # とすると自然。ただし0からリスタートよりは緩やか。
-            while new_pts < DAN_TABLE[dan_idx][2] and dan_idx > 0 and DAN_TABLE[dan_idx][2] > -999:
+            # 降段時は「新しい段位(前段)の昇段閾値の半分」から再スタート
+            # → すぐの再降段は起きにくい(半分なので閾値0との差が大きい)
+            # → 再昇段も無理ではない (半分から始まるので)
+            # 【安全策】無限ループ防止のため、最大10回まで
+            safety = 10
+            while (new_pts < DAN_TABLE[dan_idx][2]
+                   and dan_idx > 0
+                   and DAN_TABLE[dan_idx][2] > -999
+                   and safety > 0):
                 dan_idx -= 1
-                # 前段位の昇段閾値の半分から再開 (旧仕様と同じだが、明示的にコメント)
-                # これにより「降段直後にすぐ昇段」は起きにくい (半分から再開なので)
-                new_pts = DAN_TABLE[dan_idx][1] // 2
+                # 新段位の昇段閾値の半分から再開
+                new_pts = DAN_TABLE[dan_idx][1] / 2.0
+                safety -= 1
 
             ratings[name]["段位Index"] = dan_idx
             ratings[name]["段位pt"] = new_pts
@@ -1624,22 +1662,29 @@ def recompute_and_save_ratings():
     _save_rating_df(df)
 
 @st.cache_data(ttl=10)
-def load_ratings_effective(until_dt_iso=None):
+def load_ratings_effective(until_dt_iso=None, from_dt_iso=None):
     """
     レーティングデータをDataFrameで取得。実効スコア(バッファ含む)を用いた計算を返す。
 
     Args:
-        until_dt_iso: ISO形式の日時文字列。指定した場合、この時点までのレートを再現。
-                     Noneなら現時点までの全対局。
+        until_dt_iso: ISO形式の日時文字列。この時点までのレートを再現。
+        from_dt_iso: ISO形式の日時文字列。この時点以降のデータのみで計算。
+                     両方指定すれば区間指定になる。
     """
     df_score = load_score_data_effective()
     until_dt = None
+    from_dt = None
     if until_dt_iso:
         try:
             until_dt = pd.Timestamp(until_dt_iso)
         except:
             until_dt = None
-    ratings = compute_ratings_from_scratch(df_score, until_dt=until_dt)
+    if from_dt_iso:
+        try:
+            from_dt = pd.Timestamp(from_dt_iso)
+        except:
+            from_dt = None
+    ratings = compute_ratings_from_scratch(df_score, until_dt=until_dt, from_dt=from_dt)
     return ratings_dict_to_df(ratings)
 
 def get_player_rating(name):
@@ -4001,9 +4046,9 @@ def page_ranking():
     # ---- レーティング/段位用の統計データを準備 (全期間版・キャプション用) ----
     # 実際の表示は各タブ内で期間指定に応じて再計算する
 
-    def build_rating_stats(until_dt_iso=None):
-        """指定時点までのレーティングデータを準備し、guest/staffに分けて返す"""
-        df_r = load_ratings_effective(until_dt_iso=until_dt_iso)
+    def build_rating_stats(until_dt_iso=None, from_dt_iso=None):
+        """指定期間のレーティングデータを準備し、guest/staffに分けて返す"""
+        df_r = load_ratings_effective(until_dt_iso=until_dt_iso, from_dt_iso=from_dt_iso)
         if df_r.empty:
             return pd.DataFrame(), pd.DataFrame()
         df_r_clean = df_r.copy()
@@ -4016,7 +4061,13 @@ def page_ranking():
         return g, s
 
     def rating_period_selector(key_suffix):
-        """期間指定UI: 全期間 or 特定の年月末時点までのレートを見る"""
+        """
+        期間指定UI: 3モード
+          1. 全期間 (現時点までの累積) - デフォルト
+          2. ある月末時点までの累積レート
+          3. 選択した月(複数選択可)の対局だけを集計 (その月/月々の成績)
+        Returns: (until_dt_iso, from_dt_iso) のタプル
+        """
         # スコアデータから利用可能な年月を取得
         df_all = load_score_data_effective()
         available_months_list = []
@@ -4025,26 +4076,133 @@ def page_ranking():
             df_tmp["年月"] = df_tmp["日時Obj"].dt.to_period("M")
             available_months_list = sorted(df_tmp["年月"].dropna().unique(), reverse=True)
 
-        month_labels = ["全期間 (現時点)"] + [f"{m}月末時点" for m in available_months_list]
-        c1_, c2_ = st.columns([2, 1])
+        c1_, c2_ = st.columns([1, 2])
         with c1_:
-            selected = st.selectbox(
-                "🕐 時点指定",
-                month_labels, index=0,
-                key=f"rating_period_{key_suffix}",
-                help="選択した時点までの対局データで再計算します。過去のレートを再現できます。"
+            mode = st.radio(
+                "📅 集計モード",
+                ["全期間 (累積)", "月末時点 (累積)", "月別 (選択月のみ)"],
+                key=f"rating_mode_{key_suffix}",
+                horizontal=False,
+                label_visibility="collapsed",
             )
-        # 選択された時点のISO日時を返す
-        if selected == "全期間 (現時点)":
-            return None
-        # "2026-01月末時点" のような形式から年月を取り出し、その月の月末23:59:59を返す
-        try:
-            ym_str = selected.replace("月末時点", "")
-            period = pd.Period(ym_str, freq="M")
-            end_of_month = period.end_time  # その月の最後の秒 (23:59:59.999999999)
-            return end_of_month.isoformat()
-        except:
-            return None
+            st.caption(
+                "**全期間**: 現時点までの累積レート\n\n"
+                "**月末時点**: 選んだ月末までの累積レート\n\n"
+                "**月別**: 選んだ月(複数選択可)の対局だけで再計算"
+            )
+
+        with c2_:
+            if mode == "全期間 (累積)":
+                st.markdown("_全期間の累積で計算します_")
+                return (None, None)
+
+            elif mode == "月末時点 (累積)":
+                if not available_months_list:
+                    st.info("対局データがありません")
+                    return (None, None)
+                month_labels = [f"{m}" for m in available_months_list]
+                selected = st.selectbox(
+                    "🕐 何月末時点までを集計するか",
+                    month_labels,
+                    key=f"rating_month_end_{key_suffix}",
+                )
+                try:
+                    period = pd.Period(selected, freq="M")
+                    until_iso = period.end_time.isoformat()
+                    return (until_iso, None)
+                except:
+                    return (None, None)
+
+            elif mode == "月別 (選択月のみ)":
+                if not available_months_list:
+                    st.info("対局データがありません")
+                    return (None, None)
+                month_labels = [f"{m}" for m in available_months_list]
+                selected_months = st.multiselect(
+                    "📆 集計する月を選択 (複数可)",
+                    month_labels,
+                    default=[month_labels[0]] if month_labels else [],
+                    key=f"rating_months_multi_{key_suffix}",
+                    help="複数選択した場合、それらの月に絞ったデータで再計算します。連続していない月でもOKです。",
+                )
+                if not selected_months:
+                    st.warning("月を1つ以上選択してください")
+                    return (None, None)
+
+                # 選ばれた月をPeriodに変換
+                selected_periods = []
+                for lbl in selected_months:
+                    try:
+                        selected_periods.append(pd.Period(lbl, freq="M"))
+                    except:
+                        pass
+                if not selected_periods:
+                    return (None, None)
+
+                # 選んだ月群の最も古い月の初日〜最新月の月末を「範囲」として指定
+                # ただし途中の月を除外する場合、単純な from/until では絞りきれない
+                # → 特別な戻り値 (list of periods) にして、compute側で判定する
+                # ここでは代替として、範囲だけを返し、途中の月除外は compute 側で対応することにする
+                sorted_periods = sorted(selected_periods)
+                from_iso = sorted_periods[0].start_time.isoformat()
+                until_iso = sorted_periods[-1].end_time.isoformat()
+
+                # 選択月が「連続」しているかチェック。連続なら普通に区間指定でOK。
+                # 不連続なら「選択月のみ」フィルタが必要になるので別処理
+                all_between = pd.period_range(sorted_periods[0], sorted_periods[-1], freq="M")
+                if len(all_between) == len(sorted_periods):
+                    # 連続している - 単純な区間指定
+                    st.markdown(f"📊 **{sorted_periods[0]} 〜 {sorted_periods[-1]}** の期間で計算")
+                    return (until_iso, from_iso)
+                else:
+                    # 不連続 - 特別処理: 選択月をセッションに保存して build 側で使う
+                    st.markdown(f"📊 選択された **{len(selected_periods)}ヶ月分** で計算 (不連続選択)")
+                    st.session_state[f"_rating_selected_periods_{key_suffix}"] = [str(p) for p in sorted_periods]
+                    return ("__MULTI__", key_suffix)
+
+        return (None, None)
+
+    def build_rating_stats_with_periods(period_result):
+        """
+        period_result: rating_period_selector の戻り値 (until_iso, from_iso)
+                       until_iso="__MULTI__" の場合は from_iso が key_suffix となる
+        """
+        until_iso, from_iso = period_result
+        if until_iso == "__MULTI__":
+            # 不連続月選択: セッションから選択月リストを取得し、それらの月のデータだけで計算
+            key_suffix = from_iso
+            selected_period_strs = st.session_state.get(f"_rating_selected_periods_{key_suffix}", [])
+            if not selected_period_strs:
+                return pd.DataFrame(), pd.DataFrame()
+
+            # 対局データを月フィルタしてから計算
+            df_all = load_score_data_effective()
+            if df_all.empty or "日時Obj" not in df_all.columns:
+                return pd.DataFrame(), pd.DataFrame()
+
+            df_all = df_all[df_all["日時Obj"].notna()]
+            df_all = df_all.copy()
+            df_all["_ym"] = df_all["日時Obj"].dt.to_period("M").astype(str)
+            df_filtered = df_all[df_all["_ym"].isin(selected_period_strs)]
+
+            if df_filtered.empty:
+                return pd.DataFrame(), pd.DataFrame()
+
+            ratings = compute_ratings_from_scratch(df_filtered)
+            df_r = ratings_dict_to_df(ratings)
+            if df_r.empty:
+                return pd.DataFrame(), pd.DataFrame()
+
+            df_r_clean = df_r.copy()
+            df_r_clean["name"] = df_r_clean["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+            st_r = df_r_clean[["name", "レート", "対局数", "段位名", "段位色", "段位Index", "段位pt", "昇段まで"]].copy()
+            st_r = st_r.rename(columns={"対局数": "games"})
+            st_r["type"] = st_r["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+            g = st_r[(st_r["type"] == "guest") & (st_r["games"] >= min_games)]
+            s = st_r[(st_r["type"] == "staff") & (st_r["games"] >= min_games)]
+            return g, s
+        else:
+            return build_rating_stats(until_dt_iso=until_iso, from_dt_iso=from_iso)
 
     def show_rating_ranking(df_g, df_s):
         """レーティングランキング (段位バッジ + レートの見せ方)"""
@@ -4123,13 +4281,13 @@ def page_ranking():
 
     with t1:
         st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +15 / 2着 −4 / 3着 −9 が基本pt。")
-        until_iso_rt = rating_period_selector("t1")
-        rating_guest_t1, rating_staff_t1 = build_rating_stats(until_dt_iso=until_iso_rt)
+        period_result_t1 = rating_period_selector("t1")
+        rating_guest_t1, rating_staff_t1 = build_rating_stats_with_periods(period_result_t1)
         show_rating_ranking(rating_guest_t1, rating_staff_t1)
     with t2:
         st.caption("段位が高い順で表示。同段位内は段位ptの多い順です。")
-        until_iso_dan = rating_period_selector("t2")
-        rating_guest_t2, rating_staff_t2 = build_rating_stats(until_dt_iso=until_iso_dan)
+        period_result_t2 = rating_period_selector("t2")
+        rating_guest_t2, rating_staff_t2 = build_rating_stats_with_periods(period_result_t2)
         show_dan_ranking(rating_guest_t2, rating_staff_t2)
     with t3: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
     with t4: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
