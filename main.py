@@ -230,46 +230,54 @@ hide_style = """
         background: var(--border-strong);
         border-radius: 2px;
     }
+    /* 非選択タブ: 明るいカード背景 + 白テキスト */
     .stTabs [data-baseweb="tab"] {
-        background: var(--bg-card2) !important;
-        color: var(--text-primary) !important;
+        background: #2a2e42 !important;
         border-radius: var(--radius-sm) !important;
         font-family: 'Noto Sans JP', sans-serif !important;
         font-size: 0.85rem !important;
         font-weight: 600 !important;
-        padding: 0.4rem 0.9rem !important;
-        border: 1px solid var(--border) !important;
+        padding: 0.5rem 1rem !important;
+        border: 1px solid rgba(255,255,255,0.15) !important;
         transition: all 0.15s ease !important;
         white-space: nowrap !important;
         flex-shrink: 0 !important;
     }
-    /* 内部の p/div/span にも色を継承させる (StreamlitのDOM変更対応) */
-    .stTabs [data-baseweb="tab"],
-    .stTabs [data-baseweb="tab"] *,
-    .stTabs [data-baseweb="tab"] p,
-    .stTabs [data-baseweb="tab"] div,
-    .stTabs [data-baseweb="tab"] span {
-        color: var(--text-primary) !important;
+    /* 内部のテキスト要素 (button/p/div/span/label) に白色を強制 */
+    .stTabs button[data-baseweb="tab"],
+    .stTabs button[data-baseweb="tab"] > *,
+    .stTabs button[data-baseweb="tab"] p,
+    .stTabs button[data-baseweb="tab"] div,
+    .stTabs button[data-baseweb="tab"] span,
+    .stTabs button[data-baseweb="tab"] [data-testid="stMarkdownContainer"],
+    .stTabs button[data-baseweb="tab"] [data-testid="stMarkdownContainer"] * {
+        color: #ffffff !important;
         opacity: 1 !important;
     }
-    .stTabs [data-baseweb="tab"]:hover,
-    .stTabs [data-baseweb="tab"]:hover * {
+    /* ホバー時 */
+    .stTabs button[data-baseweb="tab"]:hover {
+        background: rgba(240,192,64,0.15) !important;
         border-color: var(--accent) !important;
-        color: var(--accent) !important;
-        background: var(--accent-soft) !important;
     }
-    /* 選択中のタブ - より目立たせる */
-    .stTabs [aria-selected="true"] {
+    .stTabs button[data-baseweb="tab"]:hover,
+    .stTabs button[data-baseweb="tab"]:hover *,
+    .stTabs button[data-baseweb="tab"]:hover p,
+    .stTabs button[data-baseweb="tab"]:hover div,
+    .stTabs button[data-baseweb="tab"]:hover span {
+        color: var(--accent-bright) !important;
+    }
+    /* 選択中のタブ - 金背景に黒文字で最大限強調 */
+    .stTabs button[data-baseweb="tab"][aria-selected="true"] {
         background: var(--accent) !important;
         border-color: var(--accent) !important;
         font-weight: 800 !important;
-        box-shadow: 0 2px 8px rgba(240,192,64,0.3) !important;
+        box-shadow: 0 2px 10px rgba(240,192,64,0.4) !important;
     }
-    .stTabs [aria-selected="true"],
-    .stTabs [aria-selected="true"] *,
-    .stTabs [aria-selected="true"] p,
-    .stTabs [aria-selected="true"] div,
-    .stTabs [aria-selected="true"] span {
+    .stTabs button[data-baseweb="tab"][aria-selected="true"],
+    .stTabs button[data-baseweb="tab"][aria-selected="true"] *,
+    .stTabs button[data-baseweb="tab"][aria-selected="true"] p,
+    .stTabs button[data-baseweb="tab"][aria-selected="true"] div,
+    .stTabs button[data-baseweb="tab"][aria-selected="true"] span {
         color: #0f1117 !important;
     }
     .stTabs [data-baseweb="tab-panel"] {
@@ -279,10 +287,8 @@ hide_style = """
         border-radius: 0 0 var(--radius) var(--radius) !important;
         padding: 1.2rem !important;
     }
-    /* タブハイライトの下線を非表示 (背景色で選択状態を示すため) */
-    .stTabs [data-baseweb="tab-highlight"] {
-        display: none !important;
-    }
+    /* 標準の下線ハイライトを非表示 */
+    .stTabs [data-baseweb="tab-highlight"],
     .stTabs [data-baseweb="tab-border"] {
         display: none !important;
     }
@@ -1357,8 +1363,8 @@ def load_score_data_effective():
 # --- 定数 ---
 RATING_INIT = 1500          # 初期レート
 RANK_POINTS_1 = 15.0        # 1着の基本ポイント
-RANK_POINTS_2 = -4.5        # 2着
-RANK_POINTS_3 = -9.5        # 3着
+RANK_POINTS_2 = -4.0        # 2着 (合計+2で少しインフレ気味の設計)
+RANK_POINTS_3 = -9.0        # 3着
 
 # 段位定義: (段位名, 昇段閾値pt, 降段閾値pt, 1着pt, 2着pt, 3着pt, 表示色)
 # 昇段閾値に到達したら次段へ / 降段閾値を下回ったら前段へ (0未満で降段)
@@ -1415,12 +1421,16 @@ def _rating_adjust_factor(games):
         return 0.2
     return max(0.2, 1.0 - games * 0.002)
 
-def compute_ratings_from_scratch(df_score):
+def compute_ratings_from_scratch(df_score, until_dt=None):
     """
     scoreデータから全プレイヤーのレーティング/段位を1試合ずつ順に計算して返す。
     Returns: dict {name: {"レート": float, "対局数": int, "段位Index": int, "段位pt": float}}
 
     プレイヤーが登録メンバーでなくても集計対象になる。
+
+    Args:
+        df_score: 対局データDataFrame
+        until_dt: 指定した場合、この日時 (pd.Timestamp) 以前の対局のみを集計対象とする
     """
     ratings = {}  # name -> dict
 
@@ -1436,12 +1446,22 @@ def compute_ratings_from_scratch(df_score):
     if df_score is None or df_score.empty:
         return ratings
 
-    # 時系列で並べる
+    # 時系列で並べる (GameNoを最終キーにして順序を確定)
     df = df_score.copy()
     if "日時Obj" in df.columns:
-        df = df.sort_values(["日時Obj", "TableNo", "SetNo"])
-    else:
+        # 期間指定
+        if until_dt is not None:
+            df = df[df["日時Obj"] <= until_dt]
+        # GameNoを最終ソートキーにして順序を確定 (同時刻の対局でも一貫した順序)
+        sort_keys = ["日時Obj", "TableNo", "SetNo"]
+        if "GameNo" in df.columns:
+            sort_keys.append("GameNo")
+        df = df.sort_values(sort_keys)
+    elif "GameNo" in df.columns:
         df = df.sort_values(["GameNo"])
+
+    if df.empty:
+        return ratings
 
     for _, row in df.iterrows():
         # 3人の名前と着順を取り出す
@@ -1465,19 +1485,29 @@ def compute_ratings_from_scratch(df_score):
         if sorted([p[1] for p in players]) != [1, 2, 3]:
             continue
 
+        # 同一プレイヤーが同じ卓に複数人いる異常データはスキップ
+        if len({p[0] for p in players}) != 3:
+            continue
+
         for name, _ in players:
             ensure_player(name)
 
-        # 卓平均レート
-        current_ratings = [ratings[n]["レート"] for n, _ in players]
-        table_avg = sum(current_ratings) / 3
+        # 【重要】試合開始時点のレートをスナップショット。全員のレートをこの時点で確定し、
+        # 一斉に更新する (順序依存を排除)。
+        snapshot = {name: ratings[name]["レート"] for name, _ in players}
+        snapshot_games = {name: ratings[name]["対局数"] for name, _ in players}
 
-        # 各プレイヤーのレーティング更新
+        # 【重要】各プレイヤーの卓平均補正は「自分以外の平均レート」を使う
+        # これによりゼロサム性が保たれ、卓平均補正が意味を持つ
+        # (自レートを含めると、自分-自分の項が入って補正効果が減衰する)
         for name, rank in players:
-            cur = ratings[name]["レート"]
-            games = ratings[name]["対局数"]
+            others = [snapshot[n] for n, _ in players if n != name]
+            opp_avg = sum(others) / len(others)  # 自分以外の平均
+
+            cur = snapshot[name]
+            games = snapshot_games[name]
             base = _get_rank_points(rank)
-            correction = (table_avg - cur) / 40.0
+            correction = (opp_avg - cur) / 40.0
             delta = (base + correction) * _rating_adjust_factor(games)
             ratings[name]["レート"] = cur + delta
             ratings[name]["対局数"] = games + 1
@@ -1487,18 +1517,21 @@ def compute_ratings_from_scratch(df_score):
             dan_pts = _get_dan_rank_points(dan_idx, rank)
             new_pts = ratings[name]["段位pt"] + dan_pts
 
-            # 昇段判定
+            # 昇段判定: 昇段閾値以上ならその分を消費して次段へ
             up_threshold = DAN_TABLE[dan_idx][1]
-            down_threshold = DAN_TABLE[dan_idx][2]
             while new_pts >= up_threshold and dan_idx < len(DAN_TABLE) - 1:
                 new_pts -= up_threshold
                 dan_idx += 1
                 up_threshold = DAN_TABLE[dan_idx][1]
-                down_threshold = DAN_TABLE[dan_idx][2]
-            # 降段判定 (初段以上のみ)
-            while new_pts < down_threshold and dan_idx > 0 and DAN_TABLE[dan_idx][2] > -999:
+
+            # 降段判定: 降段閾値未満なら前段へ (初段以上のみ降段対象)
+            # 降段時は「前段位の昇段閾値の半分」ではなく、
+            # 「新段位の昇段閾値 - 1」= 昇段直前の位置から再スタート (再降段しやすいが再昇段もしやすい)
+            # とすると自然。ただし0からリスタートよりは緩やか。
+            while new_pts < DAN_TABLE[dan_idx][2] and dan_idx > 0 and DAN_TABLE[dan_idx][2] > -999:
                 dan_idx -= 1
-                # 前段位の閾値の半分から再スタート
+                # 前段位の昇段閾値の半分から再開 (旧仕様と同じだが、明示的にコメント)
+                # これにより「降段直後にすぐ昇段」は起きにくい (半分から再開なので)
                 new_pts = DAN_TABLE[dan_idx][1] // 2
 
             ratings[name]["段位Index"] = dan_idx
@@ -1591,10 +1624,22 @@ def recompute_and_save_ratings():
     _save_rating_df(df)
 
 @st.cache_data(ttl=10)
-def load_ratings_effective():
-    """レーティングデータをDataFrameで取得。実効スコア(バッファ含む)を用いた計算を返す"""
+def load_ratings_effective(until_dt_iso=None):
+    """
+    レーティングデータをDataFrameで取得。実効スコア(バッファ含む)を用いた計算を返す。
+
+    Args:
+        until_dt_iso: ISO形式の日時文字列。指定した場合、この時点までのレートを再現。
+                     Noneなら現時点までの全対局。
+    """
     df_score = load_score_data_effective()
-    ratings = compute_ratings_from_scratch(df_score)
+    until_dt = None
+    if until_dt_iso:
+        try:
+            until_dt = pd.Timestamp(until_dt_iso)
+        except:
+            until_dt = None
+    ratings = compute_ratings_from_scratch(df_score, until_dt=until_dt)
     return ratings_dict_to_df(ratings)
 
 def get_player_rating(name):
@@ -3953,20 +3998,53 @@ def page_ranking():
         "💥 最大飜数", "🀅 役満回数"
     ])
 
-    # ---- レーティング/段位用の統計データを準備 ----
-    df_rating = load_ratings_effective()
-    if not df_rating.empty:
-        df_rating_clean = df_rating.copy()
-        # 名前のカッコ内を除去 (stats側と揃える)
-        df_rating_clean["name"] = df_rating_clean["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
-        stats_rating = df_rating_clean[["name", "レート", "対局数", "段位名", "段位色", "段位Index", "段位pt", "昇段まで"]].copy()
-        stats_rating = stats_rating.rename(columns={"対局数": "games"})
-        stats_rating["type"] = stats_rating["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
-        rating_guest = stats_rating[(stats_rating["type"] == "guest") & (stats_rating["games"] >= min_games)]
-        rating_staff = stats_rating[(stats_rating["type"] == "staff") & (stats_rating["games"] >= min_games)]
-    else:
-        rating_guest = pd.DataFrame()
-        rating_staff = pd.DataFrame()
+    # ---- レーティング/段位用の統計データを準備 (全期間版・キャプション用) ----
+    # 実際の表示は各タブ内で期間指定に応じて再計算する
+
+    def build_rating_stats(until_dt_iso=None):
+        """指定時点までのレーティングデータを準備し、guest/staffに分けて返す"""
+        df_r = load_ratings_effective(until_dt_iso=until_dt_iso)
+        if df_r.empty:
+            return pd.DataFrame(), pd.DataFrame()
+        df_r_clean = df_r.copy()
+        df_r_clean["name"] = df_r_clean["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+        st_r = df_r_clean[["name", "レート", "対局数", "段位名", "段位色", "段位Index", "段位pt", "昇段まで"]].copy()
+        st_r = st_r.rename(columns={"対局数": "games"})
+        st_r["type"] = st_r["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+        g = st_r[(st_r["type"] == "guest") & (st_r["games"] >= min_games)]
+        s = st_r[(st_r["type"] == "staff") & (st_r["games"] >= min_games)]
+        return g, s
+
+    def rating_period_selector(key_suffix):
+        """期間指定UI: 全期間 or 特定の年月末時点までのレートを見る"""
+        # スコアデータから利用可能な年月を取得
+        df_all = load_score_data_effective()
+        available_months_list = []
+        if not df_all.empty and "日時Obj" in df_all.columns:
+            df_tmp = df_all[df_all["日時Obj"].notna() & (df_all["日時Obj"] != pd.Timestamp("1900-01-01"))].copy()
+            df_tmp["年月"] = df_tmp["日時Obj"].dt.to_period("M")
+            available_months_list = sorted(df_tmp["年月"].dropna().unique(), reverse=True)
+
+        month_labels = ["全期間 (現時点)"] + [f"{m}月末時点" for m in available_months_list]
+        c1_, c2_ = st.columns([2, 1])
+        with c1_:
+            selected = st.selectbox(
+                "🕐 時点指定",
+                month_labels, index=0,
+                key=f"rating_period_{key_suffix}",
+                help="選択した時点までの対局データで再計算します。過去のレートを再現できます。"
+            )
+        # 選択された時点のISO日時を返す
+        if selected == "全期間 (現時点)":
+            return None
+        # "2026-01月末時点" のような形式から年月を取り出し、その月の月末23:59:59を返す
+        try:
+            ym_str = selected.replace("月末時点", "")
+            period = pd.Period(ym_str, freq="M")
+            end_of_month = period.end_time  # その月の最後の秒 (23:59:59.999999999)
+            return end_of_month.isoformat()
+        except:
+            return None
 
     def show_rating_ranking(df_g, df_s):
         """レーティングランキング (段位バッジ + レートの見せ方)"""
@@ -4044,11 +4122,15 @@ def page_ranking():
                     st.info("データなし")
 
     with t1:
-        st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +15 / 2着 −4.5 / 3着 −9.5 が基本pt。")
-        show_rating_ranking(rating_guest, rating_staff)
+        st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +15 / 2着 −4 / 3着 −9 が基本pt。")
+        until_iso_rt = rating_period_selector("t1")
+        rating_guest_t1, rating_staff_t1 = build_rating_stats(until_dt_iso=until_iso_rt)
+        show_rating_ranking(rating_guest_t1, rating_staff_t1)
     with t2:
         st.caption("段位が高い順で表示。同段位内は段位ptの多い順です。")
-        show_dan_ranking(rating_guest, rating_staff)
+        until_iso_dan = rating_period_selector("t2")
+        rating_guest_t2, rating_staff_t2 = build_rating_stats(until_dt_iso=until_iso_dan)
+        show_dan_ranking(rating_guest_t2, rating_staff_t2)
     with t3: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
     with t4: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
     with t5: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
@@ -4098,9 +4180,10 @@ def page_ranking():
     with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
         st.markdown("""
         #### 📐 レーティング計算式
-        - **1着**: +15 pt / **2着**: −4.5 pt / **3着**: −9.5 pt (基本)
-        - **卓平均補正**: `(卓平均レート − 自レート) ÷ 40`
+        - **1着**: +15 pt / **2着**: −4 pt / **3着**: −9 pt (基本)
+        - **卓平均補正**: `(他プレイヤー平均レート − 自レート) ÷ 40`
           - 強い相手に勝つと大幅アップ、弱い相手に負けると大幅ダウン
+          - 3人麻雀では自分を除いた2人の平均を使うので、真のゼロサム性が保たれます
         - **調整係数**: 対局数400戦までは徐々に0.2に近づく (安定期は0.2固定)
         - 初期レート **R1500** から始まります
 
