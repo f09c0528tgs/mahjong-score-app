@@ -220,22 +220,57 @@ hide_style = """
         border-bottom: none !important;
         padding: 0.3rem 0.5rem !important;
         gap: 0.2rem !important;
+        overflow-x: auto !important;
+        flex-wrap: nowrap !important;
+    }
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar {
+        height: 4px;
+    }
+    .stTabs [data-baseweb="tab-list"]::-webkit-scrollbar-thumb {
+        background: var(--border-strong);
+        border-radius: 2px;
     }
     .stTabs [data-baseweb="tab"] {
-        background: transparent !important;
-        color: var(--text-muted) !important;
+        background: var(--bg-card2) !important;
+        color: var(--text-primary) !important;
         border-radius: var(--radius-sm) !important;
         font-family: 'Noto Sans JP', sans-serif !important;
         font-size: 0.85rem !important;
-        font-weight: 500 !important;
-        padding: 0.4rem 0.8rem !important;
-        border: none !important;
+        font-weight: 600 !important;
+        padding: 0.4rem 0.9rem !important;
+        border: 1px solid var(--border) !important;
         transition: all 0.15s ease !important;
+        white-space: nowrap !important;
+        flex-shrink: 0 !important;
     }
-    .stTabs [aria-selected="true"] {
-        background: var(--accent-soft) !important;
+    /* 内部の p/div/span にも色を継承させる (StreamlitのDOM変更対応) */
+    .stTabs [data-baseweb="tab"],
+    .stTabs [data-baseweb="tab"] *,
+    .stTabs [data-baseweb="tab"] p,
+    .stTabs [data-baseweb="tab"] div,
+    .stTabs [data-baseweb="tab"] span {
+        color: var(--text-primary) !important;
+        opacity: 1 !important;
+    }
+    .stTabs [data-baseweb="tab"]:hover,
+    .stTabs [data-baseweb="tab"]:hover * {
+        border-color: var(--accent) !important;
         color: var(--accent) !important;
-        font-weight: 700 !important;
+        background: var(--accent-soft) !important;
+    }
+    /* 選択中のタブ - より目立たせる */
+    .stTabs [aria-selected="true"] {
+        background: var(--accent) !important;
+        border-color: var(--accent) !important;
+        font-weight: 800 !important;
+        box-shadow: 0 2px 8px rgba(240,192,64,0.3) !important;
+    }
+    .stTabs [aria-selected="true"],
+    .stTabs [aria-selected="true"] *,
+    .stTabs [aria-selected="true"] p,
+    .stTabs [aria-selected="true"] div,
+    .stTabs [aria-selected="true"] span {
+        color: #0f1117 !important;
     }
     .stTabs [data-baseweb="tab-panel"] {
         background: var(--bg-card) !important;
@@ -243,6 +278,13 @@ hide_style = """
         border-top: none !important;
         border-radius: 0 0 var(--radius) var(--radius) !important;
         padding: 1.2rem !important;
+    }
+    /* タブハイライトの下線を非表示 (背景色で選択状態を示すため) */
+    .stTabs [data-baseweb="tab-highlight"] {
+        display: none !important;
+    }
+    .stTabs [data-baseweb="tab-border"] {
+        display: none !important;
     }
 
     /* ========== メトリクス ========== */
