@@ -3798,13 +3798,60 @@ def page_ranking():
                 try: r = int(float(rank))
                 except: r = 0
                 if r > 0:
-                    records.append({"name": name, "rank": r, "date": row["論理日付"]})
+                    records.append({
+                        "name": name, "rank": r, "date": row["論理日付"],
+                        "dt": row.get("日時Obj", pd.Timestamp("1900-01-01")),
+                        "game_no": row.get("GameNo", 0),
+                    })
 
     if not records:
         st.warning("集計できるデータがありません")
         return
 
     df_raw = pd.DataFrame(records)
+
+    # --- 連続系ストリークを計算 (時系列で並べて算出) ---
+    def compute_streaks(group):
+        """1プレイヤーの時系列着順から連続系指標を算出"""
+        # 時系列で並べる
+        g = group.sort_values(["dt", "game_no"])
+        ranks = g["rank"].tolist()
+
+        max_win_streak = 0        # 最長連勝(1着連続)
+        max_last_streak = 0       # 最長連続ラス(3着連続)
+        max_second_streak = 0     # 最長連続2着
+        five_win_count = 0        # 5連勝以上の達成回数 (5連勝、6連勝もそれぞれ+1ではなく、ストリーク単位でカウント)
+        second_total = ranks.count(2)
+
+        cur_win = cur_last = cur_second = 0
+        for r in ranks:
+            if r == 1:
+                cur_win += 1
+                cur_last = cur_second = 0
+                if cur_win == 5:  # 5連勝到達時点でカウント (以降6連勝、7連勝と続いても同じ「1回」)
+                    five_win_count += 1
+            elif r == 2:
+                cur_second += 1
+                cur_win = cur_last = 0
+            elif r == 3:
+                cur_last += 1
+                cur_win = cur_second = 0
+            else:
+                cur_win = cur_last = cur_second = 0
+            if cur_win > max_win_streak: max_win_streak = cur_win
+            if cur_last > max_last_streak: max_last_streak = cur_last
+            if cur_second > max_second_streak: max_second_streak = cur_second
+
+        return pd.Series({
+            "max_win_streak": max_win_streak,
+            "max_last_streak": max_last_streak,
+            "max_second_streak": max_second_streak,
+            "five_win_count": five_win_count,
+            "second_count": second_total,
+        })
+
+    streaks = df_raw.groupby("name", group_keys=False).apply(compute_streaks).reset_index()
+
     stats = df_raw.groupby("name").agg(
         games=("rank", "count"),
         avg_rank=("rank", "mean"),
@@ -3812,8 +3859,12 @@ def page_ranking():
         third_count=("rank", lambda x: (x==3).sum()),
         days=("date", "nunique")
     ).reset_index()
+    # ストリーク統計をマージ
+    stats = stats.merge(streaks, on="name", how="left")
+
     stats["games_per_day"] = stats["games"] / stats["days"]
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
+    stats["second_rate"] = (stats["second_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
     stats["type"] = stats["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
     stats["name"] = stats["name"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
@@ -3843,14 +3894,20 @@ def page_ranking():
                     else:
                         cols.extend([val_col, "games"])
                         rmap = {"name": "名前", "games": "打数",
-                                "avg_rank": "平均着順", "top_rate": "トップ率", "last_avoid_rate": "ラス回避率"}
+                                "avg_rank": "平均着順", "top_rate": "トップ率",
+                                "second_rate": "2着率", "last_avoid_rate": "ラス回避率",
+                                "max_win_streak": "最長連勝",
+                                "max_last_streak": "最長連続ラス",
+                                "max_second_streak": "最長連続2着",
+                                "five_win_count": "5連勝以上回数"}
                     st.dataframe(res[cols].rename(columns=rmap), hide_index=True, use_container_width=True)
                 else:
                     st.info("データなし")
 
-    t1, t2, t3, t4, t5, t6, t7, t8 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13 = st.tabs([
         "🏅 レーティング", "🎖️ 段位",
-        "📊 打数", "🥇 平均着順", "👑 トップ率", "🛡 ラス回避率",
+        "📊 打数", "🥇 平均着順", "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
+        "🔥 最長連勝", "💀 最長連続ラス", "😐 最長連続2着", "⭐ 5連勝以上回数",
         "💥 最大飜数", "🀅 役満回数"
     ])
 
@@ -3953,7 +4010,20 @@ def page_ranking():
     with t3: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
     with t4: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
     with t5: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
-    with t6: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
+    with t6: show_ranking_split(stats_guest, stats_staff, "second_rate", False, '{:.3f}%'.format, "second_rate")
+    with t7: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
+    with t8:
+        st.caption("時系列で1着を連続で取った歴代最長回数。")
+        show_ranking_split(stats_guest, stats_staff, "max_win_streak", False, '{:.0f}'.format, "max_win_streak")
+    with t9:
+        st.caption("時系列で3着(ラス)を連続で取った歴代最長回数。少ないほど良い指標ですが、多いと目立ちます。")
+        show_ranking_split(stats_guest, stats_staff, "max_last_streak", False, '{:.0f}'.format, "max_last_streak")
+    with t10:
+        st.caption("時系列で2着を連続で取った歴代最長回数。")
+        show_ranking_split(stats_guest, stats_staff, "max_second_streak", False, '{:.0f}'.format, "max_second_streak")
+    with t11:
+        st.caption("5連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。")
+        show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count")
 
     df_mem = load_member_data()
     df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
@@ -3979,8 +4049,8 @@ def page_ranking():
                     else: st.info("データなし")
                 else: st.info("データなし")
 
-    with t7: show_mem_ranking(mem_g, mem_s, "最大飜数")
-    with t8: show_mem_ranking(mem_g, mem_s, "役満回数")
+    with t12: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t13: show_mem_ranking(mem_g, mem_s, "役満回数")
 
     # 段位システム詳細を折りたたみで表示
     with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
