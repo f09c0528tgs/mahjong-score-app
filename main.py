@@ -3984,6 +3984,55 @@ def page_ranking():
 
     streaks = df_raw.groupby("name", group_keys=False).apply(compute_streaks).reset_index()
 
+    # --- 連続100半荘の最高成績を計算 (スライディングウィンドウ) ---
+    WINDOW_SIZE = 100
+    def compute_best_window(group):
+        """1プレイヤーの時系列着順から、連続100半荘の最良成績ウィンドウを算出"""
+        g = group.sort_values(["dt", "game_no"]).reset_index(drop=True)
+        n = len(g)
+        if n < WINDOW_SIZE:
+            return pd.Series({
+                "best100_avg": None,
+                "best100_first": 0,
+                "best100_second": 0,
+                "best100_third": 0,
+                "best100_top_rate": None,
+                "best100_start_dt": None,
+                "best100_end_dt": None,
+                "best100_start_idx": 0,  # プレイヤー内での通し番号 (何戦目〜何戦目か)
+                "best100_end_idx": 0,
+            })
+        ranks = g["rank"].tolist()
+        dts = g["dt"].tolist()
+
+        # スライディングウィンドウで平均着順を計算
+        # 累積和で高速化 (O(n))
+        window_sum = sum(ranks[:WINDOW_SIZE])
+        best_avg = window_sum / WINDOW_SIZE
+        best_start = 0
+        for i in range(1, n - WINDOW_SIZE + 1):
+            window_sum += ranks[i + WINDOW_SIZE - 1] - ranks[i - 1]
+            avg = window_sum / WINDOW_SIZE
+            if avg < best_avg:  # 平均着順は小さいほど良い
+                best_avg = avg
+                best_start = i
+
+        best_end = best_start + WINDOW_SIZE - 1
+        window_ranks = ranks[best_start:best_end + 1]
+        return pd.Series({
+            "best100_avg": best_avg,
+            "best100_first": window_ranks.count(1),
+            "best100_second": window_ranks.count(2),
+            "best100_third": window_ranks.count(3),
+            "best100_top_rate": window_ranks.count(1) / WINDOW_SIZE * 100,
+            "best100_start_dt": dts[best_start],
+            "best100_end_dt": dts[best_end],
+            "best100_start_idx": best_start + 1,  # 1-indexed
+            "best100_end_idx": best_end + 1,
+        })
+
+    best_windows = df_raw.groupby("name", group_keys=False).apply(compute_best_window).reset_index()
+
     stats = df_raw.groupby("name").agg(
         games=("rank", "count"),
         avg_rank=("rank", "mean"),
@@ -3993,6 +4042,8 @@ def page_ranking():
     ).reset_index()
     # ストリーク統計をマージ
     stats = stats.merge(streaks, on="name", how="left")
+    # 連続100半荘最高成績をマージ
+    stats = stats.merge(best_windows, on="name", how="left")
 
     stats["games_per_day"] = stats["games"] / stats["days"]
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
@@ -4036,10 +4087,11 @@ def page_ranking():
                 else:
                     st.info("データなし")
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14 = st.tabs([
         "🏅 レーティング", "🎖️ 段位",
         "📊 打数", "🥇 平均着順", "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
         "🔥 最長連勝", "💀 最長連続ラス", "😐 最長連続2着", "⭐ 5連勝以上回数",
+        "🌟 ベスト100半荘",
         "💥 最大飜数", "🀅 役満回数"
     ])
 
@@ -4307,6 +4359,85 @@ def page_ranking():
         st.caption("5連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。")
         show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count")
 
+    # --- ベスト100半荘表示関数 ---
+    def show_best100_ranking(df_g, df_s):
+        """連続100半荘の最高成績を表示 (期間明記付き)"""
+        c1_, c2_ = st.columns(2)
+        for col_obj, df_r, title, icon in [(c1_, df_g, "お客さん", "🧑‍🤝‍🧑"), (c2_, df_s, "スタッフ", "👔")]:
+            with col_obj:
+                st.markdown(f"#### {icon} {title} Top20")
+                # 100半荘に達していない (best100_avgがNaN) は除外
+                df_valid = df_r[df_r["best100_avg"].notna()].copy() if not df_r.empty else pd.DataFrame()
+                if df_valid.empty:
+                    st.info("100半荘以上打っているプレイヤーがいません")
+                    continue
+                # 平均着順が小さい順 (=良い順)
+                res = df_valid.sort_values("best100_avg", ascending=True).reset_index(drop=True).head(20)
+                res["順位"] = res.index + 1
+
+                # HTMLテーブル (期間・成績を分かりやすく)
+                html = '<table class="stats-table" style="width:100%;">'
+                html += """<thead><tr>
+                    <th style="width:50px;">順位</th>
+                    <th style="text-align:left;">名前</th>
+                    <th style="width:75px;">平均着順</th>
+                    <th style="width:75px;">1着数</th>
+                    <th style="width:75px;">トップ率</th>
+                    <th style="text-align:left;">期間 (対局番号 / 日時)</th>
+                </tr></thead><tbody>"""
+                for _, r in res.iterrows():
+                    rank_num = int(r["順位"])
+                    if rank_num == 1: rank_disp = "🥇 1"
+                    elif rank_num == 2: rank_disp = "🥈 2"
+                    elif rank_num == 3: rank_disp = "🥉 3"
+                    else: rank_disp = str(rank_num)
+
+                    avg_color = "var(--accent)" if rank_num <= 3 else "var(--text-primary)"
+                    first_cnt = int(r["best100_first"])
+                    second_cnt = int(r["best100_second"])
+                    third_cnt = int(r["best100_third"])
+                    top_rate = r["best100_top_rate"]
+
+                    # 期間表示
+                    try:
+                        start_str = pd.to_datetime(r["best100_start_dt"]).strftime("%Y/%m/%d")
+                    except:
+                        start_str = "?"
+                    try:
+                        end_str = pd.to_datetime(r["best100_end_dt"]).strftime("%Y/%m/%d")
+                    except:
+                        end_str = "?"
+                    start_idx = int(r["best100_start_idx"])
+                    end_idx = int(r["best100_end_idx"])
+                    total_games = int(r["games"])
+                    period_html = f'''
+                        <div style="font-size:0.85rem;line-height:1.35;">
+                            <div style="color:var(--text-primary);font-weight:600;">
+                                📅 {start_str} 〜 {end_str}
+                            </div>
+                            <div style="color:var(--text-muted);font-size:0.75rem;">
+                                第{start_idx}戦目 〜 第{end_idx}戦目 / 全{total_games}戦中
+                            </div>
+                        </div>
+                    '''
+                    html += f'''<tr>
+                        <td style="text-align:center;font-weight:800;">{rank_disp}</td>
+                        <td style="text-align:left;font-weight:600;">{r["name"]}</td>
+                        <td style="text-align:center;color:{avg_color};font-weight:900;
+                                   font-family:'Zen Kaku Gothic New';">{r["best100_avg"]:.3f}</td>
+                        <td style="text-align:center;">{first_cnt}
+                            <span style="color:var(--text-muted);font-size:0.7rem;"> / 2着{second_cnt} / 3着{third_cnt}</span>
+                        </td>
+                        <td style="text-align:center;color:var(--green);font-weight:700;">{top_rate:.1f}%</td>
+                        <td style="text-align:left;">{period_html}</td>
+                    </tr>'''
+                html += '</tbody></table>'
+                st.markdown(html, unsafe_allow_html=True)
+
+    with t12:
+        st.caption("各プレイヤーが**連続100半荘**でもっとも良い平均着順を出した期間を抽出。100半荘未満のプレイヤーは非表示です。")
+        show_best100_ranking(stats_guest, stats_staff)
+
     df_mem = load_member_data()
     df_mem["type"] = df_mem["名前"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
     df_mem["名前"] = df_mem["名前"].astype(str).str.replace(r'[(\(].*?[)\)]', '', regex=True)
@@ -4331,8 +4462,8 @@ def page_ranking():
                     else: st.info("データなし")
                 else: st.info("データなし")
 
-    with t12: show_mem_ranking(mem_g, mem_s, "最大飜数")
-    with t13: show_mem_ranking(mem_g, mem_s, "役満回数")
+    with t13: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t14: show_mem_ranking(mem_g, mem_s, "役満回数")
 
     # 段位システム詳細を折りたたみで表示
     with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
