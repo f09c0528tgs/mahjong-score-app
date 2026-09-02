@@ -1077,13 +1077,19 @@ def save_profit_data(df):
 
 import uuid as _uuid
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=60, show_spinner=False)
 def _fetch_pending_cached(_conn):
-    """pending_buffer シートを短期キャッシュ付きで読む (5秒)"""
+    """
+    pending_buffer シートを長めのキャッシュで読む (60秒)。
+    書き込み時に明示的にキャッシュクリアされる。
+    タイムアウト時は空DataFrameを返してアプリを止めない。
+    """
     try:
-        return _conn.read(worksheet=SHEET_PENDING, ttl=0)
-    except Exception:
-        return None
+        result = _conn.read(worksheet=SHEET_PENDING, ttl=0)
+        return result
+    except Exception as e:
+        # シートが無い / タイムアウト / API制限 → 空DataFrame
+        return pd.DataFrame(columns=PENDING_COLS)
 
 def _save_pending_df(df):
     """pending_buffer シートを上書き保存 (シートが無ければ自動作成)"""
@@ -1189,15 +1195,33 @@ def _entry_to_df_row(entry):
         "LogDetail": data.get("_log_detail", ""),
     }
 
-def load_pending_changes():
-    """pending_buffer から全エントリを読み込みリストで返す"""
+def load_pending_changes(force_refresh=False):
+    """
+    pending_buffer から全エントリを読み込みリストで返す。
+    session_state にキャッシュを持ち、同一リクエスト内で複数回呼ばれても1度しか読まない。
+
+    Args:
+        force_refresh: Trueにすると強制的に再読込
+    """
+    # セッション内キャッシュを使用
+    cache_key = "_pending_changes_cache"
+    if not force_refresh and cache_key in st.session_state:
+        return st.session_state[cache_key]
+
     df = _load_pending_df()
     if df.empty:
-        return []
-    entries = [_df_row_to_entry(row) for _, row in df.iterrows()]
-    # 時系列でソート
-    entries.sort(key=lambda e: e.get("timestamp", ""))
+        entries = []
+    else:
+        entries = [_df_row_to_entry(row) for _, row in df.iterrows()]
+        entries.sort(key=lambda e: e.get("timestamp", ""))
+
+    st.session_state[cache_key] = entries
     return entries
+
+def _invalidate_pending_cache():
+    """pending_changes キャッシュを無効化 (書き込み後に呼ぶ)"""
+    if "_pending_changes_cache" in st.session_state:
+        del st.session_state["_pending_changes_cache"]
 
 def save_pending_changes(entries):
     """エントリのリストを pending_buffer シートに保存"""
@@ -1208,6 +1232,8 @@ def save_pending_changes(entries):
         rows = [_entry_to_df_row(e) for e in entries]
         df = pd.DataFrame(rows)
     _save_pending_df(df)
+    # 書いた直後は session_state のキャッシュも更新
+    st.session_state["_pending_changes_cache"] = list(entries)
 
 def has_pending_changes():
     return pending_count() > 0
@@ -1667,10 +1693,11 @@ def recompute_and_save_ratings():
     df = pd.DataFrame(rows)
     _save_rating_df(df)
 
-@st.cache_data(ttl=10)
+@st.cache_data(ttl=120, show_spinner=False)
 def load_ratings_effective(until_dt_iso=None, from_dt_iso=None):
     """
     レーティングデータをDataFrameで取得。実効スコア(バッファ含む)を用いた計算を返す。
+    重い処理なので長めにキャッシュ (120秒)。
 
     Args:
         until_dt_iso: ISO形式の日時文字列。この時点までのレートを再現。
@@ -1818,9 +1845,11 @@ def commit_buffer_to_sheet():
     # バッファクリア
     buffer_clear()
 
-    # レーティングを再計算して保存
+    # レーティングを再計算して保存 (時間がかかる可能性あり)
     try:
         recompute_and_save_ratings()
+        # レーティングキャッシュもクリア
+        load_ratings_effective.clear()
     except Exception as e:
         st.warning(f"レーティング再計算に失敗しました: {e}")
 
