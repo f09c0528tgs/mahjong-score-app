@@ -1419,41 +1419,56 @@ RANK_POINTS_1 = 15.0        # 1着の基本ポイント
 RANK_POINTS_2 = -4.0        # 2着 (合計+2で少しインフレ気味の設計)
 RANK_POINTS_3 = -9.0        # 3着
 
-# 段位定義: (段位名, 昇段閾値pt, 降段閾値pt, 1着pt, 2着pt, 3着pt, 表示色)
-# 【仕様】
-#  - 昇段閾値に達したら1段だけ昇段、pt=0リスタート (超過分は捨てる)
-#  - 1試合で1段までしか昇段/降段しない
-#  - 級位帯 (降段なし=-999) は下限0
-#  - 初段以上は降段閾値0未満で1段だけ降段 (pt=0リスタート)
+# 段位定義 (累積ptベース方式):
+#  (段位名, 段位到達に必要な累積pt閾値, 表示色)
 #
-# 【バランス設計】天鳳準拠
-#  - 級位帯: 1着 1〜4回で昇段 (下位ほど昇段しやすい)
-#  - 初段〜三段: 1着 5〜7回で昇段
-#  - 四段以上: 1着 8回以上必要 (熟練者の証)
-#  - 平均着順2.0前後で長期的にゆっくり昇段
+# 【仕様】
+#  - 段位ptは常に累積される (リセットなし)
+#  - 累積ptが段位閾値を超えたらその段位、下回れば下段へ
+#  - 着順ptは全段位共通: 1着 +30 / 2着 -3 / 3着 -15
+#  - 平均獲得pt/戦 = 0.36*30 - 0.34*3 - 0.30*15 = +5.28 (平均着順1.95のプレイヤー)
+#  - 2000戦で +10560pt → 八段 (要件達成)
+#
+# 【平均着順と段位の相関】
+#  平均1.94 (トップ率36%) → 2000戦で八段
+#  平均2.00 (完全平均)   → 2000戦で六段
+#  平均2.10             → 2000戦で二段
+#  平均2.15             → 2000戦で4級
+#  平均2.25             → 2000戦で新人
+#
+# 【降段】累積ptが下がれば自然に降段。閾値による段位判定なので、
+#         一時的にptが下がっても、戻れば同じ段位に戻る (安定した昇降段)
+
+# 段位判定用の閾値: (段位Index, 段位名, 累積pt閾値, 表示色)
+# 「その閾値以上の累積ptがあればその段位」
 DAN_TABLE = [
-    # (段位名,    昇段pt, 降段pt, 1着,  2着, 3着, 色)
-    ("新人",       30,   -999,    30,    0,  -5, "#8890a8"),   # 1着1回で9級
-    ("9級",        50,   -999,    30,   -5, -10, "#8890a8"),   # 1着2回程度で8級
-    ("8級",        70,   -999,    35,   -5, -10, "#8890a8"),
-    ("7級",        80,   -999,    35,   -5, -15, "#a8a8b8"),
-    ("6級",       100,   -999,    40,  -10, -15, "#a8a8b8"),
-    ("5級",       120,   -999,    40,  -10, -20, "#c0c0c8"),
-    ("4級",       140,   -999,    45,  -10, -20, "#c0c0c8"),
-    ("3級",       160,   -999,    50,  -15, -25, "#d0d0d8"),
-    ("2級",       180,   -999,    55,  -15, -25, "#d0d0d8"),
-    ("1級",       200,   -999,    60,  -15, -30, "#e8e8f0"),
-    ("初段",      300,      0,    70,  -20, -35, "#5b9cf6"),   # 降段あり
-    ("二段",      400,      0,    80,  -25, -40, "#5b9cf6"),
-    ("三段",      500,      0,    90,  -30, -45, "#4caf87"),
-    ("四段",      600,      0,   100,  -35, -50, "#4caf87"),
-    ("五段",      700,      0,   110,  -40, -55, "#f0c040"),
-    ("六段",      900,      0,   120,  -45, -60, "#f0c040"),
-    ("七段",     1100,      0,   130,  -50, -65, "#e07b39"),
-    ("八段",     1400,      0,   140,  -55, -70, "#e07b39"),
-    ("九段",     1800,      0,   150,  -60, -75, "#e05c5c"),
-    ("十段",   999999,      0,   160,  -65, -80, "#b372e0"),   # 最上位
+    # (段位名,   累積pt閾値, 表示色)
+    ("新人",     -99999,  "#8890a8"),  # 最下位 (負の累積ptでも新人)
+    ("9級",       -100,  "#8890a8"),
+    ("8級",          0,  "#8890a8"),  # 累積0pt以上で8級
+    ("7級",        100,  "#a8a8b8"),
+    ("6級",        250,  "#a8a8b8"),
+    ("5級",        450,  "#c0c0c8"),
+    ("4級",        700,  "#c0c0c8"),
+    ("3級",       1000,  "#d0d0d8"),
+    ("2級",       1400,  "#d0d0d8"),
+    ("1級",       1800,  "#e8e8f0"),
+    ("初段",      2300,  "#5b9cf6"),   # 有段者
+    ("二段",      3000,  "#5b9cf6"),
+    ("三段",      3800,  "#4caf87"),
+    ("四段",      4700,  "#4caf87"),
+    ("五段",      5700,  "#f0c040"),
+    ("六段",      6800,  "#f0c040"),
+    ("七段",      8100,  "#e07b39"),
+    ("八段",      9500,  "#e07b39"),   # 平均1.95のプレイヤー2000戦で10560pt → 八段
+    ("九段",     11500,  "#e05c5c"),
+    ("十段",     14000,  "#b372e0"),   # 最上位
 ]
+
+# 着順ptは全段位共通 (段位別ではなくシンプルに)
+DAN_POINTS_1 = 30    # 1着ポイント
+DAN_POINTS_2 = -3    # 2着ポイント
+DAN_POINTS_3 = -15   # 3着ポイント
 
 # レーティング/段位を保存するシートの列
 RATING_COLS = ["名前", "レート", "対局数", "段位Index", "段位pt"]
@@ -1465,13 +1480,20 @@ def _get_rank_points(rank):
     if rank == 3: return RANK_POINTS_3
     return 0.0
 
-def _get_dan_rank_points(dan_index, rank):
-    """段位の着順ポイント"""
-    dan = DAN_TABLE[dan_index]
-    if rank == 1: return dan[3]
-    if rank == 2: return dan[4]
-    if rank == 3: return dan[5]
+def _get_dan_rank_points(rank):
+    """着順から段位ポイントを返す (全段位共通)"""
+    if rank == 1: return DAN_POINTS_1
+    if rank == 2: return DAN_POINTS_2
+    if rank == 3: return DAN_POINTS_3
     return 0
+
+def _get_dan_index_from_pts(cumulative_pts):
+    """累積ptから段位Indexを判定"""
+    dan_idx = 0
+    for i, dan in enumerate(DAN_TABLE):
+        if cumulative_pts >= dan[1]:
+            dan_idx = i
+    return dan_idx
 
 def _rating_adjust_factor(games):
     """
@@ -1579,36 +1601,17 @@ def compute_ratings_from_scratch(df_score, until_dt=None, from_dt=None):
             ratings[name]["レート"] = cur + delta
             ratings[name]["対局数"] = games + 1
 
-            # ---- 段位ポイント計算 (天鳳準拠仕様) ----
-            # 【重要仕様】
-            #  - 1試合で複数段昇段/降段しない (連鎖なし)
-            #  - 昇段時は必ず pt=0 リスタート (超過分は捨てる)
-            #  - 降段時も pt=0 リスタート
-            #  - 級位帯 (降段なし) は下限0 (マイナス値の蓄積を防ぐ)
-            dan_idx = ratings[name]["段位Index"]
-            dan_pts = _get_dan_rank_points(dan_idx, rank)
-            new_pts = ratings[name]["段位pt"] + dan_pts
+            # ---- 段位ポイント計算 (累積pt方式) ----
+            # 【仕様】
+            #  - 段位ptは常に累積 (リセットなし)
+            #  - 累積ptが段位閾値を超えたらその段位に自動判定
+            #  - 平均着順との相関が強く出る設計
+            dan_pts = _get_dan_rank_points(rank)
+            new_cum_pts = ratings[name]["段位pt"] + dan_pts
+            new_dan_idx = _get_dan_index_from_pts(new_cum_pts)
 
-            # 昇段判定: 閾値以上に達したら1段だけ上げる (超過分は捨てる)
-            up_threshold = DAN_TABLE[dan_idx][1]
-            if new_pts >= up_threshold and dan_idx < len(DAN_TABLE) - 1:
-                dan_idx += 1
-                new_pts = 0.0
-            else:
-                # 昇段しなかった場合のみ降段判定
-                down_threshold = DAN_TABLE[dan_idx][2]
-                if (new_pts < down_threshold
-                        and dan_idx > 0
-                        and down_threshold > -999):
-                    dan_idx -= 1
-                    new_pts = 0.0
-                else:
-                    # 級位帯(降段なし)で段位ptがマイナス値になったら0に切る
-                    if DAN_TABLE[dan_idx][2] <= -999 and new_pts < 0:
-                        new_pts = 0.0
-
-            ratings[name]["段位Index"] = dan_idx
-            ratings[name]["段位pt"] = new_pts
+            ratings[name]["段位Index"] = new_dan_idx
+            ratings[name]["段位pt"] = new_cum_pts
 
     return ratings
 
@@ -1619,6 +1622,8 @@ def ratings_dict_to_df(ratings):
     rows = []
     for name, d in ratings.items():
         dan_idx = d["段位Index"]
+        # 次の段位の閾値 (最上位なら-)
+        next_threshold = DAN_TABLE[dan_idx + 1][1] if dan_idx + 1 < len(DAN_TABLE) else None
         rows.append({
             "名前": name,
             "レート": round(d["レート"], 2),
@@ -1626,8 +1631,8 @@ def ratings_dict_to_df(ratings):
             "段位Index": dan_idx,
             "段位pt": round(d["段位pt"], 2),
             "段位名": DAN_TABLE[dan_idx][0],
-            "段位色": DAN_TABLE[dan_idx][6],
-            "昇段まで": DAN_TABLE[dan_idx][1],
+            "段位色": DAN_TABLE[dan_idx][2],  # 新構造: [0]名前, [1]閾値, [2]色
+            "昇段まで": next_threshold if next_threshold is not None else 0,  # 次段位の閾値
         })
     df = pd.DataFrame(rows)
     df = df.sort_values("レート", ascending=False).reset_index(drop=True)
@@ -2039,21 +2044,31 @@ def render_dan_badge(dan_name, dan_color, size="normal"):
               display:inline-block;">{dan_name}</span>'''
 
 def render_rating_card(name, rating_info):
-    """レーティング情報カード"""
+    """レーティング情報カード (累積pt方式対応)"""
     if rating_info is None:
         return
     dan_name = rating_info["段位名"]
     dan_color = rating_info["段位色"]
     rate = rating_info["レート"]
     games = rating_info["対局数"]
-    pts = rating_info["段位pt"]
-    up_needed = rating_info["昇段まで"]
+    cumulative_pts = rating_info["段位pt"]  # 累積pt
+    next_threshold = rating_info["昇段まで"]  # 次段位の閾値 (累積pt基準)
+    dan_idx = rating_info.get("段位Index", 0)
 
-    # 段位バーの進捗率 (下限あり)
-    if up_needed > 0 and up_needed < 999999:
-        progress = max(0, min(100, pts / up_needed * 100))
+    # 現段位の閾値
+    current_threshold = DAN_TABLE[dan_idx][1] if dan_idx < len(DAN_TABLE) else -99999
+
+    # 進捗計算: (累積pt - 現段位閾値) / (次段位閾値 - 現段位閾値) * 100
+    if next_threshold > 0 and next_threshold > current_threshold:
+        span = next_threshold - current_threshold
+        progress_pts = cumulative_pts - current_threshold
+        progress = max(0, min(100, progress_pts / span * 100))
+        remaining = max(0, next_threshold - cumulative_pts)
+        show_progress = True
     else:
         progress = 100
+        remaining = 0
+        show_progress = False
 
     st.markdown(f"""
     <div style="background:linear-gradient(135deg, var(--bg-card) 0%, {dan_color}15 100%);
@@ -2076,8 +2091,8 @@ def render_rating_card(name, rating_info):
             <div style="width:{progress}%;height:100%;background:linear-gradient(90deg, {dan_color} 0%, {dan_color}aa 100%);"></div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:0.75rem;color:var(--text-muted);">
-            <span>段位pt: {pts:.1f} / {up_needed if up_needed < 999999 else '—'}</span>
-            <span>昇段まで {max(0, up_needed - pts):.1f} pt</span>
+            <span>累積pt: {cumulative_pts:.0f}{f' / {next_threshold}' if show_progress else ''}</span>
+            <span>{'昇段まで ' + str(int(remaining)) + ' pt' if show_progress else '最上位段位'}</span>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -4551,22 +4566,18 @@ def page_ranking():
 
         #### 🏅 段位表
         """)
+        st.caption(f"着順ポイント: 1着 **+{DAN_POINTS_1}** / 2着 **{DAN_POINTS_2:+d}** / 3着 **{DAN_POINTS_3:+d}** (全段位共通)")
         dan_table_html = '<table class="stats-table" style="width:100%;">'
         dan_table_html += """<thead><tr>
-            <th>段位</th><th>昇段pt</th><th>1着 pt</th><th>2着 pt</th><th>3着 pt</th><th>降段</th>
+            <th>段位</th><th style="text-align:center;">到達pt (累積)</th>
         </tr></thead><tbody>"""
         for i, dan in enumerate(DAN_TABLE):
-            dname, up, down, p1, p2, p3, col = dan
+            dname, threshold, col = dan
             badge = render_dan_badge(dname, col, size="small")
-            has_down = "❌ なし" if down <= -999 else "✅ あり"
-            p2_display = f"{p2:+}" if p2 != 0 else "±0"
+            th_display = f"{threshold:+d}" if threshold > -9999 else "初期"
             dan_table_html += f'''<tr>
                 <td>{badge}</td>
-                <td style="text-align:center;">{up if up < 999999 else '—'}</td>
-                <td style="text-align:center;color:var(--green);">+{p1}</td>
-                <td style="text-align:center;color:{'var(--accent2)' if p2 < 0 else 'var(--text-muted)'};">{p2_display}</td>
-                <td style="text-align:center;color:var(--red);">{p3}</td>
-                <td style="text-align:center;font-size:0.8rem;">{has_down}</td>
+                <td style="text-align:center;color:{col};font-weight:700;">{th_display} pt</td>
             </tr>'''
         dan_table_html += '</tbody></table>'
         st.markdown(dan_table_html, unsafe_allow_html=True)
