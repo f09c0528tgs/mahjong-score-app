@@ -1747,6 +1747,152 @@ def get_player_rating(name):
         "昇段まで": int(r["昇段まで"]),
     }
 
+def get_player_rating_history(target_name, last_n=10):
+    """
+    指定プレイヤーの直近N戦のレーティング変動履歴を返す。
+    Returns: list of dict {
+        "GameNo", "日時", "TableNo", "SetNo",
+        "自着順", "対戦相手": [{"名前", "着順", "レート"}, ...],
+        "開始レート", "終了レート", "変動pt",
+        "段位名(開始)", "段位名(終了)", "段位色(終了)",
+    }
+    または None (該当データなし)
+    """
+    df_score = load_score_data_effective()
+    if df_score is None or df_score.empty:
+        return None
+
+    # 時系列で並べる
+    df = df_score.copy()
+    if "日時Obj" in df.columns:
+        df = df[df["日時Obj"].notna()]
+        sort_keys = ["日時Obj", "TableNo", "SetNo"]
+        if "GameNo" in df.columns:
+            sort_keys.append("GameNo")
+        df = df.sort_values(sort_keys).reset_index(drop=True)
+    elif "GameNo" in df.columns:
+        df = df.sort_values(["GameNo"]).reset_index(drop=True)
+
+    if df.empty:
+        return None
+
+    # 全対局を1試合ずつ処理し、レーティングを再計算しつつ
+    # 対象プレイヤーが参加した対局だけを履歴として記録
+    ratings = {}  # name -> {"レート", "対局数", "段位Index", "段位pt"}
+
+    def ensure_player(nm):
+        if nm and nm not in ratings:
+            ratings[nm] = {
+                "レート": float(RATING_INIT),
+                "対局数": 0,
+                "段位Index": 0,
+                "段位pt": 0.0,
+            }
+
+    target_history = []  # 対象プレイヤーの参加履歴 (時系列全部)
+
+    for _, row in df.iterrows():
+        # 3人の名前と着順を取り出す
+        players = []
+        valid = True
+        for seat in ["A", "B", "C"]:
+            n = row.get(f"{seat}さん", "")
+            n = str(n).strip() if n else ""
+            try:
+                r = int(float(row.get(f"{seat}着順", 0)))
+            except:
+                r = 0
+            if not n or r not in [1, 2, 3]:
+                valid = False
+                break
+            players.append((n, r, seat))
+
+        if not valid:
+            continue
+        if sorted([p[1] for p in players]) != [1, 2, 3]:
+            continue
+        if len({p[0] for p in players}) != 3:
+            continue
+
+        for name, _, _ in players:
+            ensure_player(name)
+
+        # 試合開始時のスナップショット
+        snapshot = {name: ratings[name]["レート"] for name, _, _ in players}
+        snapshot_games = {name: ratings[name]["対局数"] for name, _, _ in players}
+        snapshot_dan = {name: (ratings[name]["段位Index"], ratings[name]["段位pt"]) for name, _, _ in players}
+
+        # 対象プレイヤーがこの試合に参加しているか
+        target_in_game = any(p[0] == target_name for p in players)
+
+        # レーティング更新
+        for name, rank, seat in players:
+            others = [snapshot[n] for n, _, _ in players if n != name]
+            opp_avg = sum(others) / len(others)
+
+            cur = snapshot[name]
+            games = snapshot_games[name]
+            base = _get_rank_points(rank)
+            correction = (opp_avg - cur) / 40.0
+            delta = (base + correction) * _rating_adjust_factor(games)
+            ratings[name]["レート"] = cur + delta
+            ratings[name]["対局数"] = games + 1
+
+            # 段位更新
+            dan_pts = _get_dan_rank_points(rank)
+            new_cum_pts = ratings[name]["段位pt"] + dan_pts
+            new_dan_idx = _get_dan_index_from_pts(new_cum_pts)
+            ratings[name]["段位Index"] = new_dan_idx
+            ratings[name]["段位pt"] = new_cum_pts
+
+        # 対象プレイヤーが参加した試合は履歴に追加
+        if target_in_game:
+            # 対象プレイヤーの情報
+            target_info = next(p for p in players if p[0] == target_name)
+            target_rank = target_info[1]
+            target_seat = target_info[2]
+            start_rate = snapshot[target_name]
+            end_rate = ratings[target_name]["レート"]
+            start_dan_idx, start_dan_pts = snapshot_dan[target_name]
+            end_dan_idx = ratings[target_name]["段位Index"]
+
+            # 対戦相手の情報 (2人)
+            opponents = []
+            for n, rk, _ in players:
+                if n != target_name:
+                    opponents.append({
+                        "名前": n,
+                        "着順": rk,
+                        "レート": snapshot[n],  # 試合開始時のレート
+                    })
+            opponents.sort(key=lambda x: x["着順"])  # 着順順
+
+            target_history.append({
+                "GameNo": row.get("GameNo", 0),
+                "日時": row.get("日時", ""),
+                "日時Obj": row.get("日時Obj", None),
+                "TableNo": row.get("TableNo", 0),
+                "SetNo": row.get("SetNo", 0),
+                "自席": target_seat,
+                "自着順": target_rank,
+                "対戦相手": opponents,
+                "開始レート": start_rate,
+                "終了レート": end_rate,
+                "変動pt": end_rate - start_rate,
+                "開始段位Index": start_dan_idx,
+                "開始段位名": DAN_TABLE[start_dan_idx][0],
+                "終了段位Index": end_dan_idx,
+                "終了段位名": DAN_TABLE[end_dan_idx][0],
+                "終了段位色": DAN_TABLE[end_dan_idx][2],
+                "段位変化": end_dan_idx - start_dan_idx,  # 正なら昇段、負なら降段
+            })
+
+    if not target_history:
+        return None
+
+    # 直近N戦を返す (最新順)
+    return target_history[-last_n:][::-1]
+
 def commit_buffer_to_sheet():
     """
     バッファに溜まった全変更をスプレッドシートに一括反映する。
@@ -2097,6 +2243,144 @@ def render_rating_card(name, rating_info):
     </div>
     """, unsafe_allow_html=True)
 
+def render_recent_rating_history(player_name, last_n=10):
+    """指定プレイヤーの直近N戦のレーティング変動履歴を表示"""
+    history = get_player_rating_history(player_name, last_n=last_n)
+    if not history:
+        st.info(f"「{player_name}」の対局履歴がありません")
+        return
+
+    n = len(history)
+
+    # --- サマリ ---
+    total_delta = sum(h["変動pt"] for h in history)
+    avg_delta = total_delta / n
+    plus_count = sum(1 for h in history if h["変動pt"] > 0)
+    minus_count = sum(1 for h in history if h["変動pt"] < 0)
+    avg_rank = sum(h["自着順"] for h in history) / n
+    top_count = sum(1 for h in history if h["自着順"] == 1)
+
+    # 合計変動の色
+    total_color = "var(--green)" if total_delta > 0 else "var(--red)" if total_delta < 0 else "var(--text-primary)"
+    total_sign = "+" if total_delta > 0 else ""
+
+    st.markdown(f"""
+    <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);
+                padding:0.9rem 1.2rem;margin-bottom:0.8rem;
+                display:flex;gap:1.5rem;flex-wrap:wrap;align-items:center;">
+        <div>
+            <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.05em;">直近{n}戦の変動</div>
+            <div style="font-size:1.6rem;font-weight:900;font-family:'Zen Kaku Gothic New';
+                        color:{total_color};line-height:1.1;">{total_sign}{total_delta:.1f}</div>
+        </div>
+        <div style="border-left:1px solid var(--border);padding-left:1.2rem;">
+            <div style="font-size:0.7rem;color:var(--text-muted);">平均変動</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">
+                {'+' if avg_delta > 0 else ''}{avg_delta:.2f}pt/戦
+            </div>
+        </div>
+        <div style="border-left:1px solid var(--border);padding-left:1.2rem;">
+            <div style="font-size:0.7rem;color:var(--text-muted);">平均着順</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);">{avg_rank:.2f}</div>
+        </div>
+        <div style="border-left:1px solid var(--border);padding-left:1.2rem;">
+            <div style="font-size:0.7rem;color:var(--text-muted);">プラス / マイナス</div>
+            <div style="font-size:1.0rem;font-weight:700;">
+                <span style="color:var(--green);">{plus_count}戦</span>
+                <span style="color:var(--text-muted);"> / </span>
+                <span style="color:var(--red);">{minus_count}戦</span>
+            </div>
+        </div>
+        <div style="border-left:1px solid var(--border);padding-left:1.2rem;">
+            <div style="font-size:0.7rem;color:var(--text-muted);">トップ数</div>
+            <div style="font-size:1.1rem;font-weight:700;color:var(--accent);">🥇 {top_count}</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # --- 詳細テーブル ---
+    rank_emoji = {1: "🥇", 2: "🥈", 3: "🥉"}
+    html = '<table class="stats-table" style="width:100%;font-size:0.85rem;">'
+    html += """<thead><tr>
+        <th style="width:40px;">#</th>
+        <th style="width:110px;">日時</th>
+        <th style="width:55px;text-align:center;">着順</th>
+        <th style="text-align:left;">対戦相手 (レート / 着順)</th>
+        <th style="width:75px;text-align:center;">開始R</th>
+        <th style="width:75px;text-align:center;">終了R</th>
+        <th style="width:80px;text-align:center;">変動</th>
+        <th style="width:65px;text-align:center;">段位</th>
+    </tr></thead><tbody>"""
+
+    for i, h in enumerate(history):
+        # 日時表示
+        try:
+            dt_str = pd.to_datetime(h["日時"]).strftime("%m/%d %H:%M")
+        except:
+            dt_str = str(h["日時"])[:16]
+
+        # 変動色
+        delta = h["変動pt"]
+        if delta > 0:
+            delta_color = "var(--green)"
+            delta_sign = "+"
+        elif delta < 0:
+            delta_color = "var(--red)"
+            delta_sign = ""
+        else:
+            delta_color = "var(--text-primary)"
+            delta_sign = ""
+
+        # 着順表示
+        my_rank_emoji = rank_emoji.get(h["自着順"], "")
+        my_rank_color = ("var(--accent)" if h["自着順"] == 1
+                        else "var(--text-primary)" if h["自着順"] == 2
+                        else "var(--red)")
+
+        # 対戦相手表示 (レート順ソート済)
+        opp_parts = []
+        for opp in h["対戦相手"]:
+            opp_rank_emoji = rank_emoji.get(opp["着順"], "")
+            opp_rank_color = ("var(--accent)" if opp["着順"] == 1
+                             else "var(--text-primary)" if opp["着順"] == 2
+                             else "var(--red)")
+            opp_parts.append(
+                f'<span style="display:inline-block;margin-right:0.6rem;">'
+                f'<span style="color:{opp_rank_color};">{opp_rank_emoji}</span> '
+                f'<span style="font-weight:600;">{opp["名前"]}</span> '
+                f'<span style="color:var(--text-muted);font-size:0.8rem;">(R{opp["レート"]:.0f})</span>'
+                f'</span>'
+            )
+        opp_html = "".join(opp_parts)
+
+        # 段位変化表示
+        dan_html = f'<span style="color:{h["終了段位色"]};font-weight:700;font-size:0.85rem;">{h["終了段位名"]}</span>'
+        if h["段位変化"] > 0:
+            dan_html = f'⬆{dan_html}'
+        elif h["段位変化"] < 0:
+            dan_html = f'⬇{dan_html}'
+
+        row_bg = "rgba(76,175,135,0.05)" if delta > 0 else "rgba(224,92,92,0.05)" if delta < 0 else "transparent"
+
+        html += f'''<tr style="background:{row_bg};">
+            <td style="text-align:center;color:var(--text-muted);font-size:0.8rem;">{i+1}</td>
+            <td style="color:var(--text-muted);font-size:0.8rem;">{dt_str}</td>
+            <td style="text-align:center;">
+                <span style="color:{my_rank_color};font-size:1.1rem;">{my_rank_emoji}</span>
+            </td>
+            <td style="text-align:left;">{opp_html}</td>
+            <td style="text-align:center;color:var(--text-muted);font-family:'Zen Kaku Gothic New';">R{h["開始レート"]:.0f}</td>
+            <td style="text-align:center;font-family:'Zen Kaku Gothic New';font-weight:700;">R{h["終了レート"]:.0f}</td>
+            <td style="text-align:center;font-weight:900;color:{delta_color};
+                       font-family:'Zen Kaku Gothic New';font-size:1.0rem;">
+                {delta_sign}{delta:.1f}
+            </td>
+            <td style="text-align:center;">{dan_html}</td>
+        </tr>'''
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def render_pending_bar(location_key=""):
     """
     未保存変更がある場合に表示する共通ステータスバー。
@@ -2377,6 +2661,10 @@ def page_personal():
     rating_info = get_player_rating(selected_player)
     if rating_info is not None:
         render_rating_card(selected_player, rating_info)
+
+    # 直近10戦のレーティング変動履歴 (折りたたみで表示)
+    with st.expander("📈 直近10戦のレーティング変動 (対戦相手・段位変化)", expanded=True):
+        render_recent_rating_history(selected_player, last_n=10)
 
     df_player = df[
         (df["Aさん"] == selected_player) |
