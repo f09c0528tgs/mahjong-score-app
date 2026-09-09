@@ -4306,14 +4306,38 @@ def page_ranking():
         # 分子: 直後の試合でもトップを取った数
         top_after_top_denominator = 0
         top_after_top_numerator = 0
+        # 連続2着率(2着の直後の半荘で2着を取った確率)
+        second_after_second_denominator = 0
+        second_after_second_numerator = 0
+        # 連続ラス率(3着の直後の半荘で3着を取った確率)
+        last_after_last_denominator = 0
+        last_after_last_numerator = 0
         for i in range(len(ranks) - 1):  # 最終試合は「次」がないので除外
-            if ranks[i] == 1:
+            cur_r = ranks[i]
+            next_r = ranks[i + 1]
+            if cur_r == 1:
                 top_after_top_denominator += 1
-                if ranks[i + 1] == 1:
+                if next_r == 1:
                     top_after_top_numerator += 1
+            elif cur_r == 2:
+                second_after_second_denominator += 1
+                if next_r == 2:
+                    second_after_second_numerator += 1
+            elif cur_r == 3:
+                last_after_last_denominator += 1
+                if next_r == 3:
+                    last_after_last_numerator += 1
         top_after_top_rate = (
             (top_after_top_numerator / top_after_top_denominator * 100)
             if top_after_top_denominator > 0 else None
+        )
+        second_after_second_rate = (
+            (second_after_second_numerator / second_after_second_denominator * 100)
+            if second_after_second_denominator > 0 else None
+        )
+        last_after_last_rate = (
+            (last_after_last_numerator / last_after_last_denominator * 100)
+            if last_after_last_denominator > 0 else None
         )
 
         cur_win = cur_last = cur_second = 0
@@ -4368,7 +4392,11 @@ def page_ranking():
             "five_win_count": five_win_count,
             "second_count": second_total,
             "top_after_top_rate": top_after_top_rate,
-            "top_after_top_samples": top_after_top_denominator,  # 分母 (サンプル数)
+            "top_after_top_samples": top_after_top_denominator,
+            "second_after_second_rate": second_after_second_rate,
+            "second_after_second_samples": second_after_second_denominator,
+            "last_after_last_rate": last_after_last_rate,
+            "last_after_last_samples": last_after_last_denominator,
         })
 
     streaks = df_raw.groupby("name", group_keys=False).apply(compute_streaks).reset_index()
@@ -4499,13 +4527,14 @@ def page_ranking():
                 else:
                     st.info("データなし")
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21 = st.tabs([
         "🏅 レーティング", "🎖️ 段位",
         "📊 打数", "🥇 平均着順", "🎯 平均着順(ルール別)",
         "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
         "🔥 最長連勝", "💀 最長連続ラス", "😐 最長連続2着",
         "🛡️ 最長連続ラス回避", "😑 最長連続トップ無し",
-        "✨ 4連勝以上回数", "⭐ 5連勝以上回数", "🔁 連勝確率",
+        "✨ 4連勝以上回数", "⭐ 5連勝以上回数",
+        "🔁 連勝確率", "🔄 連続2着率", "☠️ 連続ラス率",
         "🌟 ベスト100半荘",
         "💥 最大飜数", "🀅 役満回数"
     ])
@@ -4824,38 +4853,67 @@ def page_ranking():
         st.caption("5連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。")
         show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count")
 
-    # --- t16: 連勝確率 ---
-    with t16:
-        st.caption("トップを取った直後の半荘で再度トップを取った確率(サンプル数10以上のプレイヤーのみ表示)。")
-        MIN_SAMPLES = 10
+    # --- 「Xの次にX」系ランキングの共通表示関数 ---
+    def show_streak_prob_ranking(rate_col, samples_col, label, empty_label, min_samples=10):
+        """
+        「Xの次にX」の連続確率ランキング (連勝確率/連続2着率/連続ラス率で共通)
+        rate_col: 確率列名 (例: top_after_top_rate)
+        samples_col: サンプル数列名 (例: top_after_top_samples)
+        label: 表示ラベル (例: "連勝確率")
+        empty_label: 該当なし時のメッセージ (例: "トップ数")
+        """
         c1_, c2_ = st.columns(2)
         for col_obj, df_r, title, icon in [(c1_, stats_guest, "お客さん", "🧑‍🤝‍🧑"),
                                             (c2_, stats_staff, "スタッフ", "👔")]:
             with col_obj:
                 st.markdown(f"#### {icon} {title} Top20")
-                if not df_r.empty and "top_after_top_rate" in df_r.columns:
+                if not df_r.empty and rate_col in df_r.columns:
                     df_filtered = df_r[
-                        df_r["top_after_top_rate"].notna() &
-                        (df_r["top_after_top_samples"].fillna(0) >= MIN_SAMPLES)
+                        df_r[rate_col].notna() &
+                        (df_r[samples_col].fillna(0) >= min_samples)
                     ].copy()
                     if not df_filtered.empty:
-                        res = df_filtered.sort_values("top_after_top_rate", ascending=False).reset_index(drop=True).head(20)
+                        res = df_filtered.sort_values(rate_col, ascending=False).reset_index(drop=True).head(20)
                         res["順位"] = res.index + 1
                         display_df = pd.DataFrame({
                             "順位": res["順位"],
                             "名前": res["name"],
-                            "連勝確率": res["top_after_top_rate"].map('{:.2f}%'.format),
+                            label: res[rate_col].map('{:.2f}%'.format),
                             "分子/分母": res.apply(
-                                lambda r: f"{int(r['top_after_top_rate']/100 * r['top_after_top_samples'] + 0.5)}/{int(r['top_after_top_samples'])}",
+                                lambda r: f"{int(r[rate_col]/100 * r[samples_col] + 0.5)}/{int(r[samples_col])}",
                                 axis=1
                             ),
                             "打数": res["games"].astype(int),
                         })
                         st.dataframe(display_df, hide_index=True, use_container_width=True)
                     else:
-                        st.info(f"トップ数が{MIN_SAMPLES}以上のプレイヤーがいません")
+                        st.info(f"{empty_label}が{min_samples}以上のプレイヤーがいません")
                 else:
                     st.info("データなし")
+
+    # --- t16: 連勝確率 ---
+    with t16:
+        st.caption("トップを取った直後の半荘で再度トップを取った確率(サンプル数10以上のプレイヤーのみ表示)。")
+        show_streak_prob_ranking(
+            "top_after_top_rate", "top_after_top_samples",
+            "連勝確率", "トップ数"
+        )
+
+    # --- t17: 連続2着率 ---
+    with t17:
+        st.caption("2着を取った直後の半荘で再度2着を取った確率(サンプル数10以上のプレイヤーのみ表示)。")
+        show_streak_prob_ranking(
+            "second_after_second_rate", "second_after_second_samples",
+            "連続2着率", "2着数"
+        )
+
+    # --- t18: 連続ラス率 ---
+    with t18:
+        st.caption("ラス(3着)を取った直後の半荘で再度ラスを取った確率(サンプル数10以上のプレイヤーのみ表示)。多いと「連ラス」しがちなプレイヤー。")
+        show_streak_prob_ranking(
+            "last_after_last_rate", "last_after_last_samples",
+            "連続ラス率", "ラス数"
+        )
 
     # --- ベスト100半荘表示関数 ---
     def show_best100_ranking(df_g, df_s):
@@ -4932,7 +4990,7 @@ def page_ranking():
                 html += '</tbody></table>'
                 st.markdown(html, unsafe_allow_html=True)
 
-    with t17:
+    with t19:
         st.caption("各プレイヤーが**連続100半荘**でもっとも良い平均着順を出した期間を抽出。100半荘未満のプレイヤーは非表示です。")
         show_best100_ranking(stats_guest, stats_staff)
 
@@ -4960,8 +5018,8 @@ def page_ranking():
                     else: st.info("データなし")
                 else: st.info("データなし")
 
-    with t18: show_mem_ranking(mem_g, mem_s, "最大飜数")
-    with t19: show_mem_ranking(mem_g, mem_s, "役満回数")
+    with t20: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t21: show_mem_ranking(mem_g, mem_s, "役満回数")
 
     # 段位システム詳細を折りたたみで表示
     with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
