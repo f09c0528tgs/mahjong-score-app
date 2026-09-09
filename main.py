@@ -4267,6 +4267,7 @@ def page_ranking():
         for seat in ["A", "B", "C"]:
             name = row[f"{seat}さん"]
             rank = row[f"{seat}着順"]
+            player_type = row.get(f"{seat}タイプ", "")
             if name:
                 try: r = int(float(rank))
                 except: r = 0
@@ -4275,6 +4276,7 @@ def page_ranking():
                         "name": name, "rank": r, "date": row["論理日付"],
                         "dt": row.get("日時Obj", pd.Timestamp("1900-01-01")),
                         "game_no": row.get("GameNo", 0),
+                        "player_type": str(player_type) if player_type else "",
                     })
 
     if not records:
@@ -4298,6 +4300,21 @@ def page_ranking():
         four_win_count = 0        # 4連勝以上の達成回数
         five_win_count = 0        # 5連勝以上の達成回数
         second_total = ranks.count(2)
+
+        # 連勝確率(トップを取った直後の半荘でトップを取った確率)
+        # 分母: トップを取った試合 (ただし最終試合を除く=直後の試合がある)
+        # 分子: 直後の試合でもトップを取った数
+        top_after_top_denominator = 0
+        top_after_top_numerator = 0
+        for i in range(len(ranks) - 1):  # 最終試合は「次」がないので除外
+            if ranks[i] == 1:
+                top_after_top_denominator += 1
+                if ranks[i + 1] == 1:
+                    top_after_top_numerator += 1
+        top_after_top_rate = (
+            (top_after_top_numerator / top_after_top_denominator * 100)
+            if top_after_top_denominator > 0 else None
+        )
 
         cur_win = cur_last = cur_second = 0
         cur_last_avoid = 0  # 現在の連続ラス回避 (1 or 2)
@@ -4350,6 +4367,8 @@ def page_ranking():
             "four_win_count": four_win_count,
             "five_win_count": five_win_count,
             "second_count": second_total,
+            "top_after_top_rate": top_after_top_rate,
+            "top_after_top_samples": top_after_top_denominator,  # 分母 (サンプル数)
         })
 
     streaks = df_raw.groupby("name", group_keys=False).apply(compute_streaks).reset_index()
@@ -4415,6 +4434,21 @@ def page_ranking():
     # 連続100半荘最高成績をマージ
     stats = stats.merge(best_windows, on="name", how="left")
 
+    # --- タイプ別平均着順(A客/AS/B客/BS)を集計してマージ ---
+    for target_type in ["A客", "AS", "B客", "BS"]:
+        df_type = df_raw[df_raw["player_type"] == target_type]
+        if not df_type.empty:
+            type_stats = df_type.groupby("name").agg(
+                **{
+                    f"avg_rank_{target_type}": ("rank", "mean"),
+                    f"games_{target_type}": ("rank", "count"),
+                }
+            ).reset_index()
+            stats = stats.merge(type_stats, on="name", how="left")
+        else:
+            stats[f"avg_rank_{target_type}"] = None
+            stats[f"games_{target_type}"] = 0
+
     stats["games_per_day"] = stats["games"] / stats["days"]
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["second_rate"] = (stats["second_count"] / stats["games"]) * 100
@@ -4455,17 +4489,23 @@ def page_ranking():
                                 "max_last_avoid_streak": "最長連続ラス回避",
                                 "max_no_top_streak": "最長連続トップ無し",
                                 "four_win_count": "4連勝以上回数",
-                                "five_win_count": "5連勝以上回数"}
+                                "five_win_count": "5連勝以上回数",
+                                "top_after_top_rate": "連勝確率",
+                                "avg_rank_A客": "平均着順(A客)",
+                                "avg_rank_AS": "平均着順(AS)",
+                                "avg_rank_B客": "平均着順(B客)",
+                                "avg_rank_BS": "平均着順(BS)"}
                     st.dataframe(res[cols].rename(columns=rmap), hide_index=True, use_container_width=True)
                 else:
                     st.info("データなし")
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19 = st.tabs([
         "🏅 レーティング", "🎖️ 段位",
-        "📊 打数", "🥇 平均着順", "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
+        "📊 打数", "🥇 平均着順", "🎯 平均着順(ルール別)",
+        "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
         "🔥 最長連勝", "💀 最長連続ラス", "😐 最長連続2着",
         "🛡️ 最長連続ラス回避", "😑 最長連続トップ無し",
-        "✨ 4連勝以上回数", "⭐ 5連勝以上回数",
+        "✨ 4連勝以上回数", "⭐ 5連勝以上回数", "🔁 連勝確率",
         "🌟 ベスト100半荘",
         "💥 最大飜数", "🀅 役満回数"
     ])
@@ -4718,30 +4758,104 @@ def page_ranking():
         show_dan_ranking(rating_guest_t2, rating_staff_t2)
     with t3: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
     with t4: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
-    with t5: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
-    with t6: show_ranking_split(stats_guest, stats_staff, "second_rate", False, '{:.3f}%'.format, "second_rate")
-    with t7: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
-    with t8:
+
+    # --- t5: 平均着順(ルール別) - サブタブで A客/AS/B客/BS を切り替え ---
+    with t5:
+        st.caption("プレイヤーが打った時のルール(タイプ)別の平均着順。各タイプで規定打数以上のプレイヤーのみ表示。")
+        sub_t1, sub_t2, sub_t3, sub_t4 = st.tabs(["🟦 A客", "🟪 AS", "🟨 B客", "🟩 BS"])
+
+        def show_type_ranking(sub_tab, type_key, min_type_games=10):
+            """タイプ別平均着順ランキング (規定打数はタイプ内での打数)"""
+            with sub_tab:
+                st.markdown(f"**「{type_key}」として打った時の平均着順ランキング** (このタイプで{min_type_games}戦以上)")
+                col_avg = f"avg_rank_{type_key}"
+                col_games = f"games_{type_key}"
+
+                # 各グループでフィルタして表示
+                c1_, c2_ = st.columns(2)
+                for col_obj, df_r, title, icon in [(c1_, stats_guest, "お客さん", "🧑‍🤝‍🧑"),
+                                                    (c2_, stats_staff, "スタッフ", "👔")]:
+                    with col_obj:
+                        st.markdown(f"#### {icon} {title} Top20")
+                        if not df_r.empty and col_avg in df_r.columns:
+                            df_filtered = df_r[df_r[col_games].fillna(0) >= min_type_games].copy()
+                            if not df_filtered.empty:
+                                res = df_filtered.sort_values(col_avg, ascending=True).reset_index(drop=True).head(20)
+                                res["順位"] = res.index + 1
+                                display_df = pd.DataFrame({
+                                    "順位": res["順位"],
+                                    "名前": res["name"],
+                                    f"平均着順({type_key})": res[col_avg].map('{:.3f}'.format),
+                                    f"{type_key}打数": res[col_games].astype(int),
+                                })
+                                st.dataframe(display_df, hide_index=True, use_container_width=True)
+                            else:
+                                st.info(f"「{type_key}」で{min_type_games}戦以上のプレイヤーがいません")
+                        else:
+                            st.info("データなし")
+
+        show_type_ranking(sub_t1, "A客")
+        show_type_ranking(sub_t2, "AS")
+        show_type_ranking(sub_t3, "B客")
+        show_type_ranking(sub_t4, "BS")
+
+    with t6: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
+    with t7: show_ranking_split(stats_guest, stats_staff, "second_rate", False, '{:.3f}%'.format, "second_rate")
+    with t8: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
+    with t9:
         st.caption("時系列で1着を連続で取った歴代最長回数。")
         show_ranking_split(stats_guest, stats_staff, "max_win_streak", False, '{:.0f}'.format, "max_win_streak")
-    with t9:
+    with t10:
         st.caption("時系列で3着(ラス)を連続で取った歴代最長回数。少ないほど良い指標ですが、多いと目立ちます。")
         show_ranking_split(stats_guest, stats_staff, "max_last_streak", False, '{:.0f}'.format, "max_last_streak")
-    with t10:
+    with t11:
         st.caption("時系列で2着を連続で取った歴代最長回数。")
         show_ranking_split(stats_guest, stats_staff, "max_second_streak", False, '{:.0f}'.format, "max_second_streak")
-    with t11:
+    with t12:
         st.caption("1着または2着を連続で取った歴代最長回数(=ラスを回避し続けた連続回数)。安定感の指標。")
         show_ranking_split(stats_guest, stats_staff, "max_last_avoid_streak", False, '{:.0f}'.format, "max_last_avoid_streak")
-    with t12:
+    with t13:
         st.caption("2着または3着を連続で取った歴代最長回数(=1着を取れなかった連続回数)。多いほど「トップ運が無い期間」があったことを表す。")
         show_ranking_split(stats_guest, stats_staff, "max_no_top_streak", False, '{:.0f}'.format, "max_no_top_streak")
-    with t13:
+    with t14:
         st.caption("4連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。5連勝も1回カウント。")
         show_ranking_split(stats_guest, stats_staff, "four_win_count", False, '{:.0f}'.format, "four_win_count")
-    with t14:
+    with t15:
         st.caption("5連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。")
         show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count")
+
+    # --- t16: 連勝確率 ---
+    with t16:
+        st.caption("トップを取った直後の半荘で再度トップを取った確率(サンプル数10以上のプレイヤーのみ表示)。")
+        MIN_SAMPLES = 10
+        c1_, c2_ = st.columns(2)
+        for col_obj, df_r, title, icon in [(c1_, stats_guest, "お客さん", "🧑‍🤝‍🧑"),
+                                            (c2_, stats_staff, "スタッフ", "👔")]:
+            with col_obj:
+                st.markdown(f"#### {icon} {title} Top20")
+                if not df_r.empty and "top_after_top_rate" in df_r.columns:
+                    df_filtered = df_r[
+                        df_r["top_after_top_rate"].notna() &
+                        (df_r["top_after_top_samples"].fillna(0) >= MIN_SAMPLES)
+                    ].copy()
+                    if not df_filtered.empty:
+                        res = df_filtered.sort_values("top_after_top_rate", ascending=False).reset_index(drop=True).head(20)
+                        res["順位"] = res.index + 1
+                        display_df = pd.DataFrame({
+                            "順位": res["順位"],
+                            "名前": res["name"],
+                            "連勝確率": res["top_after_top_rate"].map('{:.2f}%'.format),
+                            "分子/分母": res.apply(
+                                lambda r: f"{int(r['top_after_top_rate']/100 * r['top_after_top_samples'] + 0.5)}/{int(r['top_after_top_samples'])}",
+                                axis=1
+                            ),
+                            "打数": res["games"].astype(int),
+                        })
+                        st.dataframe(display_df, hide_index=True, use_container_width=True)
+                    else:
+                        st.info(f"トップ数が{MIN_SAMPLES}以上のプレイヤーがいません")
+                else:
+                    st.info("データなし")
 
     # --- ベスト100半荘表示関数 ---
     def show_best100_ranking(df_g, df_s):
@@ -4818,7 +4932,7 @@ def page_ranking():
                 html += '</tbody></table>'
                 st.markdown(html, unsafe_allow_html=True)
 
-    with t15:
+    with t17:
         st.caption("各プレイヤーが**連続100半荘**でもっとも良い平均着順を出した期間を抽出。100半荘未満のプレイヤーは非表示です。")
         show_best100_ranking(stats_guest, stats_staff)
 
@@ -4846,8 +4960,8 @@ def page_ranking():
                     else: st.info("データなし")
                 else: st.info("データなし")
 
-    with t16: show_mem_ranking(mem_g, mem_s, "最大飜数")
-    with t17: show_mem_ranking(mem_g, mem_s, "役満回数")
+    with t18: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t19: show_mem_ranking(mem_g, mem_s, "役満回数")
 
     # 段位システム詳細を折りたたみで表示
     with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
