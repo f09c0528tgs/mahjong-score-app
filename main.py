@@ -2170,11 +2170,17 @@ def _rank_to_pt(rank_pos):
     return RANKING_PT_TABLE.get(rank_pos, 0)
 
 
-def compute_ranking_points_all(min_games=30):
+def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
     """
     全プレイヤーの「ランキングPT総合」を計算する。
     各ランキング項目について順位を判定し、1位10pt / 2位7pt / 3位5pt /
     4位3pt / 5位2pt / 6〜10位1pt を付与して合計。
+
+    Args:
+        min_games: 平均着順系ランキングの規定打数 (デフォルト30戦)
+        from_dt: 期間開始日時 (Timestamp) or None
+        until_dt: 期間終了日時 (Timestamp) or None
+        両方指定すれば区間フィルタになる
 
     Returns: dict {
         "guest": [{"name", "total_pt", "breakdown": [{"項目", "順位", "pt"}, ...]}, ...],
@@ -2184,6 +2190,17 @@ def compute_ranking_points_all(min_games=30):
     df = load_score_data_effective()
     if df is None or df.empty:
         return {"guest": [], "staff": []}
+
+    # 期間フィルタ
+    if from_dt is not None or until_dt is not None:
+        df = df.copy()
+        if "日時Obj" in df.columns:
+            if from_dt is not None:
+                df = df[df["日時Obj"] >= pd.Timestamp(from_dt)]
+            if until_dt is not None:
+                df = df[df["日時Obj"] <= pd.Timestamp(until_dt)]
+        if df.empty:
+            return {"guest": [], "staff": []}
 
     # records生成 (get_player_top5_rankings と同じロジック)
     records = []
@@ -2427,6 +2444,63 @@ def compute_ranking_points_all(min_games=30):
     return result
 
 
+def compute_monthly_ranking_points(min_games=10, top_n=3):
+    """
+    全月について、その月のランキングPT総合を計算し、各月のTOP N を返す。
+
+    Args:
+        min_games: 各月内での規定打数 (デフォルト10戦)
+        top_n: 各月のTOP何位まで返すか (デフォルト3)
+
+    Returns: dict {
+        "months": ["2026-01", "2026-02", ...],  # 新しい順
+        "data": {
+            "2026-01": {
+                "guest": [{"name", "total_pt", "breakdown": [...]}, ...],
+                "staff": [同上],
+            },
+            ...
+        }
+    }
+    """
+    df = load_score_data_effective()
+    if df is None or df.empty or "日時Obj" not in df.columns:
+        return {"months": [], "data": {}}
+
+    # 対局が存在する月を全て抽出
+    df_valid = df[df["日時Obj"].notna()].copy()
+    if df_valid.empty:
+        return {"months": [], "data": {}}
+    df_valid["年月"] = df_valid["日時Obj"].dt.to_period("M")
+    all_months = sorted(df_valid["年月"].unique(), reverse=True)  # 新しい順
+
+    result = {"months": [], "data": {}}
+    for ym in all_months:
+        # その月の開始・終了日時
+        from_dt = pd.Timestamp(ym.start_time)
+        until_dt = pd.Timestamp(ym.end_time)
+        ym_str = str(ym)  # "2026-01" 形式
+
+        # その月のランキングPT総合を計算
+        month_result = compute_ranking_points_all(
+            min_games=min_games,
+            from_dt=from_dt,
+            until_dt=until_dt,
+        )
+
+        # TOP Nだけ抽出
+        top_data = {
+            "guest": month_result["guest"][:top_n],
+            "staff": month_result["staff"][:top_n],
+        }
+        # 空の月はスキップ (両カテゴリともエントリなし)
+        if not top_data["guest"] and not top_data["staff"]:
+            continue
+
+        result["months"].append(ym_str)
+        result["data"][ym_str] = top_data
+
+    return result
 
 def commit_buffer_to_sheet():
     """
@@ -2673,6 +2747,7 @@ NAV_ITEMS = [
     ("👤", "個人", "personal"),
     ("📊", "データ", "history"),
     ("🏆", "順位", "ranking"),
+    ("📅", "月間", "monthly"),
     ("📇", "メンバー", "members"),
     ("💰", "利益", "profit"),
     ("📜", "ログ", "logs"),
@@ -3154,6 +3229,7 @@ def page_home():
         ("🤝", "2人対戦データ", "versus2"),
         ("👥", "3人対戦データ", "versus3"),
         ("🏆", "ランキング", "ranking"),
+        ("📅", "月間成績", "monthly"),
         ("📇", "メンバー管理", "members"),
         ("💰", "利益管理", "profit"),
         ("📜", "操作ログ", "logs"),
@@ -4814,6 +4890,169 @@ def _page_history_overview(df):
         section_title("📝", "集計表")
         render_paper_sheet(df_filtered)
 
+# --- 月間成績画面 ---
+def page_monthly():
+    render_top_nav("monthly")
+    st.title("📅 月間成績")
+    render_pending_bar(location_key="monthly")
+
+    st.caption("**各月ごとに「ランキングPT総合」を計算**。その月だけの対局データに基づいた順位でポイント付与(1位=10pt / 2位=7pt / 3位=5pt / 4位=3pt / 5位=2pt / 6〜10位=1pt)。月内10戦以上が対象。")
+
+    # 現在の月と過去の月を全て取得
+    with st.spinner("月間ランキングPT総合を集計中..."):
+        monthly_result = compute_monthly_ranking_points(min_games=10, top_n=3)
+
+    all_months = monthly_result.get("months", [])
+    monthly_data = monthly_result.get("data", {})
+
+    if not all_months:
+        st.info("集計できる対局データがありません")
+        return
+
+    # --- 今月の表示 (詳細版: TOP20) ---
+    latest_month = all_months[0]
+    st.markdown(f"## 🌟 今月({latest_month})の月間成績")
+
+    with st.spinner(f"{latest_month}の詳細ランキングを計算中..."):
+        # 今月分だけTOP20まで表示
+        ym_period = pd.Period(latest_month, freq="M")
+        latest_full = compute_ranking_points_all(
+            min_games=10,
+            from_dt=pd.Timestamp(ym_period.start_time),
+            until_dt=pd.Timestamp(ym_period.end_time),
+        )
+
+    c1, c2 = st.columns(2)
+    for col_obj, cat_key, title, icon in [(c1, "guest", "お客さん", "🧑‍🤝‍🧑"),
+                                            (c2, "staff", "スタッフ", "👔")]:
+        with col_obj:
+            st.markdown(f"### {icon} {title} 今月Top20")
+            cat_data = latest_full.get(cat_key, [])
+            if not cat_data:
+                st.info("今月の対局データがありません")
+                continue
+
+            top20 = cat_data[:20]
+            html = '<table class="stats-table" style="width:100%;">'
+            html += """<thead><tr>
+                <th style="width:50px;text-align:center;">順位</th>
+                <th style="text-align:left;">名前</th>
+                <th style="width:80px;text-align:center;">合計pt</th>
+                <th style="width:110px;text-align:center;">内訳</th>
+            </tr></thead><tbody>"""
+            rank_medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+            for i, entry in enumerate(top20):
+                pos = i + 1
+                medal = rank_medals.get(pos, "")
+                rank_color = ("var(--accent)" if pos == 1
+                              else "var(--text-primary)" if pos <= 3
+                              else "var(--text-muted)")
+                breakdown = entry["breakdown"]
+                counts = {1: 0, 2: 0, 3: 0, "4-5": 0, "6-10": 0}
+                for b in breakdown:
+                    r = b["順位"]
+                    if r == 1: counts[1] += 1
+                    elif r == 2: counts[2] += 1
+                    elif r == 3: counts[3] += 1
+                    elif r <= 5: counts["4-5"] += 1
+                    elif r <= 10: counts["6-10"] += 1
+                bp = []
+                if counts[1] > 0: bp.append(f'🥇{counts[1]}')
+                if counts[2] > 0: bp.append(f'🥈{counts[2]}')
+                if counts[3] > 0: bp.append(f'🥉{counts[3]}')
+                if counts["4-5"] > 0: bp.append(f'4-5位:{counts["4-5"]}')
+                if counts["6-10"] > 0: bp.append(f'6-10位:{counts["6-10"]}')
+                bstr = " ".join(bp) if bp else "-"
+                row_bg = "rgba(240,192,64,0.08)" if pos == 1 else "transparent"
+                html += f'''<tr style="background:{row_bg};">
+                    <td style="text-align:center;font-weight:900;color:{rank_color};">{medal} {pos}</td>
+                    <td style="text-align:left;font-weight:600;">{entry["name"]}</td>
+                    <td style="text-align:center;font-weight:900;
+                               font-family:'Zen Kaku Gothic New';
+                               color:{rank_color};font-size:1.1rem;">{entry["total_pt"]} pt</td>
+                    <td style="text-align:center;font-size:0.75rem;color:var(--text-muted);">{bstr}</td>
+                </tr>'''
+            html += '</tbody></table>'
+            st.markdown(html, unsafe_allow_html=True)
+
+    st.divider()
+
+    # --- 過去の月間TOP3 ---
+    past_months = all_months[1:]  # 今月以外
+    if not past_months:
+        st.info("過去の月間成績はまだありません(今月が最初の月です)")
+        return
+
+    st.markdown(f"## 📜 過去の月間成績 TOP3 ({len(past_months)}ヶ月分)")
+    st.caption("各月のランキングPT総合TOP3を古い順に一覧表示。")
+
+    # 過去月を新しい順に並べる (現在は新しい順)
+    for ym_str in past_months:
+        top3 = monthly_data.get(ym_str, {})
+        guest_top = top3.get("guest", [])
+        staff_top = top3.get("staff", [])
+
+        # 月のヘッダー
+        # 対局数のサマリ (bulletin風)
+        try:
+            ym_period = pd.Period(ym_str, freq="M")
+            month_display = ym_period.strftime("%Y年%m月")
+        except:
+            month_display = ym_str
+
+        # コンテナで月ごとに区切って表示
+        with st.container():
+            st.markdown(f"### 📆 {month_display}")
+
+            mc1, mc2 = st.columns(2)
+            rank_medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+            rank_colors = {1: "var(--accent)", 2: "var(--text-primary)", 3: "var(--red)"}
+
+            for col_obj, cat_data, title, icon in [(mc1, guest_top, "お客さん", "🧑‍🤝‍🧑"),
+                                                     (mc2, staff_top, "スタッフ", "👔")]:
+                with col_obj:
+                    st.markdown(f"**{icon} {title}**")
+                    if not cat_data:
+                        st.markdown('<div style="color:var(--text-muted);font-size:0.85rem;padding:0.4rem 0;">— データなし —</div>', unsafe_allow_html=True)
+                        continue
+                    html = '<div style="display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.6rem;">'
+                    for i, entry in enumerate(cat_data):
+                        pos = i + 1
+                        medal = rank_medals.get(pos, "")
+                        rc = rank_colors.get(pos, "var(--text-primary)")
+                        breakdown = entry["breakdown"]
+                        # 主要な項目 (1位のみを最大2件)
+                        top_items = [b for b in breakdown if b["順位"] == 1][:2]
+                        if top_items:
+                            item_str = " / ".join([b["項目"] for b in top_items])
+                            if len([b for b in breakdown if b["順位"] == 1]) > 2:
+                                item_str += " ..."
+                        else:
+                            item_str = f"複数項目でランクイン"
+
+                        html += f'''<div style="display:flex;align-items:center;gap:0.5rem;
+                                    background:var(--bg-card);border:1px solid {rc};
+                                    border-left:3px solid {rc};padding:0.4rem 0.7rem;
+                                    border-radius:6px;">
+                            <span style="font-size:1.2rem;font-weight:900;color:{rc};min-width:50px;">
+                                {medal}{pos}位
+                            </span>
+                            <span style="flex:1;font-weight:700;">{entry["name"]}</span>
+                            <span style="font-family:'Zen Kaku Gothic New';font-weight:900;
+                                         color:{rc};font-size:1.0rem;">
+                                {entry["total_pt"]}pt
+                            </span>
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--text-muted);
+                                    padding-left:2.5rem;margin-top:-0.15rem;">
+                            {item_str}
+                        </div>'''
+                    html += '</div>'
+                    st.markdown(html, unsafe_allow_html=True)
+
+            st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+
+
 # --- ランキング画面 ---
 def page_ranking():
     render_top_nav("ranking")
@@ -5846,6 +6085,7 @@ elif page == "versus2":  page_versus2()
 elif page == "versus3":  page_versus3()
 elif page == "edit":     page_edit()
 elif page == "ranking":  page_ranking()
+elif page == "monthly":  page_monthly()
 elif page == "profit":   page_profit()
 elif page == "logs":     page_logs()
 else:                    page_home()
