@@ -904,56 +904,170 @@ hide_style = """
     .rankpt-breakdown {
         display: flex;
         flex-direction: column;
-        gap: 0.3rem;
+        gap: 0.35rem;
+        padding: 0.2rem 0;
     }
     .rankpt-bd-row {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        padding: 0.4rem 0.7rem;
-        border-radius: 8px;
+        gap: 0.6rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 10px;
         border: 1px solid rgba(255,255,255,0.06);
+        background: rgba(255,255,255,0.02);
+        position: relative;
+        overflow: hidden;
+        transition: transform 0.15s;
+    }
+    .rankpt-bd-row::before {
+        content: '';
+        position: absolute;
+        left: 0; top: 0; bottom: 0;
+        width: 3px;
+    }
+    /* ランクバッジ (順位) */
+    .rankpt-bd-rankbadge {
+        font-size: 0.8rem;
+        font-weight: 800;
+        white-space: nowrap;
+        min-width: 52px;
+        text-align: center;
+        padding: 0.15rem 0.3rem;
+        border-radius: 6px;
     }
     .rankpt-bd-item {
         flex: 1;
         font-size: 0.85rem;
-        font-weight: 600;
+        font-weight: 700;
         color: var(--text-primary);
         min-width: 0;
-    }
-    .rankpt-bd-rank {
-        font-size: 0.85rem;
-        font-weight: 800;
         white-space: nowrap;
-        min-width: 55px;
-        text-align: right;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
+    /* スコア値 (平均着順など) */
+    .rankpt-bd-score {
+        font-size: 0.8rem;
+        font-weight: 700;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        color: var(--text-muted);
+        white-space: nowrap;
+        min-width: 48px;
+        text-align: right;
+        letter-spacing: 0.01em;
+    }
+    /* 獲得pt */
     .rankpt-bd-pt {
-        font-size: 0.85rem;
+        font-size: 0.92rem;
         font-weight: 900;
         font-family: 'Zen Kaku Gothic New', sans-serif;
         white-space: nowrap;
-        min-width: 55px;
+        min-width: 42px;
         text-align: right;
     }
+    /* === Tier別カラー === */
+    .rankpt-bd-row.tier-gold {
+        background: linear-gradient(90deg, rgba(240,192,64,0.14) 0%, rgba(240,192,64,0.03) 100%);
+        border-color: rgba(240,192,64,0.3);
+    }
+    .rankpt-bd-row.tier-gold::before { background: var(--accent); }
+    .rankpt-bd-row.tier-gold .rankpt-bd-rankbadge {
+        color: #1a1d2e; background: var(--accent);
+    }
+    .rankpt-bd-row.tier-gold .rankpt-bd-pt { color: var(--accent); }
+
+    .rankpt-bd-row.tier-silver {
+        background: linear-gradient(90deg, rgba(200,205,220,0.1) 0%, rgba(200,205,220,0.02) 100%);
+        border-color: rgba(200,205,220,0.22);
+    }
+    .rankpt-bd-row.tier-silver::before { background: #c8cddc; }
+    .rankpt-bd-row.tier-silver .rankpt-bd-rankbadge {
+        color: #1a1d2e; background: #c8cddc;
+    }
+    .rankpt-bd-row.tier-silver .rankpt-bd-pt { color: #c8cddc; }
+
+    .rankpt-bd-row.tier-bronze {
+        background: linear-gradient(90deg, rgba(224,123,57,0.12) 0%, rgba(224,123,57,0.02) 100%);
+        border-color: rgba(224,123,57,0.25);
+    }
+    .rankpt-bd-row.tier-bronze::before { background: #e07b39; }
+    .rankpt-bd-row.tier-bronze .rankpt-bd-rankbadge {
+        color: #fff; background: #e07b39;
+    }
+    .rankpt-bd-row.tier-bronze .rankpt-bd-pt { color: #e07b39; }
+
+    .rankpt-bd-row.tier-plain::before { background: rgba(255,255,255,0.15); }
+    .rankpt-bd-row.tier-plain .rankpt-bd-rankbadge {
+        color: var(--text-muted); background: rgba(255,255,255,0.06);
+    }
+    .rankpt-bd-row.tier-plain .rankpt-bd-pt { color: var(--text-muted); }
+
+    /* 合計行 */
     .rankpt-bd-total {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-top: 0.4rem;
-        padding: 0.5rem 0.7rem;
-        background: rgba(240,192,64,0.08);
-        border: 1px solid rgba(240,192,64,0.25);
-        border-radius: 8px;
-        font-size: 0.82rem;
+        margin-top: 0.5rem;
+        padding: 0.6rem 0.85rem;
+        background: linear-gradient(135deg, rgba(240,192,64,0.14) 0%, rgba(240,192,64,0.05) 100%);
+        border: 1px solid rgba(240,192,64,0.3);
+        border-radius: 10px;
+    }
+    .rankpt-bd-total-label {
+        font-size: 0.8rem;
         color: var(--text-muted);
-        font-weight: 600;
+        font-weight: 700;
     }
     .rankpt-bd-total-pt {
-        font-size: 1.1rem;
+        font-size: 1.4rem;
         font-weight: 900;
         color: var(--accent);
         font-family: 'Zen Kaku Gothic New', sans-serif;
+        line-height: 1;
+    }
+    .rankpt-bd-total-unit {
+        font-size: 0.8rem;
+        margin-left: 0.15rem;
+        color: var(--accent);
+        opacity: 0.7;
+    }
+
+    /* ========== expander (ランキングPT用) の装飾 ========== */
+    /* Streamlit の expander ヘッダーをカッコよく */
+    div[data-testid="stExpander"] {
+        border: none !important;
+        margin-bottom: 0.5rem !important;
+    }
+    div[data-testid="stExpander"] details {
+        background: linear-gradient(135deg, rgba(35,39,57,0.95) 0%, rgba(47,53,80,0.8) 100%) !important;
+        border: 1px solid rgba(255,255,255,0.09) !important;
+        border-radius: 12px !important;
+        overflow: hidden !important;
+        transition: all 0.2s !important;
+    }
+    div[data-testid="stExpander"] details:hover {
+        border-color: rgba(240,192,64,0.35) !important;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3) !important;
+    }
+    div[data-testid="stExpander"] details[open] {
+        border-color: rgba(240,192,64,0.3) !important;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.35) !important;
+    }
+    div[data-testid="stExpander"] summary {
+        padding: 0.75rem 1rem !important;
+        font-family: 'Zen Kaku Gothic New', sans-serif !important;
+        font-weight: 800 !important;
+        font-size: 1.0rem !important;
+        color: var(--text-primary) !important;
+        transition: background 0.2s !important;
+    }
+    div[data-testid="stExpander"] summary:hover {
+        background: rgba(240,192,64,0.06) !important;
+        color: var(--accent) !important;
+    }
+    div[data-testid="stExpander"] details[open] summary {
+        border-bottom: 1px solid rgba(255,255,255,0.08) !important;
+        background: rgba(240,192,64,0.04) !important;
     }
 
     /* ========== ホームフッター ========== */
@@ -2523,11 +2637,11 @@ def _rank_to_pt(rank_pos):
 
 def render_rankpt_breakdown(breakdown):
     """
-    ランキングPTの内訳 (各項目で何位だったか) をHTMLで描画する。
-    breakdown: [{"項目", "順位", "pt"}, ...]
+    ランキングPTの内訳 (各項目で何位・スコア・pt) をHTMLで描画する。
+    breakdown: [{"項目", "順位", "pt", "値"}, ...]
     """
     if not breakdown:
-        st.markdown('<div style="color:var(--text-muted);font-size:0.85rem;">ランクイン項目なし</div>',
+        st.markdown('<div style="color:var(--text-muted);font-size:0.85rem;padding:0.5rem;">ランクイン項目なし</div>',
                     unsafe_allow_html=True)
         return
 
@@ -2541,29 +2655,27 @@ def render_rankpt_breakdown(breakdown):
     for b in items:
         pos = b["順位"]
         medal = rank_medals.get(pos, "")
-        # 順位に応じた色
+        val_str = b.get("値", "")
+        # 順位に応じた色クラス
         if pos == 1:
-            pos_color = "var(--accent)"
-            pos_bg = "rgba(240,192,64,0.1)"
+            tier = "tier-gold"
         elif pos == 2:
-            pos_color = "#c8cddc"
-            pos_bg = "rgba(200,205,220,0.08)"
+            tier = "tier-silver"
         elif pos == 3:
-            pos_color = "#e07b39"
-            pos_bg = "rgba(224,123,57,0.08)"
+            tier = "tier-bronze"
         else:
-            pos_color = "var(--text-muted)"
-            pos_bg = "rgba(255,255,255,0.03)"
+            tier = "tier-plain"
 
         pos_disp = f"{medal} {pos}位" if medal else f"{pos}位"
-        html += f'''<div class="rankpt-bd-row" style="background:{pos_bg};">
+        html += f'''<div class="rankpt-bd-row {tier}">
+            <span class="rankpt-bd-rankbadge">{pos_disp}</span>
             <span class="rankpt-bd-item">{b["項目"]}</span>
-            <span class="rankpt-bd-rank" style="color:{pos_color};">{pos_disp}</span>
-            <span class="rankpt-bd-pt" style="color:{pos_color};">+{b["pt"]}pt</span>
+            <span class="rankpt-bd-score">{val_str}</span>
+            <span class="rankpt-bd-pt">+{b["pt"]}</span>
         </div>'''
     html += f'''<div class="rankpt-bd-total">
-        <span>合計 {len(items)} 項目でランクイン</span>
-        <span class="rankpt-bd-total-pt">{total_pt} pt</span>
+        <span class="rankpt-bd-total-label">{len(items)} 項目でランクイン</span>
+        <span class="rankpt-bd-total-pt">{total_pt}<span class="rankpt-bd-total-unit">pt</span></span>
     </div>'''
     html += '</div>'
     st.markdown(html, unsafe_allow_html=True)
@@ -2760,24 +2872,39 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
     #  9. ⭐ 5連勝以上回数
     #  10. 🌟 ベスト100半荘
     def build_ranking_defs(stats_cat):
+        # (col, label, ascending, filter_fn, value_formatter)
         return [d for d in [
             # レーティング系
             ("レート", "🏅 レーティング", False,
-             lambda df: df[df.get("レート", pd.Series([None]*len(df))).notna()]) if "レート" in stats_cat.columns else None,
+             lambda df: df[df.get("レート", pd.Series([None]*len(df))).notna()],
+             lambda v: f"R{v:.1f}") if "レート" in stats_cat.columns else None,
             ("段位pt", "🎖️ 段位(累積pt)", False,
-             lambda df: df[df.get("段位pt", pd.Series([None]*len(df))).notna()]) if "段位pt" in stats_cat.columns else None,
+             lambda df: df[df.get("段位pt", pd.Series([None]*len(df))).notna()],
+             lambda v: f"{v:.0f}pt") if "段位pt" in stats_cat.columns else None,
             # 基本統計
-            ("games", "📊 打数", False, lambda df: df[df["games"].fillna(0) >= 1]),
-            ("avg_rank", "🥇 平均着順", True, lambda df: df[df["games"].fillna(0) >= min_games]),
-            ("top_rate", "👑 トップ率", False, lambda df: df[df["games"].fillna(0) >= min_games]),
-            ("last_avoid_rate", "🛡 ラス回避率", False, lambda df: df[df["games"].fillna(0) >= min_games]),
+            ("games", "📊 打数", False,
+             lambda df: df[df["games"].fillna(0) >= 1],
+             lambda v: f"{int(v)}戦"),
+            ("avg_rank", "🥇 平均着順", True,
+             lambda df: df[df["games"].fillna(0) >= min_games],
+             lambda v: f"{v:.3f}"),
+            ("top_rate", "👑 トップ率", False,
+             lambda df: df[df["games"].fillna(0) >= min_games],
+             lambda v: f"{v:.1f}%"),
+            ("last_avoid_rate", "🛡 ラス回避率", False,
+             lambda df: df[df["games"].fillna(0) >= min_games],
+             lambda v: f"{v:.1f}%"),
             # 連続系
-            ("max_win_streak", "🔥 最長連勝", False, None),
-            ("max_last_avoid_streak", "🛡️ 最長連続ラス回避", False, None),
-            ("five_win_count", "⭐ 5連勝以上回数", False, None),
+            ("max_win_streak", "🔥 最長連勝", False, None,
+             lambda v: f"{int(v)}連勝"),
+            ("max_last_avoid_streak", "🛡️ 最長連続ラス回避", False, None,
+             lambda v: f"{int(v)}連続"),
+            ("five_win_count", "⭐ 5連勝以上回数", False, None,
+             lambda v: f"{int(v)}回"),
             # ベスト100半荘
             ("best100_avg", "🌟 ベスト100半荘", True,
-             lambda df: df[df["best100_avg"].notna()]),
+             lambda df: df[df["best100_avg"].notna()],
+             lambda v: f"{v:.3f}"),
         ] if d is not None]
 
     result = {"guest": [], "staff": []}
@@ -2788,10 +2915,10 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
 
         # 各プレイヤーの合計ptとbreakdown
         pt_totals = {}  # name -> total pt
-        breakdowns = {}  # name -> [{"項目", "順位", "pt"}, ...]
+        breakdowns = {}  # name -> [{"項目", "順位", "pt", "値"}, ...]
 
         ranking_defs = build_ranking_defs(stats_cat)
-        for col, label, ascending, filter_fn in ranking_defs:
+        for col, label, ascending, filter_fn, value_formatter in ranking_defs:
             if col not in stats_cat.columns:
                 continue
             df_r = stats_cat.copy()
@@ -2811,11 +2938,17 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
                 if pt <= 0:
                     continue
                 name = df_r.iloc[i]["name"]
+                # 実際のスコア値をフォーマット
+                raw_val = df_r.iloc[i][col]
+                try:
+                    val_str = value_formatter(raw_val)
+                except Exception:
+                    val_str = str(raw_val)
                 pt_totals[name] = pt_totals.get(name, 0) + pt
                 if name not in breakdowns:
                     breakdowns[name] = []
                 breakdowns[name].append({
-                    "項目": label, "順位": rank_pos, "pt": pt,
+                    "項目": label, "順位": rank_pos, "pt": pt, "値": val_str,
                 })
 
         # 合計ptでソート
