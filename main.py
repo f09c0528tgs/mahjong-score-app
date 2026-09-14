@@ -674,13 +674,6 @@ hide_style = """
         margin-bottom: 0;
         text-shadow: 0 2px 20px rgba(240,192,64,0.3);
     }
-    .hero-sub {
-        color: rgba(255,255,255,0.4);
-        font-size: 0.72rem;
-        letter-spacing: 0.35em;
-        font-weight: 600;
-        margin-bottom: 0.2rem;
-    }
 
     /* ========== メニューボタン (カラー別グラデーション) ========== */
     .menu-btn-wrap {
@@ -689,8 +682,8 @@ hide_style = """
     /* 全メニューボタンの基本スタイル */
     .menu-btn-wrap .stButton > button {
         position: relative !important;
-        min-height: 78px !important;
-        padding: 0.9rem 1.2rem 0.9rem 1.5rem !important;
+        min-height: 62px !important;
+        padding: 1rem 1.2rem 1rem 1.5rem !important;
         background: linear-gradient(135deg, rgba(35,39,57,0.95) 0%, rgba(47,53,80,0.85) 100%) !important;
         border: 1px solid rgba(255,255,255,0.08) !important;
         border-radius: 14px !important;
@@ -698,8 +691,9 @@ hide_style = """
         font-family: 'Zen Kaku Gothic New', sans-serif !important;
         font-weight: 700 !important;
         text-align: left !important;
-        white-space: pre-line !important;
-        line-height: 1.4 !important;
+        display: flex !important;
+        align-items: center !important;
+        line-height: 1.3 !important;
         overflow: hidden !important;
         transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
         box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04) !important;
@@ -744,16 +738,8 @@ hide_style = """
     .menu-btn-wrap .stButton > button p {
         margin: 0 !important;
         color: var(--text-primary) !important;
-        font-size: 0.95rem !important;
+        font-size: 1.0rem !important;
         font-weight: 800 !important;
-        letter-spacing: 0.01em !important;
-    }
-    /* 2行目 (説明) は改行後に薄く小さく表示 */
-    .menu-btn-wrap .stButton > button p:nth-child(2) {
-        font-size: 0.72rem !important;
-        color: var(--text-muted) !important;
-        font-weight: 500 !important;
-        margin-top: 0.2rem !important;
         letter-spacing: 0.02em !important;
     }
 
@@ -835,6 +821,84 @@ hide_style = """
         box-shadow: 0 10px 30px rgba(217,90,140,0.25),
                     inset 0 1px 0 rgba(255,255,255,0.08) !important;
     }
+
+    /* ========== ランキングPT 情報パネル ========== */
+    .rankpt-info-panel {
+        background: linear-gradient(135deg, rgba(35,39,57,0.9) 0%, rgba(47,53,80,0.7) 100%);
+        border: 1px solid rgba(240,192,64,0.2);
+        border-radius: 14px;
+        padding: 1rem 1.2rem;
+        margin-bottom: 0.8rem;
+    }
+    .rankpt-section-title {
+        font-size: 0.78rem;
+        font-weight: 800;
+        color: var(--accent);
+        letter-spacing: 0.05em;
+        margin-bottom: 0.55rem;
+    }
+    .rankpt-items {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+    .rankpt-item {
+        display: inline-flex;
+        align-items: center;
+        background: rgba(255,255,255,0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 8px;
+        padding: 0.32rem 0.6rem;
+        font-size: 0.76rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        white-space: nowrap;
+    }
+    .rankpt-divider {
+        height: 1px;
+        background: linear-gradient(90deg,
+            transparent 0%,
+            rgba(240,192,64,0.25) 50%,
+            transparent 100%);
+        margin: 0.9rem 0;
+    }
+    .rankpt-pts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+    }
+    .rankpt-pt {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.3rem;
+        background: rgba(0,0,0,0.25);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 999px;
+        padding: 0.3rem 0.7rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+    .rankpt-pt strong {
+        color: var(--text-primary);
+        font-weight: 900;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+    }
+    .rankpt-pt.pt-gold {
+        border-color: rgba(240,192,64,0.4);
+        background: rgba(240,192,64,0.08);
+    }
+    .rankpt-pt.pt-gold strong { color: var(--accent); }
+    .rankpt-pt.pt-silver {
+        border-color: rgba(200,205,220,0.3);
+        background: rgba(200,205,220,0.06);
+    }
+    .rankpt-pt.pt-silver strong { color: #c8cddc; }
+    .rankpt-pt.pt-bronze {
+        border-color: rgba(224,123,57,0.3);
+        background: rgba(224,123,57,0.06);
+    }
+    .rankpt-pt.pt-bronze strong { color: #e07b39; }
 
     /* ========== ホームフッター ========== */
     .home-footer {
@@ -1047,16 +1111,12 @@ hide_style = """
         .main .block-container { padding: 0.8rem 1rem 5rem; }
         .hero-header { padding: 1.6rem 1rem 1.4rem; }
         .hero-title { font-size: 1.8rem; }
-        .hero-sub { font-size: 0.65rem; letter-spacing: 0.25em; }
         .menu-btn-wrap .stButton > button {
-            min-height: 68px !important;
-            padding: 0.7rem 0.9rem 0.7rem 1.2rem !important;
+            min-height: 54px !important;
+            padding: 0.8rem 0.8rem 0.8rem 1.2rem !important;
         }
         .menu-btn-wrap .stButton > button p {
-            font-size: 0.85rem !important;
-        }
-        .menu-btn-wrap .stButton > button p:nth-child(2) {
-            font-size: 0.65rem !important;
+            font-size: 0.88rem !important;
         }
         h1 { font-size: 1.4rem !important; }
         [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
@@ -3441,14 +3501,14 @@ def page_home():
     </div>
     """, unsafe_allow_html=True)
 
-    # メニュー項目 (絵文字, ラベル, 説明, page, カラークラス)
+    # メニュー項目 (絵文字, ラベル, page, カラークラス)
     menu_items = [
-        ("👤", "個人成績", "選手ごとの詳細な成績を確認", "personal", "blue"),
-        ("📊", "データ参照", "対局データを検索・閲覧", "history", "green"),
-        ("🏆", "ランキング", "23項目の総合ランキング", "ranking", "gold"),
-        ("📅", "月間成績", "月間PT総合と過去TOP3", "monthly", "orange"),
-        ("🤝", "2人対戦データ", "選手2人の直接対決", "versus2", "purple"),
-        ("👥", "3人対戦データ", "特定3人の同卓対局", "versus3", "pink"),
+        ("👤", "個人成績", "personal", "blue"),
+        ("📊", "データ参照", "history", "green"),
+        ("🏆", "ランキング", "ranking", "gold"),
+        ("📅", "月間成績", "monthly", "orange"),
+        ("🤝", "2人対戦データ", "versus2", "purple"),
+        ("👥", "3人対戦データ", "versus3", "pink"),
     ]
 
     # 2列グリッド
@@ -3458,14 +3518,12 @@ def page_home():
             idx = i + j
             if idx >= len(menu_items):
                 continue
-            icon, label, desc, page_key, color_class = menu_items[idx]
+            icon, label, page_key, color_class = menu_items[idx]
             with col:
                 # ボタンを div でラップして、その div にカラークラスを付与
                 # (直下の Streamlit ボタンにCSSでスタイルを当てる)
                 st.markdown(f'<div class="menu-btn-wrap menu-color-{color_class}">', unsafe_allow_html=True)
-                # ボタンのラベルは絵文字+ラベル+説明(改行) の複数行
-                btn_label = f"{icon}  {label}\n{desc}"
-                if st.button(btn_label, key=f"home_{page_key}", use_container_width=True):
+                if st.button(f"{icon}  {label}", key=f"home_{page_key}", use_container_width=True):
                     st.session_state["page"] = page_key
                     st.rerun()
                 st.markdown('</div>', unsafe_allow_html=True)
@@ -4790,7 +4848,40 @@ def page_monthly():
     st.title("📅 月間成績")
     render_pending_bar(location_key="monthly")
 
-    st.caption("**各月ごとに「ランキングPT総合」を計算**。その月だけの対局データに基づいた順位でポイント付与(1位=10pt / 2位=7pt / 3位=5pt / 4位=3pt / 5位=2pt / 6〜10位=1pt)。月内10戦以上が対象。")
+    # 集計内容を視覚的に明記するパネル
+    st.markdown("""
+    <div class="rankpt-info-panel">
+        <div class="rankpt-section">
+            <div class="rankpt-section-title">📋 集計対象の10項目 (その月だけのデータで計算)</div>
+            <div class="rankpt-items">
+                <span class="rankpt-item">🏅 レーティング</span>
+                <span class="rankpt-item">🎖️ 段位</span>
+                <span class="rankpt-item">📊 打数</span>
+                <span class="rankpt-item">🥇 平均着順</span>
+                <span class="rankpt-item">👑 トップ率</span>
+                <span class="rankpt-item">🛡 ラス回避率</span>
+                <span class="rankpt-item">🔥 最長連勝</span>
+                <span class="rankpt-item">🛡️ 最長連続ラス回避</span>
+                <span class="rankpt-item">⭐ 5連勝以上回数</span>
+                <span class="rankpt-item">🌟 ベスト100半荘</span>
+            </div>
+        </div>
+        <div class="rankpt-divider"></div>
+        <div class="rankpt-section">
+            <div class="rankpt-section-title">💎 順位別ポイント</div>
+            <div class="rankpt-pts">
+                <span class="rankpt-pt pt-gold">🥇 1位 <strong>10pt</strong></span>
+                <span class="rankpt-pt pt-silver">🥈 2位 <strong>7pt</strong></span>
+                <span class="rankpt-pt pt-bronze">🥉 3位 <strong>5pt</strong></span>
+                <span class="rankpt-pt">4位 <strong>3pt</strong></span>
+                <span class="rankpt-pt">5位 <strong>2pt</strong></span>
+                <span class="rankpt-pt">6〜10位 <strong>1pt</strong></span>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.caption("月内 **10戦以上** のプレイヤーが対象。お客さん/スタッフは別々に集計。")
 
     # 現在の月と過去の月を全て取得
     with st.spinner("月間ランキングPT総合を集計中..."):
@@ -5529,7 +5620,41 @@ def page_ranking():
 
     # --- t1: ランキングPT総合 ---
     with t1:
-        st.caption("**各ランキング項目の順位に応じたポイント合計** (1位=10pt / 2位=7pt / 3位=5pt / 4位=3pt / 5位=2pt / 6〜10位=1pt)。全ランキング項目を横断した総合的な強さの指標。")
+        # 集計内容を視覚的に明記するパネル
+        st.markdown("""
+        <div class="rankpt-info-panel">
+            <div class="rankpt-section">
+                <div class="rankpt-section-title">📋 集計対象の10項目</div>
+                <div class="rankpt-items">
+                    <span class="rankpt-item">🏅 レーティング</span>
+                    <span class="rankpt-item">🎖️ 段位</span>
+                    <span class="rankpt-item">📊 打数</span>
+                    <span class="rankpt-item">🥇 平均着順</span>
+                    <span class="rankpt-item">👑 トップ率</span>
+                    <span class="rankpt-item">🛡 ラス回避率</span>
+                    <span class="rankpt-item">🔥 最長連勝</span>
+                    <span class="rankpt-item">🛡️ 最長連続ラス回避</span>
+                    <span class="rankpt-item">⭐ 5連勝以上回数</span>
+                    <span class="rankpt-item">🌟 ベスト100半荘</span>
+                </div>
+            </div>
+            <div class="rankpt-divider"></div>
+            <div class="rankpt-section">
+                <div class="rankpt-section-title">💎 順位別ポイント</div>
+                <div class="rankpt-pts">
+                    <span class="rankpt-pt pt-gold">🥇 1位 <strong>10pt</strong></span>
+                    <span class="rankpt-pt pt-silver">🥈 2位 <strong>7pt</strong></span>
+                    <span class="rankpt-pt pt-bronze">🥉 3位 <strong>5pt</strong></span>
+                    <span class="rankpt-pt">4位 <strong>3pt</strong></span>
+                    <span class="rankpt-pt">5位 <strong>2pt</strong></span>
+                    <span class="rankpt-pt">6〜10位 <strong>1pt</strong></span>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        st.caption("上の10項目それぞれで順位を判定し、獲得ポイントを合計します。お客さん/スタッフは別々に集計。")
+
         with st.spinner("全ランキング項目のポイントを集計中..."):
             pt_result = compute_ranking_points_all(min_games=min_games)
 
@@ -5598,31 +5723,29 @@ def page_ranking():
                 html += '</tbody></table>'
                 st.markdown(html, unsafe_allow_html=True)
 
-        # ポイント配分の説明
-        with st.expander("ℹ️ ポイント配分の詳細", expanded=False):
-            st.markdown("""
-            **順位別ポイント配分**:
-            - 🥇 **1位: 10pt**
-            - 🥈 **2位: 7pt**
-            - 🥉 **3位: 5pt**
-            - **4位: 3pt**
-            - **5位: 2pt**
-            - **6〜10位: 1pt**
-            - 11位以下: 0pt
+        # 集計条件の補足説明
+        with st.expander("ℹ️ 集計条件の詳細", expanded=False):
+            st.markdown(f"""
+            **各項目の集計条件**:
 
-            **対象ランキング項目 (10項目)**:
-            - 🏅 レーティング
-            - 🎖️ 段位 (累積pt)
-            - 📊 打数
-            - 🥇 平均着順 (総合)
-            - 👑 トップ率
-            - 🛡 ラス回避率
-            - 🔥 最長連勝
-            - 🛡️ 最長連続ラス回避
-            - ⭐ 5連勝以上回数
-            - 🌟 ベスト100半荘
+            | 項目 | ソート | 集計条件 |
+            |---|---|---|
+            | 🏅 レーティング | 高い順 | レーティング算出済み |
+            | 🎖️ 段位 (累積pt) | 高い順 | レーティング算出済み |
+            | 📊 打数 | 多い順 | 1戦以上 |
+            | 🥇 平均着順 | 良い順(小さい順) | **{min_games}戦以上** |
+            | 👑 トップ率 | 高い順 | **{min_games}戦以上** |
+            | 🛡 ラス回避率 | 高い順 | **{min_games}戦以上** |
+            | 🔥 最長連勝 | 多い順 | 制限なし |
+            | 🛡️ 最長連続ラス回避 | 多い順 | 制限なし |
+            | ⭐ 5連勝以上回数 | 多い順 | 制限なし |
+            | 🌟 ベスト100半荘 | 良い順(小さい順) | **100戦以上** |
 
-            **カテゴリ別**にお客さん/スタッフを分けて集計しています。
+            **その他**:
+            - 11位以下は 0pt (ポイントなし)
+            - **お客さん / スタッフ** は別カテゴリで集計 (混ざりません)
+            - 規定打数はページ上部のスライダーで変更できます (現在: **{min_games}戦**)
+            - 1項目で獲得できる最大は 10pt、10項目すべて1位なら理論値 **100pt**
             """)
 
     with t2:
