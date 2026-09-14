@@ -900,6 +900,62 @@ hide_style = """
     }
     .rankpt-pt.pt-bronze strong { color: #e07b39; }
 
+    /* ========== ランキングPT 内訳 (expander内) ========== */
+    .rankpt-breakdown {
+        display: flex;
+        flex-direction: column;
+        gap: 0.3rem;
+    }
+    .rankpt-bd-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.7rem;
+        border-radius: 8px;
+        border: 1px solid rgba(255,255,255,0.06);
+    }
+    .rankpt-bd-item {
+        flex: 1;
+        font-size: 0.85rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        min-width: 0;
+    }
+    .rankpt-bd-rank {
+        font-size: 0.85rem;
+        font-weight: 800;
+        white-space: nowrap;
+        min-width: 55px;
+        text-align: right;
+    }
+    .rankpt-bd-pt {
+        font-size: 0.85rem;
+        font-weight: 900;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        white-space: nowrap;
+        min-width: 55px;
+        text-align: right;
+    }
+    .rankpt-bd-total {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 0.4rem;
+        padding: 0.5rem 0.7rem;
+        background: rgba(240,192,64,0.08);
+        border: 1px solid rgba(240,192,64,0.25);
+        border-radius: 8px;
+        font-size: 0.82rem;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+    .rankpt-bd-total-pt {
+        font-size: 1.1rem;
+        font-weight: 900;
+        color: var(--accent);
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+    }
+
     /* ========== ホームフッター ========== */
     .home-footer {
         margin-top: 2rem;
@@ -2465,6 +2521,54 @@ def _rank_to_pt(rank_pos):
     return RANKING_PT_TABLE.get(rank_pos, 0)
 
 
+def render_rankpt_breakdown(breakdown):
+    """
+    ランキングPTの内訳 (各項目で何位だったか) をHTMLで描画する。
+    breakdown: [{"項目", "順位", "pt"}, ...]
+    """
+    if not breakdown:
+        st.markdown('<div style="color:var(--text-muted);font-size:0.85rem;">ランクイン項目なし</div>',
+                    unsafe_allow_html=True)
+        return
+
+    # 順位が良い順にソート済 (compute側で対応済みだが念のため)
+    items = sorted(breakdown, key=lambda x: (x["順位"], x["項目"]))
+
+    rank_medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    total_pt = sum(b["pt"] for b in items)
+
+    html = '<div class="rankpt-breakdown">'
+    for b in items:
+        pos = b["順位"]
+        medal = rank_medals.get(pos, "")
+        # 順位に応じた色
+        if pos == 1:
+            pos_color = "var(--accent)"
+            pos_bg = "rgba(240,192,64,0.1)"
+        elif pos == 2:
+            pos_color = "#c8cddc"
+            pos_bg = "rgba(200,205,220,0.08)"
+        elif pos == 3:
+            pos_color = "#e07b39"
+            pos_bg = "rgba(224,123,57,0.08)"
+        else:
+            pos_color = "var(--text-muted)"
+            pos_bg = "rgba(255,255,255,0.03)"
+
+        pos_disp = f"{medal} {pos}位" if medal else f"{pos}位"
+        html += f'''<div class="rankpt-bd-row" style="background:{pos_bg};">
+            <span class="rankpt-bd-item">{b["項目"]}</span>
+            <span class="rankpt-bd-rank" style="color:{pos_color};">{pos_disp}</span>
+            <span class="rankpt-bd-pt" style="color:{pos_color};">+{b["pt"]}pt</span>
+        </div>'''
+    html += f'''<div class="rankpt-bd-total">
+        <span>合計 {len(items)} 項目でランクイン</span>
+        <span class="rankpt-bd-total-pt">{total_pt} pt</span>
+    </div>'''
+    html += '</div>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
     """
     全プレイヤーの「ランキングPT総合」を計算する。
@@ -3031,7 +3135,7 @@ NAV_ITEMS = [
     ("👤", "個人", "personal"),
     ("📊", "データ", "history"),
     ("🏆", "順位", "ranking"),
-    ("📅", "月間", "monthly"),
+    ("📅", "月間PT", "monthly"),
 ]
 
 def render_top_nav(current_page):
@@ -3506,7 +3610,7 @@ def page_home():
         ("👤", "個人成績", "personal", "blue"),
         ("📊", "データ参照", "history", "green"),
         ("🏆", "ランキング", "ranking", "gold"),
-        ("📅", "月間成績", "monthly", "orange"),
+        ("📅", "月間ランキングPT", "monthly", "orange"),
         ("🤝", "2人対戦データ", "versus2", "purple"),
         ("👥", "3人対戦データ", "versus3", "pink"),
     ]
@@ -4845,7 +4949,7 @@ def _page_history_overview(df):
 # --- 月間成績画面 ---
 def page_monthly():
     render_top_nav("monthly")
-    st.title("📅 月間成績")
+    st.title("📅 月間ランキングPT")
     render_pending_bar(location_key="monthly")
 
     # 集計内容を視覚的に明記するパネル
@@ -4896,7 +5000,7 @@ def page_monthly():
 
     # --- 今月の表示 (詳細版: TOP20) ---
     latest_month = all_months[0]
-    st.markdown(f"## 🌟 今月({latest_month})の月間成績")
+    st.markdown(f"## 🌟 今月({latest_month})のランキングPT")
 
     with st.spinner(f"{latest_month}の詳細ランキングを計算中..."):
         # 今月分だけTOP20まで表示
@@ -4918,57 +5022,23 @@ def page_monthly():
                 continue
 
             top20 = cat_data[:20]
-            html = '<table class="stats-table" style="width:100%;">'
-            html += """<thead><tr>
-                <th style="width:50px;text-align:center;">順位</th>
-                <th style="text-align:left;">名前</th>
-                <th style="width:80px;text-align:center;">合計pt</th>
-                <th style="width:110px;text-align:center;">内訳</th>
-            </tr></thead><tbody>"""
             rank_medals = {1: "🥇", 2: "🥈", 3: "🥉"}
             for i, entry in enumerate(top20):
                 pos = i + 1
-                medal = rank_medals.get(pos, "")
-                rank_color = ("var(--accent)" if pos == 1
-                              else "var(--text-primary)" if pos <= 3
-                              else "var(--text-muted)")
-                breakdown = entry["breakdown"]
-                counts = {1: 0, 2: 0, 3: 0, "4-5": 0, "6-10": 0}
-                for b in breakdown:
-                    r = b["順位"]
-                    if r == 1: counts[1] += 1
-                    elif r == 2: counts[2] += 1
-                    elif r == 3: counts[3] += 1
-                    elif r <= 5: counts["4-5"] += 1
-                    elif r <= 10: counts["6-10"] += 1
-                bp = []
-                if counts[1] > 0: bp.append(f'🥇{counts[1]}')
-                if counts[2] > 0: bp.append(f'🥈{counts[2]}')
-                if counts[3] > 0: bp.append(f'🥉{counts[3]}')
-                if counts["4-5"] > 0: bp.append(f'4-5位:{counts["4-5"]}')
-                if counts["6-10"] > 0: bp.append(f'6-10位:{counts["6-10"]}')
-                bstr = " ".join(bp) if bp else "-"
-                row_bg = "rgba(240,192,64,0.08)" if pos == 1 else "transparent"
-                html += f'''<tr style="background:{row_bg};">
-                    <td style="text-align:center;font-weight:900;color:{rank_color};">{medal} {pos}</td>
-                    <td style="text-align:left;font-weight:600;">{entry["name"]}</td>
-                    <td style="text-align:center;font-weight:900;
-                               font-family:'Zen Kaku Gothic New';
-                               color:{rank_color};font-size:1.1rem;">{entry["total_pt"]} pt</td>
-                    <td style="text-align:center;font-size:0.75rem;color:var(--text-muted);">{bstr}</td>
-                </tr>'''
-            html += '</tbody></table>'
-            st.markdown(html, unsafe_allow_html=True)
+                medal = rank_medals.get(pos, f"{pos}")
+                label = f"{medal}　{entry['name']}　—　{entry['total_pt']}pt"
+                with st.expander(label, expanded=(pos <= 3)):
+                    render_rankpt_breakdown(entry["breakdown"])
 
     st.divider()
 
     # --- 過去の月間TOP3 ---
     past_months = all_months[1:]  # 今月以外
     if not past_months:
-        st.info("過去の月間成績はまだありません(今月が最初の月です)")
+        st.info("過去のランキングPTはまだありません(今月が最初の月です)")
         return
 
-    st.markdown(f"## 📜 過去の月間成績 TOP3 ({len(past_months)}ヶ月分)")
+    st.markdown(f"## 📜 過去のランキングPT TOP3 ({len(past_months)}ヶ月分)")
     st.caption("各月のランキングPT総合TOP3を古い順に一覧表示。")
 
     # 過去月を新しい順に並べる (現在は新しい順)
@@ -5668,60 +5738,17 @@ def page_ranking():
                     st.info("データなし")
                     continue
 
-                # 上位20位のみ表示
+                # 上位20位を expander で表示 (クリックで内訳展開)
                 top20 = cat_data[:20]
-
-                # HTMLテーブル
-                html = '<table class="stats-table" style="width:100%;">'
-                html += """<thead><tr>
-                    <th style="width:50px;text-align:center;">順位</th>
-                    <th style="text-align:left;">名前</th>
-                    <th style="width:80px;text-align:center;">合計pt</th>
-                    <th style="width:110px;text-align:center;">内訳</th>
-                </tr></thead><tbody>"""
-
                 rank_medals = {1: "🥇", 2: "🥈", 3: "🥉"}
                 for i, entry in enumerate(top20):
                     pos = i + 1
-                    medal = rank_medals.get(pos, "")
-                    rank_color = ("var(--accent)" if pos == 1
-                                  else "var(--text-primary)" if pos <= 3
-                                  else "var(--text-muted)")
-
-                    # 内訳サマリ (1位/2位/3位のカウント)
-                    breakdown = entry["breakdown"]
-                    counts = {1: 0, 2: 0, 3: 0, "4-5": 0, "6-10": 0}
-                    for b in breakdown:
-                        r = b["順位"]
-                        if r == 1: counts[1] += 1
-                        elif r == 2: counts[2] += 1
-                        elif r == 3: counts[3] += 1
-                        elif r <= 5: counts["4-5"] += 1
-                        elif r <= 10: counts["6-10"] += 1
-
-                    breakdown_parts = []
-                    if counts[1] > 0: breakdown_parts.append(f'🥇{counts[1]}')
-                    if counts[2] > 0: breakdown_parts.append(f'🥈{counts[2]}')
-                    if counts[3] > 0: breakdown_parts.append(f'🥉{counts[3]}')
-                    if counts["4-5"] > 0: breakdown_parts.append(f'4-5位:{counts["4-5"]}')
-                    if counts["6-10"] > 0: breakdown_parts.append(f'6-10位:{counts["6-10"]}')
-                    breakdown_str = " ".join(breakdown_parts) if breakdown_parts else "-"
-
-                    row_bg = "rgba(240,192,64,0.08)" if pos == 1 else "transparent"
-                    html += f'''<tr style="background:{row_bg};">
-                        <td style="text-align:center;font-weight:900;color:{rank_color};">
-                            {medal} {pos}
-                        </td>
-                        <td style="text-align:left;font-weight:600;">{entry["name"]}</td>
-                        <td style="text-align:center;font-weight:900;
-                                   font-family:'Zen Kaku Gothic New';
-                                   color:{rank_color};font-size:1.1rem;">{entry["total_pt"]} pt</td>
-                        <td style="text-align:center;font-size:0.75rem;color:var(--text-muted);">
-                            {breakdown_str}
-                        </td>
-                    </tr>'''
-                html += '</tbody></table>'
-                st.markdown(html, unsafe_allow_html=True)
+                    medal = rank_medals.get(pos, f"{pos}")
+                    # expander のラベル: 順位 名前 合計pt
+                    label = f"{medal}　{entry['name']}　—　{entry['total_pt']}pt"
+                    # 上位3位はデフォルトで展開
+                    with st.expander(label, expanded=(pos <= 3)):
+                        render_rankpt_breakdown(entry["breakdown"])
 
         # 集計条件の補足説明
         with st.expander("ℹ️ 集計条件の詳細", expanded=False):
