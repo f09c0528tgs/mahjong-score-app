@@ -4146,16 +4146,20 @@ def page_personal():
     played_dates = set()
     compatibility = {}
     player_seat_ranks = {"A": [], "B": [], "C": []}
+    player_type_ranks = {"A客": [], "AS": [], "B客": [], "BS": []}
+    player_weekday_ranks = {i: [] for i in range(7)}  # 0=月
     monthly_data = {}
 
     for _, row in df_filtered.iterrows():
         my_rank = None
         my_seat = None
+        my_type = None
         for s in ["A", "B", "C"]:
             if row[f"{s}さん"] == selected_player:
                 try:
                     my_rank = int(float(row[f"{s}着順"]))
                     my_seat = s
+                    my_type = str(row.get(f"{s}タイプ", "")).strip()
                 except:
                     pass
                 break
@@ -4164,6 +4168,14 @@ def page_personal():
             played_dates.add(row["論理日付"])
             if my_seat in player_seat_ranks:
                 player_seat_ranks[my_seat].append(my_rank)
+            if my_type in player_type_ranks:
+                player_type_ranks[my_type].append(my_rank)
+            # 曜日 (論理日付ベース)
+            try:
+                wd = row["論理日付"].weekday()
+                player_weekday_ranks[wd].append(my_rank)
+            except:
+                pass
 
             ym = str(row["年月"])
             if ym not in monthly_data:
@@ -4221,6 +4233,124 @@ def page_personal():
     """
     st.markdown(stats_html, unsafe_allow_html=True)
 
+    # === 着順分布のビジュアル (バー) ===
+    r1_pct = c1_cnt / games * 100
+    r2_pct = c2_cnt / games * 100
+    r3_pct = c3_cnt / games * 100
+    dist_html = f"""
+    <div style="margin:0.8rem 0 1rem;">
+        <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;font-weight:600;">
+            着順分布
+        </div>
+        <div style="display:flex;height:38px;border-radius:8px;overflow:hidden;
+                    border:1px solid var(--border);font-weight:800;font-size:0.85rem;">
+            <div style="width:{max(r1_pct,0.1)}%;background:linear-gradient(135deg,#f0c040,#e0a828);
+                        display:flex;align-items:center;justify-content:center;color:#1a1d2e;
+                        min-width:{'40px' if r1_pct > 0 else '0'};">
+                {f'🥇{r1_pct:.0f}%' if r1_pct >= 8 else ''}
+            </div>
+            <div style="width:{max(r2_pct,0.1)}%;background:linear-gradient(135deg,#5b9cf6,#4183db);
+                        display:flex;align-items:center;justify-content:center;color:#fff;
+                        min-width:{'40px' if r2_pct > 0 else '0'};">
+                {f'🥈{r2_pct:.0f}%' if r2_pct >= 8 else ''}
+            </div>
+            <div style="width:{max(r3_pct,0.1)}%;background:linear-gradient(135deg,#e05c5c,#c04444);
+                        display:flex;align-items:center;justify-content:center;color:#fff;
+                        min-width:{'40px' if r3_pct > 0 else '0'};">
+                {f'🥉{r3_pct:.0f}%' if r3_pct >= 8 else ''}
+            </div>
+        </div>
+    </div>
+    """
+    st.markdown(dist_html, unsafe_allow_html=True)
+
+    # === 連続系・現在の調子を計算 ===
+    # ranks は時系列順 (df_filtered が既にソート済でない可能性があるので、日時でソート済のものを使う)
+    df_sorted = df_filtered.sort_values(["日時Obj", "GameNo"]) if "GameNo" in df_filtered.columns else df_filtered.sort_values("日時Obj")
+    seq_ranks = []
+    for _, row in df_sorted.iterrows():
+        for s in ["A", "B", "C"]:
+            if row[f"{s}さん"] == selected_player:
+                try:
+                    seq_ranks.append(int(float(row[f"{s}着順"])))
+                except:
+                    pass
+                break
+
+    # 各種連続記録
+    def _max_streak(seq, cond):
+        mx = cur = 0
+        for r in seq:
+            if cond(r):
+                cur += 1
+                mx = max(mx, cur)
+            else:
+                cur = 0
+        return mx
+
+    def _current_streak(seq, cond):
+        cur = 0
+        for r in reversed(seq):
+            if cond(r):
+                cur += 1
+            else:
+                break
+        return cur
+
+    max_win = _max_streak(seq_ranks, lambda r: r == 1)
+    max_lastavoid = _max_streak(seq_ranks, lambda r: r in (1, 2))
+    max_last = _max_streak(seq_ranks, lambda r: r == 3)
+    cur_win = _current_streak(seq_ranks, lambda r: r == 1)
+    cur_lastavoid = _current_streak(seq_ranks, lambda r: r in (1, 2))
+    cur_last = _current_streak(seq_ranks, lambda r: r == 3)
+
+    # 連勝確率・連続ラス率 (直後の着順)
+    def _after_rate(seq, target):
+        d = n = 0
+        for i in range(len(seq) - 1):
+            if seq[i] == target:
+                d += 1
+                if seq[i + 1] == target:
+                    n += 1
+        return (n / d * 100) if d > 0 else None, d
+    top_after, top_samples = _after_rate(seq_ranks, 1)
+    last_after, last_samples = _after_rate(seq_ranks, 3)
+
+    # 現在の調子の表示
+    if cur_win >= 2:
+        mood = f'🔥 <strong style="color:var(--accent)">{cur_win}連勝中</strong>'
+    elif cur_last >= 2:
+        mood = f'💀 <strong style="color:var(--red)">{cur_last}連続ラス中</strong>'
+    elif cur_lastavoid >= 3:
+        mood = f'🛡️ <strong style="color:var(--green)">{cur_lastavoid}連続ラス回避中</strong>'
+    elif seq_ranks:
+        last_r = seq_ranks[-1]
+        emoji = {1: "🥇", 2: "🥈", 3: "🥉"}.get(last_r, "")
+        mood = f'直近は {emoji} {last_r}着'
+    else:
+        mood = "-"
+
+    streak_html = f"""
+    <table class="stats-table" style="margin-top:0.5rem;">
+        <thead><tr>
+            <th>現在の調子</th>
+            <th>🔥 最長連勝</th><th>🛡️ 最長連続ラス回避</th><th>💀 最長連続ラス</th>
+            <th>🔁 連勝確率</th><th>☠️ 連続ラス率</th>
+        </tr></thead>
+        <tbody><tr>
+            <td>{mood}</td>
+            <td style="color:var(--accent);font-weight:800;">{max_win} 連勝</td>
+            <td style="color:var(--green);font-weight:800;">{max_lastavoid} 連続</td>
+            <td style="color:var(--red);font-weight:800;">{max_last} 連続</td>
+            <td>{f'{top_after:.1f}%' if top_after is not None else '—'}
+                <span class="stats-sub">{f'{top_samples}回中' if top_after is not None else 'データ不足'}</span></td>
+            <td>{f'{last_after:.1f}%' if last_after is not None else '—'}
+                <span class="stats-sub">{f'{last_samples}回中' if last_after is not None else 'データ不足'}</span></td>
+        </tr></tbody>
+    </table>
+    """
+    st.markdown(streak_html, unsafe_allow_html=True)
+
     # 折りたたみで席別成績
     with st.expander("🪑 席別成績", expanded=False):
         p_seat_rows = []
@@ -4236,6 +4366,51 @@ def page_personal():
                 })
         if p_seat_rows:
             st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
+
+    # 折りたたみでタイプ別成績 (A客/AS/B客/BS)
+    with st.expander("🎯 ルール(タイプ)別成績", expanded=False):
+        p_type_rows = []
+        for t in ["A客", "AS", "B客", "BS"]:
+            rs = player_type_ranks[t]
+            c = len(rs)
+            if c > 0:
+                p_type_rows.append({
+                    "タイプ": t, "打数": c, "平均着順": f"{sum(rs)/c:.3f}",
+                    "トップ率": f"{rs.count(1)/c*100:.1f}%",
+                    "ラス回避率": f"{(c-rs.count(3))/c*100:.1f}%",
+                    "1着": rs.count(1), "2着": rs.count(2), "3着": rs.count(3),
+                })
+        if p_type_rows:
+            st.dataframe(pd.DataFrame(p_type_rows), hide_index=True, use_container_width=True)
+        else:
+            st.info("タイプ別データがありません")
+
+    # 折りたたみで曜日別成績
+    with st.expander("📆 曜日別成績", expanded=False):
+        weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
+        p_wd_rows = []
+        for wd in range(7):
+            rs = player_weekday_ranks[wd]
+            c = len(rs)
+            if c > 0:
+                p_wd_rows.append({
+                    "曜日": weekday_names[wd], "打数": c,
+                    "平均着順": f"{sum(rs)/c:.3f}",
+                    "トップ率": f"{rs.count(1)/c*100:.1f}%",
+                    "ラス回避率": f"{(c-rs.count(3))/c*100:.1f}%",
+                })
+        if p_wd_rows:
+            st.dataframe(pd.DataFrame(p_wd_rows), hide_index=True, use_container_width=True)
+            # 最も得意な曜日
+            best_wd = min(
+                [(wd, sum(player_weekday_ranks[wd])/len(player_weekday_ranks[wd]))
+                 for wd in range(7) if player_weekday_ranks[wd]],
+                key=lambda x: x[1], default=None
+            )
+            if best_wd:
+                st.caption(f"💡 最も平均着順が良い曜日: **{weekday_names[best_wd[0]]}曜日** ({best_wd[1]:.3f})")
+        else:
+            st.info("曜日別データがありません")
 
     # 月別成績
     if len(monthly_data) > 1 or selected_month_label == "全期間":
