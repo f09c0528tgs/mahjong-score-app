@@ -604,7 +604,7 @@ hide_style = """
         position: relative;
         overflow: hidden;
         border-radius: var(--radius-lg);
-        padding: 2.2rem 1.5rem 1.8rem;
+        padding: 1.6rem 1.5rem 1.4rem;
         margin-bottom: 1rem;
         background: linear-gradient(135deg,
             rgba(240,192,64,0.12) 0%,
@@ -659,7 +659,7 @@ hide_style = """
         font-weight: 800;
         letter-spacing: 0.18em;
         color: var(--accent);
-        margin-bottom: 0.9rem;
+        margin-bottom: 0.6rem;
     }
     .hero-title {
         font-family: 'Zen Kaku Gothic New', sans-serif;
@@ -679,101 +679,161 @@ hide_style = """
         font-size: 0.72rem;
         letter-spacing: 0.35em;
         font-weight: 600;
-        margin-bottom: 1rem;
-    }
-    .hero-meta {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.4rem 1rem;
-        background: rgba(0,0,0,0.2);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: 999px;
-        font-size: 0.78rem;
-        color: var(--text-muted);
-    }
-    .hero-greeting {
-        color: var(--accent);
-        font-weight: 700;
-    }
-    .hero-time {
-        color: var(--text-primary);
-        font-weight: 700;
-        font-family: 'Zen Kaku Gothic New', monospace;
-    }
-    .hero-dot {
-        color: rgba(255,255,255,0.2);
+        margin-bottom: 0.2rem;
     }
 
-    /* ========== メニュータイル (装飾HTMLとStreamlitボタンを重ねる) ========== */
-    .menu-tile {
-        position: relative;
-        display: flex;
-        align-items: center;
-        gap: 0.85rem;
-        padding: 0.9rem 1.1rem;
-        background: linear-gradient(135deg, rgba(35,39,57,0.9) 0%, rgba(47,53,80,0.8) 100%);
-        border: 1px solid rgba(255,255,255,0.08);
-        border-radius: var(--radius);
-        margin-bottom: -55px;  /* 直下のボタンを覆う位置に */
-        overflow: hidden;
-        pointer-events: none;  /* クリックはボタンに通す */
-        transition: transform 0.2s;
+    /* ========== メニューボタン (カラー別グラデーション) ========== */
+    .menu-btn-wrap {
+        margin-bottom: 0.7rem;
     }
-    .menu-tile::before {
+    /* 全メニューボタンの基本スタイル */
+    .menu-btn-wrap .stButton > button {
+        position: relative !important;
+        min-height: 78px !important;
+        padding: 0.9rem 1.2rem 0.9rem 1.5rem !important;
+        background: linear-gradient(135deg, rgba(35,39,57,0.95) 0%, rgba(47,53,80,0.85) 100%) !important;
+        border: 1px solid rgba(255,255,255,0.08) !important;
+        border-radius: 14px !important;
+        color: var(--text-primary) !important;
+        font-family: 'Zen Kaku Gothic New', sans-serif !important;
+        font-weight: 700 !important;
+        text-align: left !important;
+        white-space: pre-line !important;
+        line-height: 1.4 !important;
+        overflow: hidden !important;
+        transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+    }
+    /* 左サイドの色付きアクセントバー */
+    .menu-btn-wrap .stButton > button::before {
         content: '';
         position: absolute;
         left: 0;
         top: 0;
         bottom: 0;
-        width: 4px;
-        background: var(--tile-gradient, linear-gradient(180deg, var(--accent), var(--accent2)));
+        width: 5px;
+        border-radius: 14px 0 0 14px;
+        transition: width 0.25s;
     }
-    .menu-tile-icon {
-        width: 44px;
-        height: 44px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.5rem;
-        background: var(--tile-gradient, linear-gradient(135deg, var(--accent), var(--accent2)));
-        border-radius: 10px;
-        box-shadow: 0 3px 12px rgba(0,0,0,0.3);
-        flex-shrink: 0;
+    /* 右上のグロー効果 */
+    .menu-btn-wrap .stButton > button::after {
+        content: '';
+        position: absolute;
+        top: -30px;
+        right: -30px;
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        opacity: 0.15;
+        filter: blur(20px);
+        transition: opacity 0.25s;
     }
-    .menu-tile-content {
-        flex: 1;
-        min-width: 0;
+    .menu-btn-wrap .stButton > button:hover {
+        transform: translateY(-3px) !important;
+        border-color: rgba(255,255,255,0.15) !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.4),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
     }
-    .menu-tile-label {
-        font-size: 1.0rem;
-        font-weight: 800;
-        color: var(--text-primary);
-        line-height: 1.2;
-        margin-bottom: 0.15rem;
+    .menu-btn-wrap .stButton > button:hover::before {
+        width: 7px;
     }
-    .menu-tile-desc {
-        font-size: 0.72rem;
-        color: var(--text-muted);
-        line-height: 1.3;
+    .menu-btn-wrap .stButton > button:hover::after {
+        opacity: 0.3;
     }
-    /* 直下のStreamlitボタンを透明化してカードクリック領域として使う */
-    .menu-tile + div .stButton > button {
-        background: transparent !important;
-        color: transparent !important;
-        border: 1px solid transparent !important;
-        height: 70px !important;
-        margin-top: 0 !important;
-        transition: all 0.2s !important;
+    /* ボタン内テキスト (Streamlitがpタグでラップする) */
+    .menu-btn-wrap .stButton > button p {
+        margin: 0 !important;
+        color: var(--text-primary) !important;
+        font-size: 0.95rem !important;
+        font-weight: 800 !important;
+        letter-spacing: 0.01em !important;
     }
-    .menu-tile + div .stButton > button:hover {
-        border: 1px solid rgba(240,192,64,0.5) !important;
-        background: rgba(240,192,64,0.05) !important;
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+    /* 2行目 (説明) は改行後に薄く小さく表示 */
+    .menu-btn-wrap .stButton > button p:nth-child(2) {
+        font-size: 0.72rem !important;
+        color: var(--text-muted) !important;
+        font-weight: 500 !important;
+        margin-top: 0.2rem !important;
+        letter-spacing: 0.02em !important;
     }
-    .menu-tile + div .stButton > button > div {
-        color: transparent !important;
+
+    /* === カラーバリエーション === */
+    /* 青系: 個人成績 */
+    .menu-color-blue .stButton > button::before {
+        background: linear-gradient(180deg, #6ca9ff 0%, #4183db 100%);
+    }
+    .menu-color-blue .stButton > button::after {
+        background: radial-gradient(circle, #5b9cf6 0%, transparent 70%);
+    }
+    .menu-color-blue .stButton > button:hover {
+        border-color: rgba(91,156,246,0.4) !important;
+        box-shadow: 0 10px 30px rgba(91,156,246,0.25),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    }
+
+    /* 緑系: データ参照 */
+    .menu-color-green .stButton > button::before {
+        background: linear-gradient(180deg, #5fc99b 0%, #38956d 100%);
+    }
+    .menu-color-green .stButton > button::after {
+        background: radial-gradient(circle, #4caf87 0%, transparent 70%);
+    }
+    .menu-color-green .stButton > button:hover {
+        border-color: rgba(76,175,135,0.4) !important;
+        box-shadow: 0 10px 30px rgba(76,175,135,0.25),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    }
+
+    /* 金系: ランキング */
+    .menu-color-gold .stButton > button::before {
+        background: linear-gradient(180deg, #ffd57a 0%, #e0a828 100%);
+    }
+    .menu-color-gold .stButton > button::after {
+        background: radial-gradient(circle, #f0c040 0%, transparent 70%);
+    }
+    .menu-color-gold .stButton > button:hover {
+        border-color: rgba(240,192,64,0.5) !important;
+        box-shadow: 0 10px 30px rgba(240,192,64,0.3),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    }
+
+    /* 橙系: 月間成績 */
+    .menu-color-orange .stButton > button::before {
+        background: linear-gradient(180deg, #ff9b5e 0%, #c96422 100%);
+    }
+    .menu-color-orange .stButton > button::after {
+        background: radial-gradient(circle, #e07b39 0%, transparent 70%);
+    }
+    .menu-color-orange .stButton > button:hover {
+        border-color: rgba(224,123,57,0.4) !important;
+        box-shadow: 0 10px 30px rgba(224,123,57,0.25),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    }
+
+    /* 紫系: 2人対戦 */
+    .menu-color-purple .stButton > button::before {
+        background: linear-gradient(180deg, #bd8af0 0%, #8a4fc4 100%);
+    }
+    .menu-color-purple .stButton > button::after {
+        background: radial-gradient(circle, #a06cd5 0%, transparent 70%);
+    }
+    .menu-color-purple .stButton > button:hover {
+        border-color: rgba(160,108,213,0.4) !important;
+        box-shadow: 0 10px 30px rgba(160,108,213,0.25),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    }
+
+    /* ピンク系: 3人対戦 */
+    .menu-color-pink .stButton > button::before {
+        background: linear-gradient(180deg, #f078a5 0%, #c04477 100%);
+    }
+    .menu-color-pink .stButton > button::after {
+        background: radial-gradient(circle, #d95a8c 0%, transparent 70%);
+    }
+    .menu-color-pink .stButton > button:hover {
+        border-color: rgba(217,90,140,0.4) !important;
+        box-shadow: 0 10px 30px rgba(217,90,140,0.25),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
     }
 
     /* ========== ホームフッター ========== */
@@ -988,12 +1048,16 @@ hide_style = """
         .hero-header { padding: 1.6rem 1rem 1.4rem; }
         .hero-title { font-size: 1.8rem; }
         .hero-sub { font-size: 0.65rem; letter-spacing: 0.25em; }
-        .hero-meta { font-size: 0.7rem; padding: 0.35rem 0.8rem; }
-        .menu-tile { padding: 0.75rem 0.9rem; gap: 0.7rem; }
-        .menu-tile-icon { width: 40px; height: 40px; font-size: 1.3rem; }
-        .menu-tile-label { font-size: 0.9rem; }
-        .menu-tile-desc { font-size: 0.68rem; }
-        .menu-tile + div .stButton > button { height: 65px !important; }
+        .menu-btn-wrap .stButton > button {
+            min-height: 68px !important;
+            padding: 0.7rem 0.9rem 0.7rem 1.2rem !important;
+        }
+        .menu-btn-wrap .stButton > button p {
+            font-size: 0.85rem !important;
+        }
+        .menu-btn-wrap .stButton > button p:nth-child(2) {
+            font-size: 0.65rem !important;
+        }
         h1 { font-size: 1.4rem !important; }
         [data-testid="stMetricValue"] { font-size: 1.2rem !important; }
         .stats-table td { font-size: 14px; padding: 8px; }
@@ -3362,14 +3426,8 @@ def render_today_quick_stats():
 
 # --- ホーム (格好いい版) ---
 def page_home():
-    # ヒーローヘッダー
-    now = datetime.now()
-    greeting = ("おはようございます" if now.hour < 11
-                else "こんにちは" if now.hour < 17
-                else "こんばんは")
-    date_str = now.strftime("%Y年%m月%d日 (%a)")
-    time_str = now.strftime("%H:%M")
-    st.markdown(f"""
+    # ヒーローヘッダー (グリーティング削除でコンパクトに)
+    st.markdown("""
     <div class="hero-header">
         <div class="hero-bg-decoration">
             <div class="hero-orb hero-orb-1"></div>
@@ -3379,13 +3437,6 @@ def page_home():
             <div class="hero-badge">🀄 PINE RIVER</div>
             <div class="hero-title">ぱいん成績管理</div>
             <div class="hero-sub">PINE SCORE MANAGER</div>
-            <div class="hero-meta">
-                <span class="hero-greeting">{greeting}</span>
-                <span class="hero-dot">·</span>
-                <span class="hero-date">{date_str}</span>
-                <span class="hero-dot">·</span>
-                <span class="hero-time">{time_str}</span>
-            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -3393,50 +3444,42 @@ def page_home():
     # 未保存ステータスバー
     render_pending_bar(location_key="home")
 
-    # 今日のクイック統計
-    render_today_quick_stats()
-
-    # メニュー(タイル型カード)
+    # メニュー(縦積みラベル + 説明)
     st.markdown("""
-    <div style="margin:1.5rem 0 0.7rem 0;">
-        <div style="font-size:0.75rem;color:var(--text-muted);letter-spacing:0.12em;
+    <div style="margin:1.2rem 0 0.7rem 0;">
+        <div style="font-size:0.7rem;color:var(--text-muted);letter-spacing:0.18em;
                     font-weight:700;text-transform:uppercase;">MENU</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # メニュー項目 (絵文字, ラベル, 説明, page, グラデーション色)
+    # メニュー項目 (絵文字, ラベル, 説明, page, カラークラス)
     menu_items = [
-        ("👤", "個人成績", "選手ごとの詳細な成績を確認", "personal", "linear-gradient(135deg, #5b9cf6 0%, #4183db 100%)"),
-        ("📊", "データ参照", "対局データを検索・閲覧", "history", "linear-gradient(135deg, #4caf87 0%, #38956d 100%)"),
-        ("🏆", "ランキング", "23項目の総合ランキング", "ranking", "linear-gradient(135deg, #f0c040 0%, #e0a828 100%)"),
-        ("📅", "月間成績", "月間PT総合と過去TOP3", "monthly", "linear-gradient(135deg, #e07b39 0%, #c96422 100%)"),
-        ("🤝", "2人対戦データ", "選手2人の直接対決", "versus2", "linear-gradient(135deg, #a06cd5 0%, #8a4fc4 100%)"),
-        ("👥", "3人対戦データ", "特定3人の同卓対局", "versus3", "linear-gradient(135deg, #d95a8c 0%, #c04477 100%)"),
+        ("👤", "個人成績", "選手ごとの詳細な成績を確認", "personal", "blue"),
+        ("📊", "データ参照", "対局データを検索・閲覧", "history", "green"),
+        ("🏆", "ランキング", "23項目の総合ランキング", "ranking", "gold"),
+        ("📅", "月間成績", "月間PT総合と過去TOP3", "monthly", "orange"),
+        ("🤝", "2人対戦データ", "選手2人の直接対決", "versus2", "purple"),
+        ("👥", "3人対戦データ", "特定3人の同卓対局", "versus3", "pink"),
     ]
 
-    # 2列グリッド表示
+    # 2列グリッド
     for i in range(0, len(menu_items), 2):
-        cols = st.columns(2)
+        cols = st.columns(2, gap="small")
         for j, col in enumerate(cols):
             idx = i + j
             if idx >= len(menu_items):
                 continue
-            icon, label, desc, page, gradient = menu_items[idx]
+            icon, label, desc, page_key, color_class = menu_items[idx]
             with col:
-                # カードのHTML (装飾用)
-                st.markdown(f"""
-                <div class="menu-tile" style="--tile-gradient: {gradient};">
-                    <div class="menu-tile-icon">{icon}</div>
-                    <div class="menu-tile-content">
-                        <div class="menu-tile-label">{label}</div>
-                        <div class="menu-tile-desc">{desc}</div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-                # クリック可能なボタン (見た目は透明で上に被せる)
-                if st.button(f"{icon}　{label}", key=f"home_{page}", use_container_width=True):
-                    st.session_state["page"] = page
+                # ボタンを div でラップして、その div にカラークラスを付与
+                # (直下の Streamlit ボタンにCSSでスタイルを当てる)
+                st.markdown(f'<div class="menu-btn-wrap menu-color-{color_class}">', unsafe_allow_html=True)
+                # ボタンのラベルは絵文字+ラベル+説明(改行) の複数行
+                btn_label = f"{icon}  {label}\n{desc}"
+                if st.button(btn_label, key=f"home_{page_key}", use_container_width=True):
+                    st.session_state["page"] = page_key
                     st.rerun()
+                st.markdown('</div>', unsafe_allow_html=True)
 
     # フッター
     st.markdown("""
