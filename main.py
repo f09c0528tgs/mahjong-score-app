@@ -2994,17 +2994,14 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
 
 def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
     """
-    指定期間の基本成績statsを計算する (月間成績ランキング用)。
+    指定期間の全成績statsを計算する (月間成績ランキング用・ランキングタブと同項目)。
 
     Args:
         from_dt, until_dt: 期間フィルタ (Timestamp or None)
         min_games: この打数未満のプレイヤーは除外
 
-    Returns: dict {
-        "guest": DataFrame, "staff": DataFrame
-        各DataFrameは name, games, avg_rank, first_count, second_count, third_count,
-        top_rate, second_rate, last_avoid_rate 列を持つ
-    }
+    Returns: dict {"guest": DataFrame, "staff": DataFrame}
+        各DataFrameはランキングタブと同じ全項目の列を持つ
     """
     df = load_score_data_effective()
     if df is None or df.empty:
@@ -3027,27 +3024,138 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
         for seat in ["A", "B", "C"]:
             name = row.get(f"{seat}さん", "")
             rank = row.get(f"{seat}着順", 0)
+            player_type = row.get(f"{seat}タイプ", "")
             if name:
                 try:
                     r = int(float(rank))
                 except:
                     r = 0
                 if r > 0:
-                    records.append({"name": name, "rank": r})
+                    records.append({
+                        "name": name, "rank": r,
+                        "dt": row.get("日時Obj", pd.Timestamp("1900-01-01")),
+                        "game_no": row.get("GameNo", 0),
+                        "player_type": str(player_type) if player_type else "",
+                        "seat": seat,
+                    })
     if not records:
         return {"guest": pd.DataFrame(), "staff": pd.DataFrame()}
     df_raw = pd.DataFrame(records)
 
+    # --- ストリーク統計 ---
+    def _compute_streaks(group):
+        g = group.sort_values(["dt", "game_no"])
+        ranks = g["rank"].tolist()
+        max_win = max_last = max_second = 0
+        max_last_avoid = max_no_top = 0
+        four_win = five_win = 0
+        second_total = ranks.count(2)
+        top_after_top_d = top_after_top_n = 0
+        sec_after_sec_d = sec_after_sec_n = 0
+        last_after_last_d = last_after_last_n = 0
+        for i in range(len(ranks) - 1):
+            cur_r = ranks[i]
+            next_r = ranks[i + 1]
+            if cur_r == 1:
+                top_after_top_d += 1
+                if next_r == 1: top_after_top_n += 1
+            elif cur_r == 2:
+                sec_after_sec_d += 1
+                if next_r == 2: sec_after_sec_n += 1
+            elif cur_r == 3:
+                last_after_last_d += 1
+                if next_r == 3: last_after_last_n += 1
+        cur_win = cur_last = cur_second = 0
+        cur_last_avoid = cur_no_top = 0
+        for r in ranks:
+            if r == 1:
+                cur_win += 1
+                cur_last = cur_second = 0
+                if cur_win == 4: four_win += 1
+                if cur_win == 5: five_win += 1
+            elif r == 2:
+                cur_second += 1
+                cur_win = cur_last = 0
+            elif r == 3:
+                cur_last += 1
+                cur_win = cur_second = 0
+            else:
+                cur_win = cur_last = cur_second = 0
+            max_win = max(max_win, cur_win)
+            max_last = max(max_last, cur_last)
+            max_second = max(max_second, cur_second)
+            if r in (1, 2):
+                cur_last_avoid += 1
+                max_last_avoid = max(max_last_avoid, cur_last_avoid)
+            else:
+                cur_last_avoid = 0
+            if r in (2, 3):
+                cur_no_top += 1
+                max_no_top = max(max_no_top, cur_no_top)
+            else:
+                cur_no_top = 0
+        return pd.Series({
+            "max_win_streak": max_win, "max_last_streak": max_last,
+            "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
+            "max_no_top_streak": max_no_top,
+            "four_win_count": four_win, "five_win_count": five_win,
+            "second_count": second_total,
+            "top_after_top_rate": (top_after_top_n / top_after_top_d * 100) if top_after_top_d > 0 else None,
+            "top_after_top_samples": top_after_top_d,
+            "second_after_second_rate": (sec_after_sec_n / sec_after_sec_d * 100) if sec_after_sec_d > 0 else None,
+            "second_after_second_samples": sec_after_sec_d,
+            "last_after_last_rate": (last_after_last_n / last_after_last_d * 100) if last_after_last_d > 0 else None,
+            "last_after_last_samples": last_after_last_d,
+        })
+    streaks = df_raw.groupby("name", group_keys=False).apply(_compute_streaks).reset_index()
+
+    # --- ベスト100半荘 ---
+    W_ = 100
+    def _compute_best_window(group):
+        g = group.sort_values(["dt", "game_no"]).reset_index(drop=True)
+        n = len(g)
+        if n < W_:
+            return pd.Series({"best100_avg": None})
+        ranks = g["rank"].tolist()
+        window_sum = sum(ranks[:W_])
+        best_avg = window_sum / W_
+        for i in range(1, n - W_ + 1):
+            window_sum += ranks[i + W_ - 1] - ranks[i - 1]
+            avg = window_sum / W_
+            if avg < best_avg:
+                best_avg = avg
+        return pd.Series({"best100_avg": best_avg})
+    best_windows = df_raw.groupby("name", group_keys=False).apply(_compute_best_window).reset_index()
+
+    # --- 基本 stats ---
     stats = df_raw.groupby("name").agg(
         games=("rank", "count"),
         avg_rank=("rank", "mean"),
         first_count=("rank", lambda x: (x == 1).sum()),
-        second_count=("rank", lambda x: (x == 2).sum()),
         third_count=("rank", lambda x: (x == 3).sum()),
     ).reset_index()
+    stats = stats.merge(streaks, on="name", how="left")
+    stats = stats.merge(best_windows, on="name", how="left")
     stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
     stats["second_rate"] = (stats["second_count"] / stats["games"]) * 100
     stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
+
+    # タイプ別・席別
+    for tt in ["A客", "AS", "B客", "BS"]:
+        df_type = df_raw[df_raw["player_type"] == tt]
+        if not df_type.empty:
+            ts = df_type.groupby("name").agg(
+                **{f"avg_rank_{tt}": ("rank", "mean"), f"games_{tt}": ("rank", "count")}
+            ).reset_index()
+            stats = stats.merge(ts, on="name", how="left")
+    for sk in ["A", "B", "C"]:
+        df_seat = df_raw[df_raw["seat"] == sk]
+        if not df_seat.empty:
+            ss_ = df_seat.groupby("name").agg(
+                **{f"avg_rank_seat_{sk}": ("rank", "mean"), f"games_seat_{sk}": ("rank", "count")}
+            ).reset_index()
+            stats = stats.merge(ss_, on="name", how="left")
+
     stats["cat"] = stats["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
     # 名前の括弧内を除去
     stats["name"] = stats["name"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
@@ -3085,7 +3193,7 @@ def get_available_months():
     return result
 
 
-def compute_monthly_ranking_points(min_games=10, top_n=3):
+def compute_monthly_ranking_points(min_games=20, top_n=3):
     """
     全月について、その月のランキングPT総合を計算し、各月のTOP N を返す。
 
@@ -5245,11 +5353,11 @@ def _render_monthly_rankpt():
     </div>
     """, unsafe_allow_html=True)
 
-    st.caption("月内 **10戦以上** のプレイヤーが対象。お客さん/スタッフは別々に集計。")
+    st.caption("月内 **20戦以上** のプレイヤーが対象。お客さん/スタッフは別々に集計。")
 
     # 現在の月と過去の月を全て取得
     with st.spinner("月間ランキングPT総合を集計中..."):
-        monthly_result = compute_monthly_ranking_points(min_games=10, top_n=3)
+        monthly_result = compute_monthly_ranking_points(min_games=20, top_n=3)
 
     all_months = monthly_result.get("months", [])
     monthly_data = monthly_result.get("data", {})
@@ -5266,7 +5374,7 @@ def _render_monthly_rankpt():
         # 今月分だけTOP20まで表示
         ym_period = pd.Period(latest_month, freq="M")
         latest_full = compute_ranking_points_all(
-            min_games=10,
+            min_games=20,
             from_dt=pd.Timestamp(ym_period.start_time),
             until_dt=pd.Timestamp(ym_period.end_time),
         )
@@ -5402,21 +5510,26 @@ def _render_monthly_stats():
     </div>
     """, unsafe_allow_html=True)
 
-    # 成績ランキングのサブタブ
-    s1, s2, s3, s4, s5 = st.tabs([
-        "🥇 平均着順", "👑 トップ率", "🥈 2着率", "🛡 ラス回避率", "📊 打数"
-    ])
-
-    def show_month_rank(sort_col, asc, fmt, unit=""):
+    def show_month_rank(sort_col, asc, fmt, exclude_zero=False, min_samples_col=None, min_samples=0):
         c1, c2 = st.columns(2)
         for col_obj, df_r, title, icon in [(c1, stats_guest, "お客さん", "🧑‍🤝‍🧑"),
                                             (c2, stats_staff, "スタッフ", "👔")]:
             with col_obj:
                 st.markdown(f"#### {icon} {title}")
-                if df_r.empty:
+                if df_r.empty or sort_col not in df_r.columns:
                     st.info("データなし")
                     continue
-                ranked = assign_competition_rank(df_r, sort_col, ascending=asc)
+                df_t = df_r.copy()
+                # 有効値のみ
+                df_t = df_t[df_t[sort_col].notna()]
+                if exclude_zero:
+                    df_t = df_t[df_t[sort_col].fillna(0) > 0]
+                if min_samples_col and min_samples_col in df_t.columns:
+                    df_t = df_t[df_t[min_samples_col].fillna(0) >= min_samples]
+                if df_t.empty:
+                    st.info("該当者なし")
+                    continue
+                ranked = assign_competition_rank(df_t, sort_col, ascending=asc)
                 res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                 display_df = pd.DataFrame({
                     "順位": res["順位"],
@@ -5426,21 +5539,106 @@ def _render_monthly_stats():
                 })
                 st.dataframe(display_df, hide_index=True, use_container_width=True)
 
-    with s1:
-        st.caption("その月の平均着順が良い順。")
-        show_month_rank("avg_rank", True, '{:.3f}'.format)
-    with s2:
-        st.caption("その月のトップ率が高い順。")
-        show_month_rank("top_rate", False, '{:.1f}%'.format)
-    with s3:
-        st.caption("その月の2着率が高い順。")
-        show_month_rank("second_rate", False, '{:.1f}%'.format)
-    with s4:
-        st.caption("その月のラス回避率が高い順。")
-        show_month_rank("last_avoid_rate", False, '{:.1f}%'.format)
-    with s5:
+    def show_month_type_rank(col_avg, col_games, fmt, min_type_games=5):
+        """タイプ別・席別の平均着順ランキング"""
+        c1, c2 = st.columns(2)
+        for col_obj, df_r, title, icon in [(c1, stats_guest, "お客さん", "🧑‍🤝‍🧑"),
+                                            (c2, stats_staff, "スタッフ", "👔")]:
+            with col_obj:
+                st.markdown(f"#### {icon} {title}")
+                if df_r.empty or col_avg not in df_r.columns:
+                    st.info("データなし")
+                    continue
+                df_t = df_r[df_r.get(col_games, pd.Series([0]*len(df_r))).fillna(0) >= min_type_games].copy()
+                df_t = df_t[df_t[col_avg].notna()]
+                if df_t.empty:
+                    st.info(f"{min_type_games}戦以上の該当者なし")
+                    continue
+                ranked = assign_competition_rank(df_t, col_avg, ascending=True)
+                res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
+                display_df = pd.DataFrame({
+                    "順位": res["順位"],
+                    "名前": res["name"],
+                    "平均着順": res[col_avg].map(fmt),
+                    "打数": res[col_games].astype(int),
+                })
+                st.dataframe(display_df, hide_index=True, use_container_width=True)
+
+    # ランキングタブと同じ項目群 (レーティング・段位は通算指標なので月間では除外)
+    tabs = st.tabs([
+        "📊 打数", "🥇 平均着順", "🎯 平均着順(ルール別)", "💺 平均着順(席別)",
+        "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
+        "🔥 最長連勝", "💀 最長連続ラス", "😐 最長連続2着",
+        "🛡️ 最長連続ラス回避", "😑 最長連続トップ無し",
+        "✨ 4連勝以上回数", "⭐ 5連勝以上回数",
+        "🔁 連勝確率", "🔄 連続2着率", "☠️ 連続ラス率",
+        "🌟 ベスト100半荘",
+    ])
+
+    with tabs[0]:
         st.caption("その月の対局数が多い順。")
         show_month_rank("games", False, '{:.0f}'.format)
+    with tabs[1]:
+        st.caption("その月の平均着順が良い順。")
+        show_month_rank("avg_rank", True, '{:.3f}'.format)
+    with tabs[2]:
+        st.caption("ルール(タイプ)別の平均着順。各タイプ5戦以上。")
+        sub = st.tabs(["🟦 A客", "🟪 AS", "🟨 B客", "🟩 BS"])
+        with sub[0]: show_month_type_rank("avg_rank_A客", "games_A客", '{:.3f}'.format)
+        with sub[1]: show_month_type_rank("avg_rank_AS", "games_AS", '{:.3f}'.format)
+        with sub[2]: show_month_type_rank("avg_rank_B客", "games_B客", '{:.3f}'.format)
+        with sub[3]: show_month_type_rank("avg_rank_BS", "games_BS", '{:.3f}'.format)
+    with tabs[3]:
+        st.caption("席別の平均着順。各席5戦以上。")
+        sub = st.tabs(["🅰️ A席", "🅱️ B席", "🇨 C席"])
+        with sub[0]: show_month_type_rank("avg_rank_seat_A", "games_seat_A", '{:.3f}'.format)
+        with sub[1]: show_month_type_rank("avg_rank_seat_B", "games_seat_B", '{:.3f}'.format)
+        with sub[2]: show_month_type_rank("avg_rank_seat_C", "games_seat_C", '{:.3f}'.format)
+    with tabs[4]:
+        st.caption("その月のトップ率が高い順。")
+        show_month_rank("top_rate", False, '{:.1f}%'.format)
+    with tabs[5]:
+        st.caption("その月の2着率が高い順。")
+        show_month_rank("second_rate", False, '{:.1f}%'.format)
+    with tabs[6]:
+        st.caption("その月のラス回避率が高い順。")
+        show_month_rank("last_avoid_rate", False, '{:.1f}%'.format)
+    with tabs[7]:
+        st.caption("その月の最長連勝。記録0は非表示。")
+        show_month_rank("max_win_streak", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[8]:
+        st.caption("その月の最長連続ラス。記録0は非表示。")
+        show_month_rank("max_last_streak", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[9]:
+        st.caption("その月の最長連続2着。記録0は非表示。")
+        show_month_rank("max_second_streak", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[10]:
+        st.caption("その月の最長連続ラス回避。記録0は非表示。")
+        show_month_rank("max_last_avoid_streak", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[11]:
+        st.caption("その月の最長連続トップ無し。記録0は非表示。")
+        show_month_rank("max_no_top_streak", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[12]:
+        st.caption("その月の4連勝以上回数。記録0は非表示。")
+        show_month_rank("four_win_count", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[13]:
+        st.caption("その月の5連勝以上回数。記録0は非表示。")
+        show_month_rank("five_win_count", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[14]:
+        st.caption("トップの直後にトップを取った確率。サンプル5以上。")
+        show_month_rank("top_after_top_rate", False, '{:.2f}%'.format,
+                        min_samples_col="top_after_top_samples", min_samples=5)
+    with tabs[15]:
+        st.caption("2着の直後に2着を取った確率。サンプル5以上。")
+        show_month_rank("second_after_second_rate", False, '{:.2f}%'.format,
+                        min_samples_col="second_after_second_samples", min_samples=5)
+    with tabs[16]:
+        st.caption("ラスの直後にラスを取った確率。サンプル5以上。")
+        show_month_rank("last_after_last_rate", False, '{:.2f}%'.format,
+                        min_samples_col="last_after_last_samples", min_samples=5)
+    with tabs[17]:
+        st.caption("その月の連続100半荘での最良平均着順(100戦以上)。")
+        show_month_rank("best100_avg", True, '{:.3f}'.format)
 
 
 # --- ランキング画面 ---
