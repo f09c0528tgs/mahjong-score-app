@@ -2635,6 +2635,34 @@ def _rank_to_pt(rank_pos):
     return RANKING_PT_TABLE.get(rank_pos, 0)
 
 
+def assign_competition_rank(df, sort_col, ascending=False):
+    """
+    標準競争順位方式 (1224方式) で順位を付ける。
+    同率スコアは同順位、次は人数分飛ばす。
+    例: スコア [100, 90, 90, 80] → 順位 [1, 2, 2, 4]
+
+    Args:
+        df: 対象のDataFrame
+        sort_col: ソート/順位判定に使う列
+        ascending: True=小さいほど良い(平均着順など), False=大きいほど良い
+
+    Returns:
+        ソート済み + "順位" 列を追加した DataFrame (コピー)
+    """
+    if df.empty:
+        result = df.copy()
+        result["順位"] = []
+        return result
+    result = df.sort_values(sort_col, ascending=ascending).reset_index(drop=True)
+    # 同率順位を計算 (min method = 標準競争順位)
+    # rank() は昇順基準なので、ascendingに合わせて方向を指定
+    result["順位"] = result[sort_col].rank(
+        method="min",
+        ascending=ascending
+    ).astype(int)
+    return result
+
+
 def render_rankpt_breakdown(breakdown):
     """
     ランキングPTの内訳 (各項目で何位・スコア・pt) をHTMLで描画する。
@@ -2921,16 +2949,20 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
             df_r = df_r[df_r[col].notna()]
             if df_r.empty:
                 continue
+            # 同率順位で順位付け (標準競争順位: 1,2,2,4方式)
             df_r = df_r.sort_values(col, ascending=ascending).reset_index(drop=True)
-            # 上位10位までの各プレイヤーにpt付与
-            for i in range(min(10, len(df_r))):
-                rank_pos = i + 1
+            df_r["_順位"] = df_r[col].rank(method="min", ascending=ascending).astype(int)
+            # 順位が10以下のプレイヤーにpt付与 (同率は同じ順位・同じpt)
+            for _, row_r in df_r.iterrows():
+                rank_pos = int(row_r["_順位"])
+                if rank_pos > 10:
+                    continue
                 pt = _rank_to_pt(rank_pos)
                 if pt <= 0:
                     continue
-                name = df_r.iloc[i]["name"]
+                name = row_r["name"]
                 # 実際のスコア値をフォーマット
-                raw_val = df_r.iloc[i][col]
+                raw_val = row_r[col]
                 try:
                     val_str = value_formatter(raw_val)
                 except Exception:
@@ -5498,8 +5530,9 @@ def page_ranking():
             with col_obj:
                 st.markdown(f"#### {icon} {title} Top20")
                 if not df_r.empty:
-                    res = df_r.sort_values(sort_col, ascending=asc).reset_index(drop=True).head(20)
-                    res["順位"] = res.index + 1
+                    # 同率順位で順位付けしてから上位20を抽出
+                    ranked = assign_competition_rank(df_r, sort_col, ascending=asc)
+                    res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                     if format_func and val_col and val_col != "games":
                         res[val_col] = res[val_col].map(format_func)
                     cols = ["順位", "name"]
@@ -5712,8 +5745,11 @@ def page_ranking():
             with col_obj:
                 st.markdown(f"#### {icon} {title} Top20")
                 if not df_r.empty:
-                    res = df_r.sort_values("レート", ascending=False).reset_index(drop=True).head(20)
-                    res["順位"] = res.index + 1
+                    # レートは表示精度(小数1桁)で同率判定
+                    tmp = df_r.copy()
+                    tmp["_レート丸め"] = tmp["レート"].round(1)
+                    ranked = assign_competition_rank(tmp, "_レート丸め", ascending=False)
+                    res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                     html = '<table class="stats-table" style="width:100%;">'
                     html += """<thead><tr>
                         <th style="width:50px;">順位</th>
@@ -5749,8 +5785,14 @@ def page_ranking():
             with col_obj:
                 st.markdown(f"#### {icon} {title} Top20")
                 if not df_r.empty:
-                    res = df_r.sort_values(["段位Index", "段位pt"], ascending=[False, False]).reset_index(drop=True).head(20)
-                    res["順位"] = res.index + 1
+                    # 段位Index・段位pt の複合キーで同率判定
+                    # (段位Index, 段位pt) が完全一致なら同順位
+                    tmp = df_r.copy()
+                    # 複合ソートキーを作る (段位Index * 大きな係数 + 段位pt)
+                    # 段位ptが負でも比較できるよう十分大きなオフセット
+                    tmp["_段位キー"] = tmp["段位Index"] * 1000000 + tmp["段位pt"]
+                    ranked = assign_competition_rank(tmp, "_段位キー", ascending=False)
+                    res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                     html = '<table class="stats-table" style="width:100%;">'
                     html += """<thead><tr>
                         <th style="width:50px;">順位</th>
@@ -5899,8 +5941,8 @@ def page_ranking():
                         if not df_r.empty and col_avg in df_r.columns:
                             df_filtered = df_r[df_r[col_games].fillna(0) >= min_type_games].copy()
                             if not df_filtered.empty:
-                                res = df_filtered.sort_values(col_avg, ascending=True).reset_index(drop=True).head(20)
-                                res["順位"] = res.index + 1
+                                ranked = assign_competition_rank(df_filtered, col_avg, ascending=True)
+                                res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                                 display_df = pd.DataFrame({
                                     "順位": res["順位"],
                                     "名前": res["name"],
@@ -5938,8 +5980,8 @@ def page_ranking():
                         if not df_r.empty and col_avg in df_r.columns:
                             df_filtered = df_r[df_r[col_games].fillna(0) >= min_seat_games].copy()
                             if not df_filtered.empty:
-                                res = df_filtered.sort_values(col_avg, ascending=True).reset_index(drop=True).head(20)
-                                res["順位"] = res.index + 1
+                                ranked = assign_competition_rank(df_filtered, col_avg, ascending=True)
+                                res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                                 display_df = pd.DataFrame({
                                     "順位": res["順位"],
                                     "名前": res["name"],
@@ -6001,8 +6043,8 @@ def page_ranking():
                         (df_r[samples_col].fillna(0) >= min_samples)
                     ].copy()
                     if not df_filtered.empty:
-                        res = df_filtered.sort_values(rate_col, ascending=False).reset_index(drop=True).head(20)
-                        res["順位"] = res.index + 1
+                        ranked = assign_competition_rank(df_filtered, rate_col, ascending=False)
+                        res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                         display_df = pd.DataFrame({
                             "順位": res["順位"],
                             "名前": res["name"],
@@ -6055,9 +6097,9 @@ def page_ranking():
                 if df_valid.empty:
                     st.info("100半荘以上打っているプレイヤーがいません")
                     continue
-                # 平均着順が小さい順 (=良い順)
-                res = df_valid.sort_values("best100_avg", ascending=True).reset_index(drop=True).head(20)
-                res["順位"] = res.index + 1
+                # 平均着順が小さい順 (=良い順)、同率は同順位
+                ranked = assign_competition_rank(df_valid, "best100_avg", ascending=True)
+                res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
 
                 # HTMLテーブル (期間・成績を分かりやすく)
                 html = '<table class="stats-table" style="width:100%;">'
@@ -6134,10 +6176,11 @@ def page_ranking():
             with col_obj:
                 st.markdown(f"#### {icon} {title} Top20")
                 if not df_r.empty:
-                    res = df_r.sort_values(col, ascending=False).reset_index(drop=True).head(20)
-                    res = res[res[col] > 0]
-                    if not res.empty:
-                        res["順位"] = res.index + 1
+                    # 0より大きいものだけ残してから同率順位付け
+                    df_valid = df_r[df_r[col] > 0].copy()
+                    if not df_valid.empty:
+                        ranked = assign_competition_rank(df_valid, col, ascending=False)
+                        res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                         cols = ["順位", "名前", col]
                         if col == "最大飜数":
                             for extra in ["最大飜数詳細", "最大飜数記録日"]:
