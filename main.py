@@ -2992,6 +2992,99 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
     return result
 
 
+def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
+    """
+    指定期間の基本成績statsを計算する (月間成績ランキング用)。
+
+    Args:
+        from_dt, until_dt: 期間フィルタ (Timestamp or None)
+        min_games: この打数未満のプレイヤーは除外
+
+    Returns: dict {
+        "guest": DataFrame, "staff": DataFrame
+        各DataFrameは name, games, avg_rank, first_count, second_count, third_count,
+        top_rate, second_rate, last_avoid_rate 列を持つ
+    }
+    """
+    df = load_score_data_effective()
+    if df is None or df.empty:
+        return {"guest": pd.DataFrame(), "staff": pd.DataFrame()}
+
+    # 期間フィルタ
+    if from_dt is not None or until_dt is not None:
+        df = df.copy()
+        if "日時Obj" in df.columns:
+            if from_dt is not None:
+                df = df[df["日時Obj"] >= pd.Timestamp(from_dt)]
+            if until_dt is not None:
+                df = df[df["日時Obj"] <= pd.Timestamp(until_dt)]
+        if df.empty:
+            return {"guest": pd.DataFrame(), "staff": pd.DataFrame()}
+
+    # records生成
+    records = []
+    for _, row in df.iterrows():
+        for seat in ["A", "B", "C"]:
+            name = row.get(f"{seat}さん", "")
+            rank = row.get(f"{seat}着順", 0)
+            if name:
+                try:
+                    r = int(float(rank))
+                except:
+                    r = 0
+                if r > 0:
+                    records.append({"name": name, "rank": r})
+    if not records:
+        return {"guest": pd.DataFrame(), "staff": pd.DataFrame()}
+    df_raw = pd.DataFrame(records)
+
+    stats = df_raw.groupby("name").agg(
+        games=("rank", "count"),
+        avg_rank=("rank", "mean"),
+        first_count=("rank", lambda x: (x == 1).sum()),
+        second_count=("rank", lambda x: (x == 2).sum()),
+        third_count=("rank", lambda x: (x == 3).sum()),
+    ).reset_index()
+    stats["top_rate"] = (stats["first_count"] / stats["games"]) * 100
+    stats["second_rate"] = (stats["second_count"] / stats["games"]) * 100
+    stats["last_avoid_rate"] = ((stats["games"] - stats["third_count"]) / stats["games"]) * 100
+    stats["cat"] = stats["name"].apply(lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+    # 名前の括弧内を除去
+    stats["name"] = stats["name"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+
+    # 規定打数フィルタ
+    stats = stats[stats["games"] >= min_games]
+
+    return {
+        "guest": stats[stats["cat"] == "guest"].copy(),
+        "staff": stats[stats["cat"] == "staff"].copy(),
+    }
+
+
+def get_available_months():
+    """
+    対局データが存在する月のリストを返す (新しい順)。
+    Returns: [("2026-03", "2026年03月"), ...] (str, 表示名) のタプルリスト
+    """
+    df = load_score_data_effective()
+    if df is None or df.empty or "日時Obj" not in df.columns:
+        return []
+    df_valid = df[df["日時Obj"].notna()].copy()
+    if df_valid.empty:
+        return []
+    df_valid["年月"] = df_valid["日時Obj"].dt.to_period("M")
+    all_months = sorted(df_valid["年月"].unique(), reverse=True)
+    result = []
+    for ym in all_months:
+        ym_str = str(ym)
+        try:
+            disp = ym.strftime("%Y年%m月")
+        except:
+            disp = ym_str
+        result.append((ym_str, disp))
+    return result
+
+
 def compute_monthly_ranking_points(min_games=10, top_n=3):
     """
     全月について、その月のランキングPT総合を計算し、各月のTOP N を返す。
@@ -5108,9 +5201,19 @@ def _page_history_overview(df):
 # --- 月間成績画面 ---
 def page_monthly():
     render_top_nav("monthly")
-    st.title("📅 月間ランキングPT")
+    st.title("📅 月間成績")
     render_pending_bar(location_key="monthly")
 
+    tab_stats, tab_pt = st.tabs(["📊 月間成績ランキング", "🏆 月間ランキングPT"])
+
+    with tab_stats:
+        _render_monthly_stats()
+    with tab_pt:
+        _render_monthly_rankpt()
+
+
+def _render_monthly_rankpt():
+    """月間ランキングPT (旧page_monthlyの中身)"""
     # 集計内容を視覚的に明記するパネル
     st.markdown("""
     <div class="rankpt-info-panel">
@@ -5233,6 +5336,111 @@ def page_monthly():
                             render_rankpt_breakdown(entry["breakdown"])
 
             st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
+
+
+def _render_monthly_stats():
+    """月間成績ランキング (月を選んで各種成績ランキングを表示)"""
+    months = get_available_months()
+    if not months:
+        st.info("対局データがありません。")
+        return
+
+    st.caption("月を選んで、その月の各種成績ランキングを表示します。")
+
+    # 月選択 (今月/先月をショートカット + セレクトボックス)
+    month_labels = [disp for _, disp in months]
+    month_keys = [key for key, _ in months]
+
+    # ショートカットラベルを付ける
+    display_options = []
+    for i, (key, disp) in enumerate(months):
+        if i == 0:
+            display_options.append(f"{disp} (今月)")
+        elif i == 1:
+            display_options.append(f"{disp} (先月)")
+        else:
+            display_options.append(disp)
+
+    selected_idx = st.selectbox(
+        "📅 対象の月",
+        range(len(display_options)),
+        format_func=lambda i: display_options[i],
+        key="monthly_stats_month",
+    )
+    selected_key = month_keys[selected_idx]
+    selected_disp = month_labels[selected_idx]
+
+    # 規定打数
+    min_g = st.slider("規定打数 (この打数未満は非表示)", 1, 50, 5, key="monthly_stats_mingames")
+
+    # その月のstatsを計算
+    ym_period = pd.Period(selected_key, freq="M")
+    with st.spinner(f"{selected_disp}の成績を集計中..."):
+        stats = compute_period_basic_stats(
+            from_dt=pd.Timestamp(ym_period.start_time),
+            until_dt=pd.Timestamp(ym_period.end_time),
+            min_games=min_g,
+        )
+
+    stats_guest = stats["guest"]
+    stats_staff = stats["staff"]
+
+    if stats_guest.empty and stats_staff.empty:
+        st.warning(f"{selected_disp}に規定打数({min_g}戦)以上のプレイヤーがいません。")
+        return
+
+    st.markdown(f"### 🗓️ {selected_disp} の成績ランキング")
+
+    # 月間サマリ
+    total_games_g = int(stats_guest["games"].sum()) if not stats_guest.empty else 0
+    total_games_s = int(stats_staff["games"].sum()) if not stats_staff.empty else 0
+    n_players = len(stats_guest) + len(stats_staff)
+    st.markdown(f"""
+    <div style="margin-bottom:0.8rem;">
+        <span class="rankpt-pt">👥 参加者 <strong>{n_players}</strong>人</span>
+        <span class="rankpt-pt">🀄 のべ対局 <strong>{total_games_g + total_games_s}</strong></span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # 成績ランキングのサブタブ
+    s1, s2, s3, s4, s5 = st.tabs([
+        "🥇 平均着順", "👑 トップ率", "🥈 2着率", "🛡 ラス回避率", "📊 打数"
+    ])
+
+    def show_month_rank(sort_col, asc, fmt, unit=""):
+        c1, c2 = st.columns(2)
+        for col_obj, df_r, title, icon in [(c1, stats_guest, "お客さん", "🧑‍🤝‍🧑"),
+                                            (c2, stats_staff, "スタッフ", "👔")]:
+            with col_obj:
+                st.markdown(f"#### {icon} {title}")
+                if df_r.empty:
+                    st.info("データなし")
+                    continue
+                ranked = assign_competition_rank(df_r, sort_col, ascending=asc)
+                res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
+                display_df = pd.DataFrame({
+                    "順位": res["順位"],
+                    "名前": res["name"],
+                    "記録": res[sort_col].map(fmt),
+                    "打数": res["games"].astype(int),
+                })
+                st.dataframe(display_df, hide_index=True, use_container_width=True)
+
+    with s1:
+        st.caption("その月の平均着順が良い順。")
+        show_month_rank("avg_rank", True, '{:.3f}'.format)
+    with s2:
+        st.caption("その月のトップ率が高い順。")
+        show_month_rank("top_rate", False, '{:.1f}%'.format)
+    with s3:
+        st.caption("その月の2着率が高い順。")
+        show_month_rank("second_rate", False, '{:.1f}%'.format)
+    with s4:
+        st.caption("その月のラス回避率が高い順。")
+        show_month_rank("last_avoid_rate", False, '{:.1f}%'.format)
+    with s5:
+        st.caption("その月の対局数が多い順。")
+        show_month_rank("games", False, '{:.0f}'.format)
 
 
 # --- ランキング画面 ---
