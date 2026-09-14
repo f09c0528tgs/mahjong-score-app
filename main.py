@@ -2913,12 +2913,15 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
             ("last_avoid_rate", "🛡 ラス回避率", False,
              lambda df: df[df["games"].fillna(0) >= min_games],
              lambda v: f"{v:.1f}%"),
-            # 連続系
-            ("max_win_streak", "🔥 最長連勝", False, None,
+            # 連続系 (スコア0は対象外)
+            ("max_win_streak", "🔥 最長連勝", False,
+             lambda df: df[df["max_win_streak"].fillna(0) > 0],
              lambda v: f"{int(v)}連勝"),
-            ("max_last_avoid_streak", "🛡️ 最長連続ラス回避", False, None,
+            ("max_last_avoid_streak", "🛡️ 最長連続ラス回避", False,
+             lambda df: df[df["max_last_avoid_streak"].fillna(0) > 0],
              lambda v: f"{int(v)}連続"),
-            ("five_win_count", "⭐ 5連勝以上回数", False, None,
+            ("five_win_count", "⭐ 5連勝以上回数", False,
+             lambda df: df[df["five_win_count"].fillna(0) > 0],
              lambda v: f"{int(v)}回"),
             # ベスト100半荘
             ("best100_avg", "🌟 ベスト100半荘", True,
@@ -5524,14 +5527,21 @@ def page_ranking():
         st.warning(f"打数 {min_games} 回以上のプレイヤーがいません。")
         return
 
-    def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None):
+    def show_ranking_split(df_g, df_s, sort_col, asc=False, format_func=None, val_col=None, exclude_zero=False):
         c1, c2 = st.columns(2)
         for col_obj, df_r, title, icon in [(c1, df_g, "お客さん", "🧑‍🤝‍🧑"), (c2, df_s, "スタッフ", "👔")]:
             with col_obj:
                 st.markdown(f"#### {icon} {title} Top20")
                 if not df_r.empty:
+                    # スコア0を対象外にする (回数系ランキング)
+                    df_target = df_r.copy()
+                    if exclude_zero:
+                        df_target = df_target[df_target[sort_col].fillna(0) > 0]
+                    if df_target.empty:
+                        st.info("記録のあるプレイヤーがいません")
+                        continue
                     # 同率順位で順位付けしてから上位20を抽出
-                    ranked = assign_competition_rank(df_r, sort_col, ascending=asc)
+                    ranked = assign_competition_rank(df_target, sort_col, ascending=asc)
                     res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
                     if format_func and val_col and val_col != "games":
                         res[val_col] = res[val_col].map(format_func)
@@ -6003,25 +6013,25 @@ def page_ranking():
     with t10: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
     with t11:
         st.caption("時系列で1着を連続で取った歴代最長回数。")
-        show_ranking_split(stats_guest, stats_staff, "max_win_streak", False, '{:.0f}'.format, "max_win_streak")
+        show_ranking_split(stats_guest, stats_staff, "max_win_streak", False, '{:.0f}'.format, "max_win_streak", exclude_zero=True)
     with t12:
         st.caption("時系列で3着(ラス)を連続で取った歴代最長回数。少ないほど良い指標ですが、多いと目立ちます。")
-        show_ranking_split(stats_guest, stats_staff, "max_last_streak", False, '{:.0f}'.format, "max_last_streak")
+        show_ranking_split(stats_guest, stats_staff, "max_last_streak", False, '{:.0f}'.format, "max_last_streak", exclude_zero=True)
     with t13:
         st.caption("時系列で2着を連続で取った歴代最長回数。")
-        show_ranking_split(stats_guest, stats_staff, "max_second_streak", False, '{:.0f}'.format, "max_second_streak")
+        show_ranking_split(stats_guest, stats_staff, "max_second_streak", False, '{:.0f}'.format, "max_second_streak", exclude_zero=True)
     with t14:
         st.caption("1着または2着を連続で取った歴代最長回数(=ラスを回避し続けた連続回数)。安定感の指標。")
-        show_ranking_split(stats_guest, stats_staff, "max_last_avoid_streak", False, '{:.0f}'.format, "max_last_avoid_streak")
+        show_ranking_split(stats_guest, stats_staff, "max_last_avoid_streak", False, '{:.0f}'.format, "max_last_avoid_streak", exclude_zero=True)
     with t15:
         st.caption("2着または3着を連続で取った歴代最長回数(=1着を取れなかった連続回数)。多いほど「トップ運が無い期間」があったことを表す。")
-        show_ranking_split(stats_guest, stats_staff, "max_no_top_streak", False, '{:.0f}'.format, "max_no_top_streak")
+        show_ranking_split(stats_guest, stats_staff, "max_no_top_streak", False, '{:.0f}'.format, "max_no_top_streak", exclude_zero=True)
     with t16:
         st.caption("4連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。5連勝も1回カウント。")
-        show_ranking_split(stats_guest, stats_staff, "four_win_count", False, '{:.0f}'.format, "four_win_count")
+        show_ranking_split(stats_guest, stats_staff, "four_win_count", False, '{:.0f}'.format, "four_win_count", exclude_zero=True)
     with t17:
         st.caption("5連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。")
-        show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count")
+        show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count", exclude_zero=True)
 
     # --- 「Xの次にX」系ランキングの共通表示関数 ---
     def show_streak_prob_ranking(rate_col, samples_col, label, empty_label, min_samples=10):
