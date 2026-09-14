@@ -2859,28 +2859,19 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
         df_r_slim = df_rating[["名前", "レート", "対局数", "段位Index", "段位pt"]].rename(columns={"名前": "name"})
         stats = stats.merge(df_r_slim, on="name", how="left")
 
-    # ランキング項目定義 (10項目に厳選)
-    # 【対象】
-    #  1. 🏅 レーティング
-    #  2. 🎖️ 段位 (累積pt)
-    #  3. 📊 打数
-    #  4. 🥇 平均着順 (総合)
-    #  5. 👑 トップ率
-    #  6. 🛡 ラス回避率
-    #  7. 🔥 最長連勝
-    #  8. 🛡️ 最長連続ラス回避
-    #  9. ⭐ 5連勝以上回数
-    #  10. 🌟 ベスト100半荘
+    # ランキング項目定義 (8項目)
+    # 【対象】※レーティング・段位は除外(それぞれ専用タブがあるため)
+    #  1. 📊 打数
+    #  2. 🥇 平均着順 (総合)
+    #  3. 👑 トップ率
+    #  4. 🛡 ラス回避率
+    #  5. 🔥 最長連勝
+    #  6. 🛡️ 最長連続ラス回避
+    #  7. ⭐ 5連勝以上回数
+    #  8. 🌟 ベスト100半荘
     def build_ranking_defs(stats_cat):
         # (col, label, ascending, filter_fn, value_formatter)
         return [d for d in [
-            # レーティング系
-            ("レート", "🏅 レーティング", False,
-             lambda df: df[df.get("レート", pd.Series([None]*len(df))).notna()],
-             lambda v: f"R{v:.1f}") if "レート" in stats_cat.columns else None,
-            ("段位pt", "🎖️ 段位(累積pt)", False,
-             lambda df: df[df.get("段位pt", pd.Series([None]*len(df))).notna()],
-             lambda v: f"{v:.0f}pt") if "段位pt" in stats_cat.columns else None,
             # 基本統計
             ("games", "📊 打数", False,
              lambda df: df[df["games"].fillna(0) >= 1],
@@ -5089,10 +5080,8 @@ def page_monthly():
     st.markdown("""
     <div class="rankpt-info-panel">
         <div class="rankpt-section">
-            <div class="rankpt-section-title">📋 集計対象の10項目 (その月だけのデータで計算)</div>
+            <div class="rankpt-section-title">📋 集計対象の8項目 (その月だけのデータで計算)</div>
             <div class="rankpt-items">
-                <span class="rankpt-item">🏅 レーティング</span>
-                <span class="rankpt-item">🎖️ 段位</span>
                 <span class="rankpt-item">📊 打数</span>
                 <span class="rankpt-item">🥇 平均着順</span>
                 <span class="rankpt-item">👑 トップ率</span>
@@ -5172,29 +5161,26 @@ def page_monthly():
         return
 
     st.markdown(f"## 📜 過去のランキングPT TOP3 ({len(past_months)}ヶ月分)")
-    st.caption("各月のランキングPT総合TOP3を古い順に一覧表示。")
+    st.caption("各月のTOP3。名前をクリックすると、その月に何の項目で何位だったかの内訳が見られます。")
 
-    # 過去月を新しい順に並べる (現在は新しい順)
+    # 過去月を新しい順に表示 (現在は新しい順)
     for ym_str in past_months:
         top3 = monthly_data.get(ym_str, {})
         guest_top = top3.get("guest", [])
         staff_top = top3.get("staff", [])
 
-        # 月のヘッダー
-        # 対局数のサマリ (bulletin風)
+        # 月の表示名
         try:
             ym_period = pd.Period(ym_str, freq="M")
             month_display = ym_period.strftime("%Y年%m月")
         except:
             month_display = ym_str
 
-        # コンテナで月ごとに区切って表示
         with st.container():
             st.markdown(f"### 📆 {month_display}")
 
             mc1, mc2 = st.columns(2)
             rank_medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-            rank_colors = {1: "var(--accent)", 2: "var(--text-primary)", 3: "var(--red)"}
 
             for col_obj, cat_data, title, icon in [(mc1, guest_top, "お客さん", "🧑‍🤝‍🧑"),
                                                      (mc2, staff_top, "スタッフ", "👔")]:
@@ -5203,42 +5189,15 @@ def page_monthly():
                     if not cat_data:
                         st.markdown('<div style="color:var(--text-muted);font-size:0.85rem;padding:0.4rem 0;">— データなし —</div>', unsafe_allow_html=True)
                         continue
-                    html = '<div style="display:flex;flex-direction:column;gap:0.3rem;margin-bottom:0.6rem;">'
+                    # 各プレイヤーをexpanderで表示 (クリックで内訳)
                     for i, entry in enumerate(cat_data):
                         pos = i + 1
-                        medal = rank_medals.get(pos, "")
-                        rc = rank_colors.get(pos, "var(--text-primary)")
-                        breakdown = entry["breakdown"]
-                        # 主要な項目 (1位のみを最大2件)
-                        top_items = [b for b in breakdown if b["順位"] == 1][:2]
-                        if top_items:
-                            item_str = " / ".join([b["項目"] for b in top_items])
-                            if len([b for b in breakdown if b["順位"] == 1]) > 2:
-                                item_str += " ..."
-                        else:
-                            item_str = f"複数項目でランクイン"
+                        medal = rank_medals.get(pos, f"{pos}")
+                        label = f"{medal}　{entry['name']}　—　{entry['total_pt']}pt"
+                        with st.expander(label, expanded=False):
+                            render_rankpt_breakdown(entry["breakdown"])
 
-                        html += f'''<div style="display:flex;align-items:center;gap:0.5rem;
-                                    background:var(--bg-card);border:1px solid {rc};
-                                    border-left:3px solid {rc};padding:0.4rem 0.7rem;
-                                    border-radius:6px;">
-                            <span style="font-size:1.2rem;font-weight:900;color:{rc};min-width:50px;">
-                                {medal}{pos}位
-                            </span>
-                            <span style="flex:1;font-weight:700;">{entry["name"]}</span>
-                            <span style="font-family:'Zen Kaku Gothic New';font-weight:900;
-                                         color:{rc};font-size:1.0rem;">
-                                {entry["total_pt"]}pt
-                            </span>
-                        </div>
-                        <div style="font-size:0.7rem;color:var(--text-muted);
-                                    padding-left:2.5rem;margin-top:-0.15rem;">
-                            {item_str}
-                        </div>'''
-                    html += '</div>'
-                    st.markdown(html, unsafe_allow_html=True)
-
-            st.markdown("<div style='height:0.4rem;'></div>", unsafe_allow_html=True)
+            st.markdown("<div style='height:0.6rem;'></div>", unsafe_allow_html=True)
 
 
 # --- ランキング画面 ---
@@ -5827,10 +5786,8 @@ def page_ranking():
         st.markdown("""
         <div class="rankpt-info-panel">
             <div class="rankpt-section">
-                <div class="rankpt-section-title">📋 集計対象の10項目</div>
+                <div class="rankpt-section-title">📋 集計対象の8項目</div>
                 <div class="rankpt-items">
-                    <span class="rankpt-item">🏅 レーティング</span>
-                    <span class="rankpt-item">🎖️ 段位</span>
                     <span class="rankpt-item">📊 打数</span>
                     <span class="rankpt-item">🥇 平均着順</span>
                     <span class="rankpt-item">👑 トップ率</span>
@@ -5890,8 +5847,6 @@ def page_ranking():
 
             | 項目 | ソート | 集計条件 |
             |---|---|---|
-            | 🏅 レーティング | 高い順 | レーティング算出済み |
-            | 🎖️ 段位 (累積pt) | 高い順 | レーティング算出済み |
             | 📊 打数 | 多い順 | 1戦以上 |
             | 🥇 平均着順 | 良い順(小さい順) | **{min_games}戦以上** |
             | 👑 トップ率 | 高い順 | **{min_games}戦以上** |
@@ -5901,11 +5856,13 @@ def page_ranking():
             | ⭐ 5連勝以上回数 | 多い順 | 制限なし |
             | 🌟 ベスト100半荘 | 良い順(小さい順) | **100戦以上** |
 
+            ※ レーティング・段位は専用タブがあるため、ランキングPTの集計には含めません。
+
             **その他**:
             - 11位以下は 0pt (ポイントなし)
             - **お客さん / スタッフ** は別カテゴリで集計 (混ざりません)
             - 規定打数はページ上部のスライダーで変更できます (現在: **{min_games}戦**)
-            - 1項目で獲得できる最大は 10pt、10項目すべて1位なら理論値 **100pt**
+            - 1項目で獲得できる最大は 10pt、8項目すべて1位なら理論値 **80pt**
             """)
 
     with t2:
