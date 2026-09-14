@@ -671,7 +671,7 @@ hide_style = """
         background-clip: text;
         letter-spacing: 0.06em;
         line-height: 1.15;
-        margin-bottom: 0.2rem;
+        margin-bottom: 0;
         text-shadow: 0 2px 20px rgba(240,192,64,0.3);
     }
     .hero-sub {
@@ -2583,47 +2583,37 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
         df_r_slim = df_rating[["名前", "レート", "対局数", "段位Index", "段位pt"]].rename(columns={"名前": "name"})
         stats = stats.merge(df_r_slim, on="name", how="left")
 
-    # ランキング項目定義 (get_player_top5_rankings と同じセット)
+    # ランキング項目定義 (10項目に厳選)
+    # 【対象】
+    #  1. 🏅 レーティング
+    #  2. 🎖️ 段位 (累積pt)
+    #  3. 📊 打数
+    #  4. 🥇 平均着順 (総合)
+    #  5. 👑 トップ率
+    #  6. 🛡 ラス回避率
+    #  7. 🔥 最長連勝
+    #  8. 🛡️ 最長連続ラス回避
+    #  9. ⭐ 5連勝以上回数
+    #  10. 🌟 ベスト100半荘
     def build_ranking_defs(stats_cat):
         return [d for d in [
-            ("games", "📊 打数", False, lambda df: df[df["games"].fillna(0) >= 1]),
-            ("avg_rank", "🥇 平均着順", True, lambda df: df[df["games"].fillna(0) >= min_games]),
-            ("top_rate", "👑 トップ率", False, lambda df: df[df["games"].fillna(0) >= min_games]),
-            ("second_rate", "🥈 2着率", False, lambda df: df[df["games"].fillna(0) >= min_games]),
-            ("last_avoid_rate", "🛡 ラス回避率", False, lambda df: df[df["games"].fillna(0) >= min_games]),
-            ("max_win_streak", "🔥 最長連勝", False, None),
-            ("max_last_streak", "💀 最長連続ラス", False, None),
-            ("max_second_streak", "😐 最長連続2着", False, None),
-            ("max_last_avoid_streak", "🛡️ 最長連続ラス回避", False, None),
-            ("max_no_top_streak", "😑 最長連続トップ無し", False, None),
-            ("four_win_count", "✨ 4連勝以上回数", False, None),
-            ("five_win_count", "⭐ 5連勝以上回数", False, None),
-            ("best100_avg", "🌟 ベスト100半荘 平均着順", True,
-             lambda df: df[df["best100_avg"].notna()]),
-            ("top_after_top_rate", "🔁 連勝確率", False,
-             lambda df: df[(df["top_after_top_rate"].notna()) & (df["top_after_top_samples"].fillna(0) >= 10)]),
-            ("second_after_second_rate", "🔄 連続2着率", False,
-             lambda df: df[(df["second_after_second_rate"].notna()) & (df["second_after_second_samples"].fillna(0) >= 10)]),
-            ("last_after_last_rate", "☠️ 連続ラス率", False,
-             lambda df: df[(df["last_after_last_rate"].notna()) & (df["last_after_last_samples"].fillna(0) >= 10)]),
-            ("avg_rank_A客", "🎯 平均着順 (A客)", True,
-             lambda df: df[df.get("games_A客", pd.Series([0]*len(df))).fillna(0) >= 10]) if "avg_rank_A客" in stats_cat.columns else None,
-            ("avg_rank_AS", "🎯 平均着順 (AS)", True,
-             lambda df: df[df.get("games_AS", pd.Series([0]*len(df))).fillna(0) >= 10]) if "avg_rank_AS" in stats_cat.columns else None,
-            ("avg_rank_B客", "🎯 平均着順 (B客)", True,
-             lambda df: df[df.get("games_B客", pd.Series([0]*len(df))).fillna(0) >= 10]) if "avg_rank_B客" in stats_cat.columns else None,
-            ("avg_rank_BS", "🎯 平均着順 (BS)", True,
-             lambda df: df[df.get("games_BS", pd.Series([0]*len(df))).fillna(0) >= 10]) if "avg_rank_BS" in stats_cat.columns else None,
-            ("avg_rank_seat_A", "💺 平均着順 (A席)", True,
-             lambda df: df[df.get("games_seat_A", pd.Series([0]*len(df))).fillna(0) >= 10]) if "avg_rank_seat_A" in stats_cat.columns else None,
-            ("avg_rank_seat_B", "💺 平均着順 (B席)", True,
-             lambda df: df[df.get("games_seat_B", pd.Series([0]*len(df))).fillna(0) >= 10]) if "avg_rank_seat_B" in stats_cat.columns else None,
-            ("avg_rank_seat_C", "💺 平均着順 (C席)", True,
-             lambda df: df[df.get("games_seat_C", pd.Series([0]*len(df))).fillna(0) >= 10]) if "avg_rank_seat_C" in stats_cat.columns else None,
+            # レーティング系
             ("レート", "🏅 レーティング", False,
              lambda df: df[df.get("レート", pd.Series([None]*len(df))).notna()]) if "レート" in stats_cat.columns else None,
             ("段位pt", "🎖️ 段位(累積pt)", False,
              lambda df: df[df.get("段位pt", pd.Series([None]*len(df))).notna()]) if "段位pt" in stats_cat.columns else None,
+            # 基本統計
+            ("games", "📊 打数", False, lambda df: df[df["games"].fillna(0) >= 1]),
+            ("avg_rank", "🥇 平均着順", True, lambda df: df[df["games"].fillna(0) >= min_games]),
+            ("top_rate", "👑 トップ率", False, lambda df: df[df["games"].fillna(0) >= min_games]),
+            ("last_avoid_rate", "🛡 ラス回避率", False, lambda df: df[df["games"].fillna(0) >= min_games]),
+            # 連続系
+            ("max_win_streak", "🔥 最長連勝", False, None),
+            ("max_last_avoid_streak", "🛡️ 最長連続ラス回避", False, None),
+            ("five_win_count", "⭐ 5連勝以上回数", False, None),
+            # ベスト100半荘
+            ("best100_avg", "🌟 ベスト100半荘", True,
+             lambda df: df[df["best100_avg"].notna()]),
         ] if d is not None]
 
     result = {"guest": [], "staff": []}
@@ -3436,7 +3426,6 @@ def page_home():
         <div class="hero-content">
             <div class="hero-badge">🀄 PINE RIVER</div>
             <div class="hero-title">ぱいん成績管理</div>
-            <div class="hero-sub">PINE SCORE MANAGER</div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -5621,11 +5610,17 @@ def page_ranking():
             - **6〜10位: 1pt**
             - 11位以下: 0pt
 
-            **対象ランキング項目** (最大25項目):
-            打数、平均着順(総合/A客/AS/B客/BS/A席/B席/C席)、トップ率、2着率、ラス回避率、
-            最長連勝、最長連続ラス、最長連続2着、最長連続ラス回避、最長連続トップ無し、
-            4連勝以上回数、5連勝以上回数、連勝確率、連続2着率、連続ラス率、
-            ベスト100半荘、レーティング、段位(累積pt)
+            **対象ランキング項目 (10項目)**:
+            - 🏅 レーティング
+            - 🎖️ 段位 (累積pt)
+            - 📊 打数
+            - 🥇 平均着順 (総合)
+            - 👑 トップ率
+            - 🛡 ラス回避率
+            - 🔥 最長連勝
+            - 🛡️ 最長連続ラス回避
+            - ⭐ 5連勝以上回数
+            - 🌟 ベスト100半荘
 
             **カテゴリ別**にお客さん/スタッフを分けて集計しています。
             """)
