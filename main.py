@@ -5027,7 +5027,7 @@ def page_monthly():
                 pos = i + 1
                 medal = rank_medals.get(pos, f"{pos}")
                 label = f"{medal}　{entry['name']}　—　{entry['total_pt']}pt"
-                with st.expander(label, expanded=(pos <= 3)):
+                with st.expander(label, expanded=False):
                     render_rankpt_breakdown(entry["breakdown"])
 
     st.divider()
@@ -5747,7 +5747,7 @@ def page_ranking():
                     # expander のラベル: 順位 名前 合計pt
                     label = f"{medal}　{entry['name']}　—　{entry['total_pt']}pt"
                     # 上位3位はデフォルトで展開
-                    with st.expander(label, expanded=(pos <= 3)):
+                    with st.expander(label, expanded=False):
                         render_rankpt_breakdown(entry["breakdown"])
 
         # 集計条件の補足説明
