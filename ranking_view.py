@@ -143,53 +143,65 @@ hr { border-color: var(--border) !important; opacity: 0.4 !important; }
 /* ===== 紙の着順表 (paper-sheet) ===== */
 .paper-wrap {
     background: #f8f6f0;
-    border-radius: 10px;
-    padding: 0.5rem;
+    border-radius: 8px;
+    padding: 0.3rem;
     overflow-x: auto;
-    margin: 0.5rem 0 1rem;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+    margin: 0 0 0.8rem;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.3);
 }
 .paper-table {
     border-collapse: collapse;
     width: 100%;
+    max-width: 420px;
     font-family: "Zen Kaku Gothic New", sans-serif;
     background: #fffdf7;
 }
 .paper-table th, .paper-table td {
-    border: 1px solid #b0a890;
+    border: 1px solid #c2bba5;
     text-align: center;
     color: #1a1a1a;
-    padding: 3px 5px;
-    font-size: 0.9rem;
+    padding: 1px 4px;
+    font-size: 0.82rem;
+    line-height: 1.5;
 }
 .paper-table thead th {
     background: #e8e2d0;
     font-weight: 800;
-    font-size: 0.78rem;
+    font-size: 0.72rem;
     color: #333;
+    padding: 2px 4px;
 }
 .paper-table .col-no {
-    background: #ede8da; font-weight: 700; width: 34px; color: #555;
-    font-size: 0.75rem;
+    background: #ede8da; font-weight: 700; width: 28px; color: #777;
+    font-size: 0.68rem;
 }
-.paper-table .seat-head-A { background: #d4e4f7; }
-.paper-table .seat-head-B { background: #f7e0cc; }
-.paper-table .seat-head-C { background: #d4f0e0; }
+.paper-table .seat-head-A { background: #d4e4f7; width: 33%; }
+.paper-table .seat-head-B { background: #f7e0cc; width: 33%; }
+.paper-table .seat-head-C { background: #d4f0e0; width: 33%; }
 .paper-table .name-row td {
-    font-weight: 800; font-size: 0.85rem; background: #fbf8ee;
-    border-bottom: 2px solid #8a8268;
+    font-weight: 800; font-size: 0.8rem; background: #fbf8ee;
+    border-top: 2px solid #8a8268;
+    padding: 3px 4px;
+    line-height: 1.2;
+}
+.paper-table .name-type {
+    font-size: 0.6rem; color: #8a7a55; margin-left: 2px;
+    background: #efe8d2; padding: 0 3px; border-radius: 3px;
+    vertical-align: middle;
 }
 .paper-table .rank1 { color: #c0392b; font-weight: 900; }
-.paper-table .rank-cell { font-weight: 700; font-size: 0.95rem; }
+.paper-table .rank-cell { font-weight: 700; font-size: 0.9rem; }
 .paper-table .gamecount-row td {
-    background: #f0ebd8; font-weight: 800; font-size: 0.8rem; color: #444;
+    background: #f0ebd8; font-weight: 700; font-size: 0.72rem; color: #555;
+    padding: 3px 4px;
 }
 .paper-table .empty-cell { color: #ccc; }
 
 .paper-title {
-    font-weight: 900; font-size: 1rem; color: #2a2a2a;
-    padding: 0.3rem 0.5rem; background: #e8e2d0; border-radius: 6px 6px 0 0;
-    border: 1px solid #b0a890; border-bottom: none;
+    font-weight: 900; font-size: 0.92rem; color: #2a2a2a;
+    padding: 0.25rem 0.5rem; background: #e8e2d0; border-radius: 6px 6px 0 0;
+    border: 1px solid #c2bba5; border-bottom: none;
+    display: inline-block; margin-top: 0.5rem;
 }
 
 /* 着席中バナー */
@@ -374,70 +386,38 @@ def get_available_dates(df):
 def render_paper_sheet(df_day, target_date):
     """
     指定日の対局を「紙の着順表」風に表示する。
-    卓ごとに、A/B/C席の名前(+タイプ)を上部に、
-    局番号ごとの着順を格子で、末尾にゲーム代枚数(タイプ別打数)を表示。
+    卓ごとに、各局の実際の着席メンバーを正確に表示。
+    メンバーが変わったタイミングで名前行を挿入する。
     """
     if df_day.empty:
         st.info("この日の対局データはありません。")
         return
 
-    # 卓ごとに分ける
     tables = sorted(df_day["TableNo"].unique()) if "TableNo" in df_day.columns else [1]
 
     for table_no in tables:
         df_tbl = df_day[df_day["TableNo"] == table_no].copy()
         if df_tbl.empty:
             continue
-        # SetNo・GameNo順
         sort_keys = [k for k in ["SetNo", "GameNo"] if k in df_tbl.columns]
         if sort_keys:
             df_tbl = df_tbl.sort_values(sort_keys).reset_index(drop=True)
 
-        # 各席のメンバー構成が途中で変わることがあるので、
-        # 「連続して同じ3人が座っている区間」= 1セットとして扱う
-        # ここでは SetNo でグループ化して各セットを1つの表にする
-        sets = sorted(df_tbl["SetNo"].unique()) if "SetNo" in df_tbl.columns else [1]
-
         st.markdown(f'<div class="paper-title">🎲 {int(table_no)}卓</div>', unsafe_allow_html=True)
-
-        for set_no in sets:
-            df_set = df_tbl[df_tbl["SetNo"] == set_no].copy() if "SetNo" in df_tbl.columns else df_tbl
-            if df_set.empty:
-                continue
-            df_set = df_set.sort_values("GameNo").reset_index(drop=True) if "GameNo" in df_set.columns else df_set
-
-            _render_one_set_table(df_set, set_no)
+        _render_table(df_tbl)
 
 
-def _render_one_set_table(df_set, set_no):
-    """1セット分(同じ3人)の着順表を描画"""
-    # 席ごとの代表メンバー名・タイプ (最頻値を採用)
-    seat_info = {}
-    for seat in ["A", "B", "C"]:
-        names = df_set[f"{seat}さん"].astype(str).replace("", pd.NA).dropna()
-        types = df_set[f"{seat}タイプ"].astype(str).replace("", pd.NA).dropna()
-        seat_name = names.mode().iloc[0] if not names.empty else "-"
-        seat_type = types.mode().iloc[0] if not types.empty else ""
-        seat_info[seat] = {"name": seat_name, "type": seat_type}
-
-    # タイプ別の打数集計 (この卓・このセットで各席が何戦打ったか)
-    # A客/AS/B客/BS ごとの合計打数
+def _render_table(df_tbl):
+    """
+    1卓分の着順表を描画。
+    各局の実際のメンバーを表示し、メンバーが変わったら名前行を差し込む。
+    名前抜けを防ぐため、局ごとに実データを参照する。
+    """
+    # タイプ別の打数集計 (卓全体)
     type_counts = {"A客": 0, "AS": 0, "B客": 0, "BS": 0}
-    for seat in ["A", "B", "C"]:
-        for _, row in df_set.iterrows():
-            t = str(row[f"{seat}タイプ"]).strip()
-            rk = row[f"{seat}着順"]
-            try:
-                rk = int(float(rk))
-            except:
-                rk = 0
-            if rk in [1, 2, 3] and t in type_counts:
-                type_counts[t] += 1
 
-    # HTML テーブル生成
     html = '<div class="paper-wrap"><table class="paper-table">'
-
-    # ヘッダー: 局 | A席 | B席 | C席
+    # ヘッダー
     html += '<thead><tr>'
     html += '<th class="col-no">局</th>'
     html += '<th class="seat-head-A">A席</th>'
@@ -445,17 +425,42 @@ def _render_one_set_table(df_set, set_no):
     html += '<th class="seat-head-C">C席</th>'
     html += '</tr></thead><tbody>'
 
-    # 名前行 (タイプ付き)
-    html += '<tr class="name-row">'
-    html += '<td class="col-no"></td>'
-    for seat in ["A", "B", "C"]:
-        info = seat_info[seat]
-        type_disp = f'<span style="font-size:0.65rem;color:#888;">({info["type"]})</span>' if info["type"] else ""
-        html += f'<td>{info["name"]} {type_disp}</td>'
-    html += '</tr>'
+    prev_members = None  # 直前の (A名, B名, C名)
 
-    # 各局の着順
-    for _, row in df_set.iterrows():
+    for _, row in df_tbl.iterrows():
+        # この局の各席の名前・タイプ・着順を取得
+        cur_names = {}
+        cur_types = {}
+        cur_ranks = {}
+        for seat in ["A", "B", "C"]:
+            nm = str(row.get(f"{seat}さん", "")).strip()
+            tp = str(row.get(f"{seat}タイプ", "")).strip()
+            try:
+                rk = int(float(row.get(f"{seat}着順", 0)))
+            except:
+                rk = 0
+            cur_names[seat] = nm
+            cur_types[seat] = tp
+            cur_ranks[seat] = rk
+            # タイプ別打数集計
+            if rk in [1, 2, 3] and tp in type_counts:
+                type_counts[tp] += 1
+
+        members = (cur_names["A"], cur_names["B"], cur_names["C"])
+
+        # メンバーが前局と変わった (または最初) なら名前行を挿入
+        if members != prev_members:
+            html += '<tr class="name-row">'
+            html += '<td class="col-no"></td>'
+            for seat in ["A", "B", "C"]:
+                nm = cur_names[seat] if cur_names[seat] else "-"
+                tp = cur_types[seat]
+                type_disp = f'<span class="name-type">{tp}</span>' if tp else ""
+                html += f'<td>{nm}{type_disp}</td>'
+            html += '</tr>'
+            prev_members = members
+
+        # 着順行
         try:
             game_no = int(float(row.get("GameNo", 0)))
         except:
@@ -463,28 +468,25 @@ def _render_one_set_table(df_set, set_no):
         html += '<tr>'
         html += f'<td class="col-no">{game_no}</td>'
         for seat in ["A", "B", "C"]:
-            try:
-                rk = int(float(row[f"{seat}着順"]))
-            except:
-                rk = 0
+            rk = cur_ranks[seat]
             if rk == 1:
                 html += '<td class="rank-cell rank1">1</td>'
             elif rk in [2, 3]:
                 html += f'<td class="rank-cell">{rk}</td>'
             else:
-                html += '<td class="empty-cell">-</td>'
+                html += '<td class="empty-cell">·</td>'
         html += '</tr>'
 
     # ゲーム代枚数行 (タイプ別打数)
-    total_games = len(df_set)
+    total_games = len(df_tbl)
     html += '<tr class="gamecount-row">'
     html += '<td class="col-no">代</td>'
-    html += f'<td colspan="3" style="text-align:left;padding-left:8px;">'
+    html += '<td colspan="3" style="text-align:left;padding-left:8px;">'
     parts = []
     for t in ["A客", "AS", "B客", "BS"]:
         if type_counts[t] > 0:
-            parts.append(f'{t}: <strong>{type_counts[t]}</strong>')
-    html += "　/　".join(parts) if parts else f'計 {total_games} 戦'
+            parts.append(f'{t} <strong>{type_counts[t]}</strong>')
+    html += "　".join(parts) if parts else f'計 {total_games} 戦'
     html += '</td>'
     html += '</tr>'
 
