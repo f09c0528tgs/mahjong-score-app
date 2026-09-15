@@ -4062,7 +4062,7 @@ def page_personal():
         render_rating_card(selected_player, rating_info)
 
     # 直近10戦のレーティング変動履歴 (折りたたみで表示)
-    with st.expander("📈 直近10戦のレーティング変動 (対戦相手・段位変化)", expanded=True):
+    with st.expander("📈 直近10戦のレーティング変動 (対戦相手・段位変化)", expanded=False):
         render_recent_rating_history(selected_player, last_n=10)
 
     # TOP5にランクインしている全項目を表示 (折りたたみで展開)
@@ -4426,7 +4426,7 @@ def page_personal():
                 days = len(player_weekday_dates[wd])
                 p_wd_rows.append({
                     "曜日": weekday_names[wd],
-                    "来店日数": f"{days} 日",
+                    "稼働日数": f"{days} 日",
                     "打数": f"{c} 戦",
                     "平均着順": f"{sum(rs)/c:.3f}",
                     "トップ率": f"{rs.count(1)/c*100:.1f}%",
@@ -4473,48 +4473,10 @@ def page_personal():
                 st.dataframe(pd.DataFrame(month_rows), hide_index=True, use_container_width=True)
 
     st.divider()
-    # 着順推移
-    c_graph, c_dates = st.columns([2, 1])
-    with c_graph:
-        chart_count = min(len(ranks), 30)
-        section_title("📈", f"直近{chart_count}戦の着順推移")
-        recent_ranks = ranks[-chart_count:]
-        df_trend = pd.DataFrame({"戦数": range(1, len(recent_ranks) + 1), "着順": recent_ranks})
-        if len(recent_ranks) >= 5:
-            df_trend["移動平均(5戦)"] = df_trend["着順"].rolling(window=5, min_periods=1).mean()
-
-        base = alt.Chart(df_trend).encode(
-            x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
-        )
-        line_main = base.mark_line(
-            point=alt.OverlayMarkDef(color="#f0c040", size=80),
-            color="#f0c040", strokeWidth=2
-        ).encode(
-            y=alt.Y("着順", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"),
-            tooltip=["戦数", "着順"]
-        )
-        chart = line_main
-        if "移動平均(5戦)" in df_trend.columns:
-            line_avg = base.mark_line(
-                color="#5b9cf6", strokeWidth=1.5, strokeDash=[5, 3]
-            ).encode(
-                y=alt.Y("移動平均(5戦)"),
-                tooltip=["戦数", alt.Tooltip("移動平均(5戦)", format=".3f")]
-            )
-            chart = alt.layer(line_main, line_avg)
-
-        chart = chart.properties(height=280).configure_view(
-            strokeWidth=0, fill="#1a1d2e"
-        ).configure_axis(
-            gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8"
-        )
-        st.altair_chart(chart, use_container_width=True)
-        if "移動平均(5戦)" in df_trend.columns:
-            st.caption("🟡 着順  /  🔵 5戦移動平均")
-    with c_dates:
-        section_title("📅", "稼働日")
-        date_list = sorted(list(played_dates), reverse=True)
-        st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True, height=300)
+    # 稼働日リスト
+    section_title("📅", "稼働日")
+    date_list = sorted(list(played_dates), reverse=True)
+    st.dataframe(pd.DataFrame(date_list, columns=["日付"]), hide_index=True, use_container_width=True, height=300)
 
     if compatibility:
         st.divider()
