@@ -4415,23 +4415,29 @@ def page_personal():
         else:
             st.info("タイプ別データがありません")
 
-    # 折りたたみで曜日別成績
+    # 折りたたみで曜日別成績 (月別成績と同じ項目)
     with st.expander("📆 曜日別成績", expanded=False):
         weekday_names = ["月", "火", "水", "木", "金", "土", "日"]
         p_wd_rows = []
         for wd in range(7):
             rs = player_weekday_ranks[wd]
-            c = len(rs)
-            if c > 0:
-                days = len(player_weekday_dates[wd])
-                p_wd_rows.append({
-                    "曜日": weekday_names[wd],
-                    "稼働日数": f"{days} 日",
-                    "打数": f"{c} 戦",
-                    "平均着順": f"{sum(rs)/c:.3f}",
-                    "トップ率": f"{rs.count(1)/c*100:.1f}%",
-                    "ラス回避率": f"{(c-rs.count(3))/c*100:.1f}%",
-                })
+            g = len(rs)
+            if g == 0:
+                continue
+            r1 = rs.count(1)
+            r2 = rs.count(2)
+            r3 = rs.count(3)
+            p_wd_rows.append({
+                "曜日": weekday_names[wd],
+                "打数": g,
+                "稼働日数": len(player_weekday_dates[wd]),
+                "平均着順": f"{sum(rs)/g:.3f}",
+                "トップ率": f"{r1/g*100:.2f}%",
+                "ラス回避率": f"{(g-r3)/g*100:.2f}%",
+                "1着": f"{r1} ({r1/g*100:.1f}%)",
+                "2着": f"{r2} ({r2/g*100:.1f}%)",
+                "3着": f"{r3} ({r3/g*100:.1f}%)",
+            })
         if p_wd_rows:
             st.dataframe(pd.DataFrame(p_wd_rows), hide_index=True, use_container_width=True)
             # 最も得意な曜日
