@@ -3270,6 +3270,7 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
     def _compute_streaks(group):
         g = group.sort_values(["dt", "game_no"])
         ranks = g["rank"].tolist()
+        dts = g["dt"].tolist()
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
         four_win = five_win = 0
@@ -3277,6 +3278,8 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
         top_after_top_d = top_after_top_n = 0
         sec_after_sec_d = sec_after_sec_n = 0
         last_after_last_d = last_after_last_n = 0
+        spans = {"win": (None, None), "last": (None, None), "second": (None, None),
+                 "last_avoid": (None, None), "no_top": (None, None)}
         for i in range(len(ranks) - 1):
             cur_r = ranks[i]
             next_r = ranks[i + 1]
@@ -3291,7 +3294,7 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
                 if next_r == 3: last_after_last_n += 1
         cur_win = cur_last = cur_second = 0
         cur_last_avoid = cur_no_top = 0
-        for r in ranks:
+        for idx, r in enumerate(ranks):
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
@@ -3305,19 +3308,43 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
                 cur_win = cur_second = 0
             else:
                 cur_win = cur_last = cur_second = 0
-            max_win = max(max_win, cur_win)
-            max_last = max(max_last, cur_last)
-            max_second = max(max_second, cur_second)
+            if cur_win > max_win:
+                max_win = cur_win
+                spans["win"] = (idx - cur_win + 1, idx)
+            if cur_last > max_last:
+                max_last = cur_last
+                spans["last"] = (idx - cur_last + 1, idx)
+            if cur_second > max_second:
+                max_second = cur_second
+                spans["second"] = (idx - cur_second + 1, idx)
             if r in (1, 2):
                 cur_last_avoid += 1
-                max_last_avoid = max(max_last_avoid, cur_last_avoid)
+                if cur_last_avoid > max_last_avoid:
+                    max_last_avoid = cur_last_avoid
+                    spans["last_avoid"] = (idx - cur_last_avoid + 1, idx)
             else:
                 cur_last_avoid = 0
             if r in (2, 3):
                 cur_no_top += 1
-                max_no_top = max(max_no_top, cur_no_top)
+                if cur_no_top > max_no_top:
+                    max_no_top = cur_no_top
+                    spans["no_top"] = (idx - cur_no_top + 1, idx)
             else:
                 cur_no_top = 0
+
+        def _span_label(key):
+            s, e = spans[key]
+            if s is None or e is None or s >= len(dts) or e >= len(dts):
+                return ""
+            try:
+                d1 = pd.to_datetime(dts[s])
+                d2 = pd.to_datetime(dts[e])
+                if d1.date() == d2.date():
+                    return d1.strftime("%m/%d")
+                return f"{d1.strftime('%m/%d')}〜{d2.strftime('%m/%d')}"
+            except Exception:
+                return ""
+
         return pd.Series({
             "max_win_streak": max_win, "max_last_streak": max_last,
             "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
@@ -3330,6 +3357,11 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
             "second_after_second_samples": sec_after_sec_d,
             "last_after_last_rate": (last_after_last_n / last_after_last_d * 100) if last_after_last_d > 0 else None,
             "last_after_last_samples": last_after_last_d,
+            "max_win_streak_date": _span_label("win"),
+            "max_last_streak_date": _span_label("last"),
+            "max_second_streak_date": _span_label("second"),
+            "max_last_avoid_streak_date": _span_label("last_avoid"),
+            "max_no_top_streak_date": _span_label("no_top"),
         })
     streaks = df_raw.groupby("name", group_keys=False).apply(_compute_streaks).reset_index()
 
@@ -5964,12 +5996,17 @@ def _render_monthly_stats():
                     continue
                 ranked = assign_competition_rank(df_t, sort_col, ascending=asc)
                 res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
-                display_df = pd.DataFrame({
+                display_dict = {
                     "順位": res["順位"],
                     "名前": res["name"],
                     "記録": res[sort_col].map(fmt),
                     "打数": res["games"].astype(int),
-                })
+                }
+                # 達成日付の列があれば追加 (連続系ランキング)
+                date_col = f"{sort_col}_date"
+                if date_col in res.columns:
+                    display_dict["達成期間"] = res[date_col]
+                display_df = pd.DataFrame(display_dict)
                 st.dataframe(display_df, hide_index=True, use_container_width=True)
 
     def show_month_type_rank(col_avg, col_games, fmt, min_type_games=5):
@@ -6151,6 +6188,7 @@ def page_ranking():
         # 時系列で並べる
         g = group.sort_values(["dt", "game_no"])
         ranks = g["rank"].tolist()
+        dts = g["dt"].tolist()  # 各対局の日時 (記録達成日の特定に使用)
 
         max_win_streak = 0        # 最長連勝(1着連続)
         max_last_streak = 0       # 最長連続ラス(3着連続)
@@ -6160,6 +6198,12 @@ def page_ranking():
         four_win_count = 0        # 4連勝以上の達成回数
         five_win_count = 0        # 5連勝以上の達成回数
         second_total = ranks.count(2)
+
+        # 各記録の達成期間 (開始index, 終了index) を保持
+        streak_spans = {
+            "win": (None, None), "last": (None, None), "second": (None, None),
+            "last_avoid": (None, None), "no_top": (None, None),
+        }
 
         # 連勝確率(トップを取った直後の半荘でトップを取った確率)
         # 分母: トップを取った試合 (ただし最終試合を除く=直後の試合がある)
@@ -6204,7 +6248,7 @@ def page_ranking():
         cur_last_avoid = 0  # 現在の連続ラス回避 (1 or 2)
         cur_no_top = 0      # 現在の連続トップ無し (2 or 3)
 
-        for r in ranks:
+        for idx, r in enumerate(ranks):
             # --- 1着/2着/3着の連続系 ---
             if r == 1:
                 cur_win += 1
@@ -6222,15 +6266,22 @@ def page_ranking():
             else:
                 cur_win = cur_last = cur_second = 0
 
-            if cur_win > max_win_streak: max_win_streak = cur_win
-            if cur_last > max_last_streak: max_last_streak = cur_last
-            if cur_second > max_second_streak: max_second_streak = cur_second
+            if cur_win > max_win_streak:
+                max_win_streak = cur_win
+                streak_spans["win"] = (idx - cur_win + 1, idx)
+            if cur_last > max_last_streak:
+                max_last_streak = cur_last
+                streak_spans["last"] = (idx - cur_last + 1, idx)
+            if cur_second > max_second_streak:
+                max_second_streak = cur_second
+                streak_spans["second"] = (idx - cur_second + 1, idx)
 
             # --- 連続ラス回避 (1 or 2 が続く) ---
             if r in (1, 2):
                 cur_last_avoid += 1
                 if cur_last_avoid > max_last_avoid_streak:
                     max_last_avoid_streak = cur_last_avoid
+                    streak_spans["last_avoid"] = (idx - cur_last_avoid + 1, idx)
             else:
                 cur_last_avoid = 0
 
@@ -6239,8 +6290,25 @@ def page_ranking():
                 cur_no_top += 1
                 if cur_no_top > max_no_top_streak:
                     max_no_top_streak = cur_no_top
+                    streak_spans["no_top"] = (idx - cur_no_top + 1, idx)
             else:
                 cur_no_top = 0
+
+        # 期間を「YYYY/MM/DD」or「YYYY/MM/DD〜MM/DD」形式の文字列に変換
+        def _span_label(key):
+            s, e = streak_spans[key]
+            if s is None or e is None or s >= len(dts) or e >= len(dts):
+                return ""
+            try:
+                d1 = pd.to_datetime(dts[s])
+                d2 = pd.to_datetime(dts[e])
+                if d1.date() == d2.date():
+                    return d1.strftime("%Y/%m/%d")
+                if d1.year == d2.year:
+                    return f"{d1.strftime('%Y/%m/%d')}〜{d2.strftime('%m/%d')}"
+                return f"{d1.strftime('%Y/%m/%d')}〜{d2.strftime('%Y/%m/%d')}"
+            except Exception:
+                return ""
 
         return pd.Series({
             "max_win_streak": max_win_streak,
@@ -6257,6 +6325,12 @@ def page_ranking():
             "second_after_second_samples": second_after_second_denominator,
             "last_after_last_rate": last_after_last_rate,
             "last_after_last_samples": last_after_last_denominator,
+            # 記録達成日
+            "max_win_streak_date": _span_label("win"),
+            "max_last_streak_date": _span_label("last"),
+            "max_second_streak_date": _span_label("second"),
+            "max_last_avoid_streak_date": _span_label("last_avoid"),
+            "max_no_top_streak_date": _span_label("no_top"),
         })
 
     streaks = df_raw.groupby("name", group_keys=False).apply(compute_streaks).reset_index()
@@ -6409,6 +6483,11 @@ def page_ranking():
                                 "avg_rank_seat_A": "平均着順(A席)",
                                 "avg_rank_seat_B": "平均着順(B席)",
                                 "avg_rank_seat_C": "平均着順(C席)"}
+                        # 達成日付の列が存在すれば追加表示 (連続系ランキング)
+                        date_col = f"{sort_col}_date"
+                        if date_col in res.columns:
+                            cols.append(date_col)
+                            rmap[date_col] = "達成期間"
                     st.dataframe(res[cols].rename(columns=rmap), hide_index=True, use_container_width=True)
                 else:
                     st.info("データなし")
