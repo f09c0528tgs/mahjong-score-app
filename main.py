@@ -2638,7 +2638,6 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
         four_win = five_win = 0
-        win_streak_starts = 0  # 連勝が始まった回数 (5連勝以上確率の分母)
         second_total = ranks.count(2)
         top_after_top_d = top_after_top_n = 0
         sec_after_sec_d = sec_after_sec_n = 0
@@ -2672,7 +2671,6 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
-                if cur_win == 1: win_streak_starts += 1
                 if cur_win == 4: four_win += 1
                 if cur_win == 5: five_win += 1
             elif r == 2:
@@ -2701,8 +2699,8 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
             "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
             "max_no_top_streak": max_no_top,
             "four_win_count": four_win, "five_win_count": five_win,
-            "five_win_rate": (five_win / win_streak_starts * 100) if win_streak_starts > 0 else None,
-            "five_win_samples": win_streak_starts,
+            "five_win_rate": (five_win / len(ranks) * 100) if len(ranks) > 0 else None,
+            "five_win_samples": len(ranks),
             "second_count": second_total,
             "top_after_top_rate": (top_after_top_n / top_after_top_d * 100) if top_after_top_d > 0 else None,
             "top_after_top_samples": top_after_top_d,
@@ -3020,7 +3018,6 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
         four_win = five_win = 0
-        win_streak_starts = 0  # 連勝が始まった回数 (5連勝以上確率の分母)
         second_total = ranks.count(2)
         top_after_top_d = top_after_top_n = 0
         sec_after_sec_d = sec_after_sec_n = 0
@@ -3053,7 +3050,6 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
-                if cur_win == 1: win_streak_starts += 1
                 if cur_win == 4: four_win += 1
                 if cur_win == 5: five_win += 1
             elif r == 2:
@@ -3082,8 +3078,8 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
             "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
             "max_no_top_streak": max_no_top,
             "four_win_count": four_win, "five_win_count": five_win,
-            "five_win_rate": (five_win / win_streak_starts * 100) if win_streak_starts > 0 else None,
-            "five_win_samples": win_streak_starts,
+            "five_win_rate": (five_win / len(ranks) * 100) if len(ranks) > 0 else None,
+            "five_win_samples": len(ranks),
             "second_count": second_total,
             "top_after_top_rate": (top_after_top_n / top_after_top_d * 100) if top_after_top_d > 0 else None,
             "top_after_top_samples": top_after_top_d,
@@ -3313,7 +3309,6 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
         four_win = five_win = 0
-        win_streak_starts = 0  # 連勝が始まった回数 (5連勝以上確率の分母)
         second_total = ranks.count(2)
         top_after_top_d = top_after_top_n = 0
         sec_after_sec_d = sec_after_sec_n = 0
@@ -3348,7 +3343,6 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
-                if cur_win == 1: win_streak_starts += 1
                 if cur_win == 4: four_win += 1
                 if cur_win == 5: five_win += 1
             elif r == 2:
@@ -3401,8 +3395,8 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
             "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
             "max_no_top_streak": max_no_top,
             "four_win_count": four_win, "five_win_count": five_win,
-            "five_win_rate": (five_win / win_streak_starts * 100) if win_streak_starts > 0 else None,
-            "five_win_samples": win_streak_starts,
+            "five_win_rate": (five_win / len(ranks) * 100) if len(ranks) > 0 else None,
+            "five_win_samples": len(ranks),
             "second_count": second_total,
             "top_after_top_rate": (top_after_top_n / top_after_top_d * 100) if top_after_top_d > 0 else None,
             "top_after_top_samples": top_after_top_d,
@@ -6410,9 +6404,9 @@ def _render_monthly_stats():
         st.caption("その月の5連勝以上回数。記録0は非表示。")
         show_month_rank("five_win_count", False, '{:.0f}'.format, exclude_zero=True)
     with tabs[14]:
-        st.caption("連勝が始まったとき5連勝以上に発展した確率。連勝開始5回以上。")
+        st.caption("5連勝以上を達成した回数 ÷ 打数。打数が多いほど達成しにくいので、打数あたりの爆発力の指標。20戦以上。")
         show_month_rank("five_win_rate", False, '{:.2f}%'.format,
-                        min_samples_col="five_win_samples", min_samples=5)
+                        min_samples_col="five_win_samples", min_samples=20)
     with tabs[15]:
         st.caption("トップの直後にトップを取った確率。サンプル5以上。")
         show_month_rank("top_after_top_rate", False, '{:.2f}%'.format,
@@ -6518,7 +6512,6 @@ def page_ranking():
         max_no_top_streak = 0     # 最長連続トップ無し(2着or3着が連続、= 1着を取れなかった連続)
         four_win_count = 0        # 4連勝以上の達成回数
         five_win_count = 0        # 5連勝以上の達成回数
-        win_streak_starts = 0     # 連勝が始まった回数 (5連勝以上確率の分母)
         second_total = ranks.count(2)
 
         # 各記録の達成期間 (開始index, 終了index) を保持
@@ -6586,8 +6579,6 @@ def page_ranking():
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
-                if cur_win == 1:  # 連勝の開始 (5連勝以上確率の分母)
-                    win_streak_starts += 1
                 if cur_win == 4:  # 4連勝到達時点でカウント (1つの連勝ストリークで1回)
                     four_win_count += 1
                 if cur_win == 5:  # 5連勝到達時点でカウント
@@ -6653,8 +6644,8 @@ def page_ranking():
             "max_no_top_streak": max_no_top_streak,
             "four_win_count": four_win_count,
             "five_win_count": five_win_count,
-            "five_win_rate": (five_win_count / win_streak_starts * 100) if win_streak_starts > 0 else None,
-            "five_win_samples": win_streak_starts,
+            "five_win_rate": (five_win_count / len(ranks) * 100) if len(ranks) > 0 else None,
+            "five_win_samples": len(ranks),
             "second_count": second_total,
             "top_after_top_rate": top_after_top_rate,
             "top_after_top_samples": top_after_top_denominator,
@@ -7310,7 +7301,7 @@ def page_ranking():
                     if not df_filtered.empty:
                         ranked = assign_competition_rank(df_filtered, rate_col, ascending=False)
                         res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
-                        display_df = pd.DataFrame({
+                        display_dict = {
                             "順位": res["順位"],
                             "名前": res["name"],
                             label: res[rate_col].map('{:.2f}%'.format),
@@ -7318,8 +7309,11 @@ def page_ranking():
                                 lambda r: f"{int(r[rate_col]/100 * r[samples_col] + 0.5)}/{int(r[samples_col])}",
                                 axis=1
                             ),
-                            "打数": res["games"].astype(int),
-                        })
+                        }
+                        # 分母が打数そのものの場合は「打数」列が重複するので出さない
+                        if samples_col != "five_win_samples":
+                            display_dict["打数"] = res["games"].astype(int)
+                        display_df = pd.DataFrame(display_dict)
                         st.dataframe(display_df, hide_index=True, use_container_width=True)
                     else:
                         st.info(f"{empty_label}が{min_samples}以上のプレイヤーがいません")
@@ -7328,10 +7322,10 @@ def page_ranking():
 
     # --- t18: 5連勝以上確率 ---
     with t18:
-        st.caption("トップを取って連勝が始まったとき、そこから**5連勝以上に発展した確率**(連勝開始が10回以上のプレイヤーのみ表示)。連勝を伸ばす力の指標。")
+        st.caption("**5連勝以上を達成した回数 ÷ 打数**(50戦以上のプレイヤーのみ表示)。打数あたりどれだけ大型連勝を決めたかの指標。")
         show_streak_prob_ranking(
             "five_win_rate", "five_win_samples",
-            "5連勝以上確率", "連勝開始回数"
+            "5連勝以上確率", "打数", min_samples=50
         )
 
     # --- t19: 連勝確率 ---
