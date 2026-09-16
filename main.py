@@ -114,16 +114,18 @@ hide_style = """
     }
 
     /* ========== セレクトボックス / インプット ========== */
+    /* 背景を明るめにして文字とのコントラストを確保 */
     .stSelectbox > div > div,
     .stTextInput > div > div > input,
     .stNumberInput > div > div > input,
     .stDateInput > div > div > input,
     .stTextArea > div > div > textarea {
-        background-color: var(--bg-input) !important;
-        color: var(--text-primary) !important;
-        border: 1px solid var(--border) !important;
+        background-color: #2f3550 !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(255,255,255,0.22) !important;
         border-radius: var(--radius-sm) !important;
         font-family: 'Noto Sans JP', sans-serif !important;
+        font-weight: 600 !important;
     }
     .stSelectbox > div > div:focus-within,
     .stTextInput > div > div:focus-within {
@@ -131,20 +133,35 @@ hide_style = """
         box-shadow: 0 0 0 2px var(--accent-soft) !important;
     }
 
-    /* --- 選択済みの値・入力文字を確実に明るく (背景同化を防ぐ) --- */
-    /* selectbox / multiselect の baseweb 内部要素をすべて明色に */
-    [data-baseweb="select"] div[data-baseweb="single-value"],
-    [data-baseweb="select"] > div,
-    [data-baseweb="select"] span,
-    [data-baseweb="select"] input,
-    div[data-baseweb="select"] * {
-        color: var(--text-primary) !important;
-        -webkit-text-fill-color: var(--text-primary) !important;
+    /* --- baseweb セレクトの器を明るく --- */
+    div[data-baseweb="select"] > div,
+    div[data-baseweb="select"] [data-baseweb="input"],
+    div[data-baseweb="input"] > div {
+        background-color: #2f3550 !important;
+        border-color: rgba(255,255,255,0.22) !important;
+    }
+
+    /* --- 選択済みの値・入力文字を白に (背景同化を完全に防ぐ) --- */
+    div[data-baseweb="select"],
+    div[data-baseweb="select"] *,
+    div[data-baseweb="select"] > div > div,
+    div[data-baseweb="select"] div[value],
+    div[data-baseweb="select"] span,
+    div[data-baseweb="select"] input,
+    .stSelectbox div[data-baseweb="select"] div,
+    .stMultiSelect div[data-baseweb="select"] div {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+    }
+    /* 選択済み値を太めにして視認性UP */
+    div[data-baseweb="select"] > div > div:first-child {
+        font-weight: 700 !important;
+        font-size: 0.95rem !important;
     }
     /* selectbox 内で入力中(検索)の文字 */
     [data-baseweb="select"] input {
-        color: var(--text-primary) !important;
-        -webkit-text-fill-color: var(--text-primary) !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
         caret-color: var(--accent) !important;
     }
     /* text/number/date/textarea の入力文字 */
@@ -152,42 +169,62 @@ hide_style = """
     .stNumberInput input,
     .stDateInput input,
     .stTextArea textarea {
-        color: var(--text-primary) !important;
-        -webkit-text-fill-color: var(--text-primary) !important;
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
         caret-color: var(--accent) !important;
+        font-weight: 600 !important;
     }
     /* プレースホルダーは少し薄く(でも読める程度に) */
     .stTextInput input::placeholder,
     .stNumberInput input::placeholder,
     .stTextArea textarea::placeholder,
     [data-baseweb="select"] input::placeholder {
-        color: #9aa0b5 !important;
-        -webkit-text-fill-color: #9aa0b5 !important;
+        color: #b0b6c8 !important;
+        -webkit-text-fill-color: #b0b6c8 !important;
         opacity: 1 !important;
+        font-weight: 400 !important;
     }
 
     /* --- ドロップダウンのメニュー(候補リスト)も明色に --- */
+    /* ポップオーバー全体の背景を明るく */
+    div[data-baseweb="popover"],
+    div[data-baseweb="popover"] > div,
+    div[data-baseweb="menu"],
+    ul[role="listbox"] {
+        background-color: #2f3550 !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
+    }
     [data-baseweb="popover"] [role="option"],
     [data-baseweb="menu"] li,
     [data-baseweb="menu"] [role="option"],
-    ul[role="listbox"] li {
-        color: var(--text-primary) !important;
-        -webkit-text-fill-color: var(--text-primary) !important;
-        background-color: var(--bg-card) !important;
+    [data-baseweb="popover"] li,
+    ul[role="listbox"] li,
+    ul[role="listbox"] li * {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        background-color: transparent !important;
+        font-weight: 600 !important;
     }
     [data-baseweb="popover"] [role="option"]:hover,
     [data-baseweb="menu"] li:hover,
     ul[role="listbox"] li:hover {
-        background-color: rgba(240,192,64,0.15) !important;
-        color: var(--accent) !important;
-        -webkit-text-fill-color: var(--accent) !important;
+        background-color: rgba(240,192,64,0.25) !important;
+    }
+    [data-baseweb="popover"] [role="option"]:hover *,
+    [data-baseweb="menu"] li:hover *,
+    ul[role="listbox"] li:hover * {
+        color: var(--accent-bright, #ffd97a) !important;
+        -webkit-text-fill-color: var(--accent-bright, #ffd97a) !important;
     }
     /* 選択中の候補 */
     [data-baseweb="menu"] li[aria-selected="true"],
     ul[role="listbox"] li[aria-selected="true"] {
-        background-color: rgba(240,192,64,0.2) !important;
-        color: var(--accent) !important;
-        -webkit-text-fill-color: var(--accent) !important;
+        background-color: rgba(240,192,64,0.3) !important;
+    }
+    [data-baseweb="menu"] li[aria-selected="true"] *,
+    ul[role="listbox"] li[aria-selected="true"] * {
+        color: #ffd97a !important;
+        -webkit-text-fill-color: #ffd97a !important;
     }
 
     /* --- multiselect のタグ(選択済みチップ) --- */
@@ -215,11 +252,11 @@ hide_style = """
     .stRadio > label,
     .stCheckbox > label,
     [data-testid="stWidgetLabel"] {
-        color: var(--text-muted) !important;
-        font-size: 0.8rem !important;
-        font-weight: 500 !important;
-        letter-spacing: 0.04em !important;
-        text-transform: uppercase !important;
+        color: #b8bed0 !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+        letter-spacing: 0.03em !important;
+        text-transform: none !important;
     }
 
     /* ========== ラジオボタン ========== */
@@ -462,6 +499,12 @@ hide_style = """
         border-bottom: 1px solid var(--border) !important;
         padding: 0.55rem 0.8rem !important;
         font-size: 0.88rem !important;
+        color: #e8e8f0 !important;
+    }
+    /* データフレーム内部(canvas/glide-grid)のテキストも明るく */
+    [data-testid="stDataFrame"] [role="gridcell"],
+    [data-testid="stDataFrame"] [role="columnheader"] {
+        color: #e8e8f0 !important;
     }
     [data-testid="stDataFrame"] tr:hover td {
         background: var(--accent-soft) !important;
@@ -514,9 +557,10 @@ hide_style = """
     .stSpinner > div { border-top-color: var(--accent) !important; }
 
     /* ========== キャプション ========== */
-    .stCaption, [data-testid="stCaptionContainer"] {
-        color: var(--text-muted) !important;
-        font-size: 0.8rem !important;
+    .stCaption, [data-testid="stCaptionContainer"],
+    [data-testid="stCaptionContainer"] p {
+        color: #a8afc4 !important;
+        font-size: 0.82rem !important;
     }
 
     /* ========== スコアシート テーブル ========== */
