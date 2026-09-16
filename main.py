@@ -2627,6 +2627,7 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
     def _compute_streaks(group):
         g = group.sort_values(["dt", "game_no"])
         ranks = g["rank"].tolist()
+        day_keys = g["date"].tolist() if "date" in g.columns else [None] * len(ranks)
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
         four_win = five_win = 0
@@ -2635,6 +2636,8 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
         sec_after_sec_d = sec_after_sec_n = 0
         last_after_last_d = last_after_last_n = 0
         for i in range(len(ranks) - 1):
+            if day_keys[i] != day_keys[i + 1]:
+                continue
             cur_r = ranks[i]
             next_r = ranks[i + 1]
             if cur_r == 1:
@@ -2649,7 +2652,15 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
 
         cur_win = cur_last = cur_second = 0
         cur_last_avoid = cur_no_top = 0
-        for r in ranks:
+        prev_day = None
+        for idx, r in enumerate(ranks):
+            # 日が変わったら連続カウンタをリセット (単日記録のみ採用)
+            cur_day = day_keys[idx] if idx < len(day_keys) else None
+            if prev_day is not None and cur_day != prev_day:
+                cur_win = cur_last = cur_second = 0
+                cur_last_avoid = cur_no_top = 0
+            prev_day = cur_day
+
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
@@ -2994,6 +3005,7 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
     def _compute_streaks(group):
         g = group.sort_values(["dt", "game_no"])
         ranks = g["rank"].tolist()
+        day_keys = g["date"].tolist() if "date" in g.columns else [None] * len(ranks)
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
         four_win = five_win = 0
@@ -3002,6 +3014,8 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
         sec_after_sec_d = sec_after_sec_n = 0
         last_after_last_d = last_after_last_n = 0
         for i in range(len(ranks) - 1):
+            if day_keys[i] != day_keys[i + 1]:
+                continue
             cur_r = ranks[i]
             next_r = ranks[i + 1]
             if cur_r == 1:
@@ -3015,7 +3029,15 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
                 if next_r == 3: last_after_last_n += 1
         cur_win = cur_last = cur_second = 0
         cur_last_avoid = cur_no_top = 0
-        for r in ranks:
+        prev_day = None
+        for idx, r in enumerate(ranks):
+            # 日が変わったら連続カウンタをリセット (単日記録のみ採用)
+            cur_day = day_keys[idx] if idx < len(day_keys) else None
+            if prev_day is not None and cur_day != prev_day:
+                cur_win = cur_last = cur_second = 0
+                cur_last_avoid = cur_no_top = 0
+            prev_day = cur_day
+
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
@@ -3258,6 +3280,7 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
                     records.append({
                         "name": name, "rank": r,
                         "dt": row.get("日時Obj", pd.Timestamp("1900-01-01")),
+                        "date": row.get("論理日付", None),
                         "game_no": row.get("GameNo", 0),
                         "player_type": str(player_type) if player_type else "",
                         "seat": seat,
@@ -3271,6 +3294,7 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
         g = group.sort_values(["dt", "game_no"])
         ranks = g["rank"].tolist()
         dts = g["dt"].tolist()
+        day_keys = g["date"].tolist() if "date" in g.columns else [None] * len(ranks)
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
         four_win = five_win = 0
@@ -3281,6 +3305,8 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
         spans = {"win": (None, None), "last": (None, None), "second": (None, None),
                  "last_avoid": (None, None), "no_top": (None, None)}
         for i in range(len(ranks) - 1):
+            if day_keys[i] != day_keys[i + 1]:
+                continue
             cur_r = ranks[i]
             next_r = ranks[i + 1]
             if cur_r == 1:
@@ -3294,7 +3320,15 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
                 if next_r == 3: last_after_last_n += 1
         cur_win = cur_last = cur_second = 0
         cur_last_avoid = cur_no_top = 0
+        prev_day = None
         for idx, r in enumerate(ranks):
+            # 日が変わったら連続カウンタをリセット (単日記録のみ採用)
+            cur_day = day_keys[idx] if idx < len(day_keys) else None
+            if prev_day is not None and cur_day != prev_day:
+                cur_win = cur_last = cur_second = 0
+                cur_last_avoid = cur_no_top = 0
+            prev_day = cur_day
+
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
@@ -6189,6 +6223,8 @@ def page_ranking():
         g = group.sort_values(["dt", "game_no"])
         ranks = g["rank"].tolist()
         dts = g["dt"].tolist()  # 各対局の日時 (記録達成日の特定に使用)
+        # 論理日付 (日をまたぐ連続は記録として採用しないための境界判定に使う)
+        day_keys = g["date"].tolist() if "date" in g.columns else [None] * len(ranks)
 
         max_win_streak = 0        # 最長連勝(1着連続)
         max_last_streak = 0       # 最長連続ラス(3着連続)
@@ -6217,6 +6253,9 @@ def page_ranking():
         last_after_last_denominator = 0
         last_after_last_numerator = 0
         for i in range(len(ranks) - 1):  # 最終試合は「次」がないので除外
+            # 日をまたぐペアは「直後」とみなさない
+            if day_keys[i] != day_keys[i + 1]:
+                continue
             cur_r = ranks[i]
             next_r = ranks[i + 1]
             if cur_r == 1:
@@ -6248,7 +6287,15 @@ def page_ranking():
         cur_last_avoid = 0  # 現在の連続ラス回避 (1 or 2)
         cur_no_top = 0      # 現在の連続トップ無し (2 or 3)
 
+        prev_day = None
         for idx, r in enumerate(ranks):
+            # --- 日が変わったら全ての連続カウンタをリセット (単日記録のみ採用) ---
+            cur_day = day_keys[idx] if idx < len(day_keys) else None
+            if prev_day is not None and cur_day != prev_day:
+                cur_win = cur_last = cur_second = 0
+                cur_last_avoid = cur_no_top = 0
+            prev_day = cur_day
+
             # --- 1着/2着/3着の連続系 ---
             if r == 1:
                 cur_win += 1
