@@ -130,6 +130,82 @@ hide_style = """
         border-color: var(--accent) !important;
         box-shadow: 0 0 0 2px var(--accent-soft) !important;
     }
+
+    /* --- 選択済みの値・入力文字を確実に明るく (背景同化を防ぐ) --- */
+    /* selectbox / multiselect の baseweb 内部要素をすべて明色に */
+    [data-baseweb="select"] div[data-baseweb="single-value"],
+    [data-baseweb="select"] > div,
+    [data-baseweb="select"] span,
+    [data-baseweb="select"] input,
+    div[data-baseweb="select"] * {
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
+    }
+    /* selectbox 内で入力中(検索)の文字 */
+    [data-baseweb="select"] input {
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
+        caret-color: var(--accent) !important;
+    }
+    /* text/number/date/textarea の入力文字 */
+    .stTextInput input,
+    .stNumberInput input,
+    .stDateInput input,
+    .stTextArea textarea {
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
+        caret-color: var(--accent) !important;
+    }
+    /* プレースホルダーは少し薄く(でも読める程度に) */
+    .stTextInput input::placeholder,
+    .stNumberInput input::placeholder,
+    .stTextArea textarea::placeholder,
+    [data-baseweb="select"] input::placeholder {
+        color: #9aa0b5 !important;
+        -webkit-text-fill-color: #9aa0b5 !important;
+        opacity: 1 !important;
+    }
+
+    /* --- ドロップダウンのメニュー(候補リスト)も明色に --- */
+    [data-baseweb="popover"] [role="option"],
+    [data-baseweb="menu"] li,
+    [data-baseweb="menu"] [role="option"],
+    ul[role="listbox"] li {
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
+        background-color: var(--bg-card) !important;
+    }
+    [data-baseweb="popover"] [role="option"]:hover,
+    [data-baseweb="menu"] li:hover,
+    ul[role="listbox"] li:hover {
+        background-color: rgba(240,192,64,0.15) !important;
+        color: var(--accent) !important;
+        -webkit-text-fill-color: var(--accent) !important;
+    }
+    /* 選択中の候補 */
+    [data-baseweb="menu"] li[aria-selected="true"],
+    ul[role="listbox"] li[aria-selected="true"] {
+        background-color: rgba(240,192,64,0.2) !important;
+        color: var(--accent) !important;
+        -webkit-text-fill-color: var(--accent) !important;
+    }
+
+    /* --- multiselect のタグ(選択済みチップ) --- */
+    [data-baseweb="tag"] {
+        background-color: rgba(240,192,64,0.2) !important;
+    }
+    [data-baseweb="tag"] span,
+    [data-baseweb="tag"] div {
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
+    }
+
+    /* --- ドロップダウンの▼アイコンも見やすく --- */
+    [data-baseweb="select"] svg {
+        fill: var(--text-muted) !important;
+        color: var(--text-muted) !important;
+    }
+
     /* 外側のウィジェットラベル (例: 「着順」「タイプ」等のフィールド名) - 直接子のみ指定 */
     .stSelectbox > label,
     .stTextInput > label,
@@ -213,6 +289,22 @@ hide_style = """
         font-size: 0.9rem !important;
         text-transform: none !important;
         letter-spacing: 0 !important;
+    }
+
+    /* ========== スライダー (数値表示を見やすく) ========== */
+    /* つまみの上に出る現在値・両端の最小/最大値 */
+    .stSlider [data-testid="stThumbValue"],
+    .stSlider [data-testid="stTickBarMin"],
+    .stSlider [data-testid="stTickBarMax"] {
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
+        font-weight: 700 !important;
+    }
+    .stSlider [data-testid="stTickBarMin"],
+    .stSlider [data-testid="stTickBarMax"] {
+        color: var(--text-muted) !important;
+        -webkit-text-fill-color: var(--text-muted) !important;
+        font-weight: 500 !important;
     }
 
     /* ========== タブ ========== */
