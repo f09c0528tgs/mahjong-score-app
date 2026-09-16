@@ -5007,15 +5007,277 @@ def page_history():
         st.info("データがありません")
         return
 
-    # タブで「期間統計・詳細検索」「2人対戦」「3人対戦」を切り替え
-    tab1, tab2, tab3 = st.tabs(["📈 期間統計・詳細検索", "👥 2人対戦データ", "👥👤 3人対戦データ"])
+    # タブで各種データを切り替え
+    tab1, tab_shop, tab2, tab3 = st.tabs([
+        "📈 期間統計・詳細検索", "🏪 店舗データ分析",
+        "👥 2人対戦データ", "👥👤 3人対戦データ"
+    ])
 
     with tab1:
         _page_history_overview(df)
+    with tab_shop:
+        _page_shop_analytics(df)
     with tab2:
         _page_history_versus_2(df)
     with tab3:
         _page_history_versus_3(df)
+
+
+def _page_shop_analytics(df):
+    """店舗全体の多角的なデータ分析"""
+    st.caption("店舗全体の稼働状況を、月別・曜日別・時間帯別などさまざまな切り口で分析します。")
+
+    if "論理日付" not in df.columns or df.empty:
+        st.info("データがありません")
+        return
+
+    # === 期間フィルタ ===
+    min_date = df["論理日付"].min()
+    max_date = df["論理日付"].max()
+    c1, c2 = st.columns([2, 1])
+    with c1:
+        rng = st.date_input("集計期間", value=(min_date, max_date), key="shop_range")
+    with c2:
+        tf = st.selectbox("時間帯", ["全日", "9:00-21:00 (昼)", "21:00-翌9:00 (夜)"], key="shop_time")
+
+    d = df.copy()
+    if isinstance(rng, tuple) and len(rng) == 2:
+        d = d[(d["論理日付"] >= rng[0]) & (d["論理日付"] <= rng[1])]
+    elif isinstance(rng, tuple) and len(rng) == 1:
+        d = d[d["論理日付"] == rng[0]]
+    if tf == "9:00-21:00 (昼)":
+        d = d[d["日時Obj"].dt.hour.between(9, 20)]
+    elif tf == "21:00-翌9:00 (夜)":
+        d = d[~d["日時Obj"].dt.hour.between(9, 20)]
+
+    if d.empty:
+        st.warning("指定条件のデータはありません")
+        return
+
+    # === 対局レコードを展開 ===
+    recs = []
+    for _, row in d.iterrows():
+        dt_obj = row.get("日時Obj")
+        ld = row.get("論理日付")
+        hour = dt_obj.hour if pd.notna(dt_obj) else None
+        for seat in ["A", "B", "C"]:
+            nm = str(row.get(f"{seat}さん", "")).strip()
+            if not nm:
+                continue
+            try:
+                rk = int(float(row.get(f"{seat}着順", 0)))
+            except:
+                rk = 0
+            if rk not in (1, 2, 3):
+                continue
+            recs.append({
+                "name": nm, "rank": rk, "seat": seat,
+                "type": str(row.get(f"{seat}タイプ", "")).strip(),
+                "date": ld, "hour": hour,
+                "table": row.get("TableNo", 0),
+                "ym": str(pd.Period(ld, freq="M")) if pd.notna(ld) else "",
+                "weekday": ld.weekday() if pd.notna(ld) else None,
+            })
+    if not recs:
+        st.warning("集計できるデータがありません")
+        return
+    dr = pd.DataFrame(recs)
+
+    # === サマリ ===
+    total_games = len(d)
+    total_days = d["論理日付"].nunique()
+    total_players = dr["name"].nunique()
+    total_tables = d["TableNo"].nunique() if "TableNo" in d.columns else 0
+    avg_per_day = total_games / total_days if total_days else 0
+    st.markdown(f"""
+    <div style="margin:0.5rem 0 1rem;">
+        <span class="rankpt-pt">🀄 総対局 <strong>{total_games:,}</strong></span>
+        <span class="rankpt-pt">📅 稼働日数 <strong>{total_days}</strong>日</span>
+        <span class="rankpt-pt">📈 1日平均 <strong>{avg_per_day:.1f}</strong>半荘</span>
+        <span class="rankpt-pt">👥 のべ参加者 <strong>{total_players}</strong>人</span>
+        <span class="rankpt-pt">🎲 使用卓数 <strong>{total_tables}</strong></span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    tabs = st.tabs([
+        "📅 月別稼働", "🕐 時間帯別", "📆 曜日別",
+        "🎯 ルール別", "💺 席別", "🎲 卓別",
+        "👥 プレイヤー稼働", "🔥 繁忙日ランキング",
+    ])
+
+    def _bar_chart(df_plot, x_col, y_col, x_title, y_title, color="#f0c040"):
+        ch = alt.Chart(df_plot).mark_bar(color=color, cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
+            x=alt.X(f"{x_col}:N", title=x_title, sort=None),
+            y=alt.Y(f"{y_col}:Q", title=y_title),
+            tooltip=list(df_plot.columns),
+        ).properties(height=260).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(
+            gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+        st.altair_chart(ch, use_container_width=True)
+
+    # ---------- 月別稼働 ----------
+    with tabs[0]:
+        st.caption("月ごとの対局数・稼働日数・参加人数の推移。")
+        g = dr.groupby("ym").agg(
+            のべ人数=("name", "count"),
+            参加者数=("name", "nunique"),
+            稼働日数=("date", "nunique"),
+        ).reset_index()
+        g["半荘数"] = (g["のべ人数"] / 3).astype(int)
+        g["1日平均"] = (g["半荘数"] / g["稼働日数"]).round(1)
+        g = g.rename(columns={"ym": "年月"})
+        g = g[["年月", "半荘数", "稼働日数", "1日平均", "参加者数"]].sort_values("年月")
+        _bar_chart(g, "年月", "半荘数", "年月", "半荘数")
+        st.dataframe(g.sort_values("年月", ascending=False), hide_index=True, use_container_width=True)
+
+    # ---------- 時間帯別 ----------
+    with tabs[1]:
+        st.caption("何時台に何半荘打たれているか。深夜帯(0-8時)は翌日ではなく前営業日として集計。")
+        gh = dr[dr["hour"].notna()].copy()
+        if gh.empty:
+            st.info("時間情報のあるデータがありません")
+        else:
+            gh["hour"] = gh["hour"].astype(int)
+            # 9時始まりの並び (9,10,...,23,0,1,...,8)
+            order = list(range(9, 24)) + list(range(0, 9))
+            agg = gh.groupby("hour").agg(
+                のべ人数=("name", "count"), 平均着順=("rank", "mean")
+            ).reset_index()
+            agg["半荘数"] = (agg["のべ人数"] / 3).round(1)
+            agg["hour_order"] = agg["hour"].apply(lambda h: order.index(h) if h in order else 99)
+            agg = agg.sort_values("hour_order")
+            agg["時間帯"] = agg["hour"].apply(lambda h: f"{h:02d}時台")
+            plot = agg[["時間帯", "半荘数"]]
+            _bar_chart(plot, "時間帯", "半荘数", "時間帯", "半荘数", color="#5b9cf6")
+
+            # 昼夜の比較
+            day_n = len(gh[gh["hour"].between(9, 20)]) / 3
+            night_n = len(gh[~gh["hour"].between(9, 20)]) / 3
+            tot = day_n + night_n
+            if tot > 0:
+                st.markdown(f"""
+                <div style="margin:0.6rem 0;">
+                    <span class="rankpt-pt">☀️ 昼 (9-21時) <strong>{day_n:.0f}</strong>半荘
+                        ({day_n/tot*100:.1f}%)</span>
+                    <span class="rankpt-pt">🌙 夜 (21-翌9時) <strong>{night_n:.0f}</strong>半荘
+                        ({night_n/tot*100:.1f}%)</span>
+                </div>
+                """, unsafe_allow_html=True)
+            st.dataframe(
+                agg[["時間帯", "半荘数", "平均着順"]].assign(
+                    平均着順=lambda x: x["平均着順"].map('{:.3f}'.format)),
+                hide_index=True, use_container_width=True)
+
+    # ---------- 曜日別 ----------
+    with tabs[2]:
+        st.caption("曜日ごとの稼働状況。どの曜日が忙しいかが分かります。")
+        wn = ["月", "火", "水", "木", "金", "土", "日"]
+        gw = dr[dr["weekday"].notna()].copy()
+        if gw.empty:
+            st.info("データがありません")
+        else:
+            gw["weekday"] = gw["weekday"].astype(int)
+            agg = gw.groupby("weekday").agg(
+                のべ人数=("name", "count"), 稼働日数=("date", "nunique"),
+                参加者数=("name", "nunique"),
+            ).reset_index()
+            agg["半荘数"] = (agg["のべ人数"] / 3).astype(int)
+            agg["1日平均"] = (agg["半荘数"] / agg["稼働日数"]).round(1)
+            agg["曜日"] = agg["weekday"].map(lambda i: wn[i])
+            agg = agg.sort_values("weekday")
+            _bar_chart(agg[["曜日", "半荘数"]], "曜日", "半荘数", "曜日", "半荘数", color="#4caf87")
+            st.dataframe(agg[["曜日", "半荘数", "稼働日数", "1日平均", "参加者数"]],
+                         hide_index=True, use_container_width=True)
+            best = agg.loc[agg["1日平均"].idxmax()]
+            st.caption(f"💡 1日あたりの半荘数が最も多い曜日: **{best['曜日']}曜日** ({best['1日平均']}半荘/日)")
+
+    # ---------- ルール別 ----------
+    with tabs[3]:
+        st.caption("A客/AS/B客/BS それぞれの打数比率。ゲーム代の内訳把握にも使えます。")
+        gt = dr[dr["type"] != ""].copy()
+        if gt.empty:
+            st.info("タイプ情報のあるデータがありません")
+        else:
+            agg = gt.groupby("type").agg(
+                打数=("name", "count"), 平均着順=("rank", "mean"), 人数=("name", "nunique")
+            ).reset_index().rename(columns={"type": "タイプ"})
+            total = agg["打数"].sum()
+            agg["比率"] = (agg["打数"] / total * 100).round(2)
+            agg = agg.sort_values("打数", ascending=False)
+            _bar_chart(agg[["タイプ", "打数"]], "タイプ", "打数", "タイプ", "打数", color="#e07b39")
+            st.dataframe(
+                agg[["タイプ", "打数", "比率", "人数", "平均着順"]].assign(
+                    比率=lambda x: x["比率"].map('{:.2f}%'.format),
+                    平均着順=lambda x: x["平均着順"].map('{:.3f}'.format)),
+                hide_index=True, use_container_width=True)
+
+    # ---------- 席別 ----------
+    with tabs[4]:
+        st.caption("A席/B席/C席の有利不利を検証。理論上はすべて平均2.000になるはずです。")
+        agg = dr.groupby("seat").agg(
+            打数=("name", "count"), 平均着順=("rank", "mean"),
+            トップ数=("rank", lambda x: (x == 1).sum()),
+            ラス数=("rank", lambda x: (x == 3).sum()),
+        ).reset_index().rename(columns={"seat": "席"})
+        agg["トップ率"] = (agg["トップ数"] / agg["打数"] * 100).round(2)
+        agg["ラス率"] = (agg["ラス数"] / agg["打数"] * 100).round(2)
+        agg["席"] = agg["席"] + "席"
+        st.dataframe(
+            agg[["席", "打数", "平均着順", "トップ率", "ラス率"]].assign(
+                平均着順=lambda x: x["平均着順"].map('{:.4f}'.format),
+                トップ率=lambda x: x["トップ率"].map('{:.2f}%'.format),
+                ラス率=lambda x: x["ラス率"].map('{:.2f}%'.format)),
+            hide_index=True, use_container_width=True)
+        diff = agg["平均着順"].max() - agg["平均着順"].min()
+        st.caption(f"💡 席による平均着順の最大差: **{diff:.4f}** "
+                   f"(0に近いほど席の有利不利がない)")
+
+    # ---------- 卓別 ----------
+    with tabs[5]:
+        st.caption("卓ごとの使用状況。")
+        gtb = d.copy()
+        if "TableNo" in gtb.columns:
+            agg = gtb.groupby("TableNo").agg(
+                半荘数=("GameNo", "count"), 稼働日数=("論理日付", "nunique")
+            ).reset_index().rename(columns={"TableNo": "卓番"})
+            agg["1日平均"] = (agg["半荘数"] / agg["稼働日数"]).round(1)
+            agg = agg.sort_values("半荘数", ascending=False)
+            agg["卓番"] = agg["卓番"].astype(int).astype(str) + "卓"
+            _bar_chart(agg[["卓番", "半荘数"]], "卓番", "半荘数", "卓", "半荘数", color="#a06cd5")
+            st.dataframe(agg, hide_index=True, use_container_width=True)
+        else:
+            st.info("卓情報がありません")
+
+    # ---------- プレイヤー稼働 ----------
+    with tabs[6]:
+        st.caption("よく来ているプレイヤーの稼働状況 (打数上位30人)。")
+        agg = dr.groupby("name").agg(
+            打数=("name", "count"), 来店日数=("date", "nunique"),
+            平均着順=("rank", "mean"),
+        ).reset_index().rename(columns={"name": "名前"})
+        agg["1日平均打数"] = (agg["打数"] / agg["来店日数"]).round(1)
+        agg = agg.sort_values("打数", ascending=False).head(30).reset_index(drop=True)
+        agg.insert(0, "順位", agg.index + 1)
+        st.dataframe(
+            agg[["順位", "名前", "打数", "来店日数", "1日平均打数", "平均着順"]].assign(
+                平均着順=lambda x: x["平均着順"].map('{:.3f}'.format)),
+            hide_index=True, use_container_width=True)
+
+    # ---------- 繁忙日ランキング ----------
+    with tabs[7]:
+        st.caption("1日の半荘数が多かった日のランキング (上位30日)。")
+        agg = d.groupby("論理日付").agg(半荘数=("GameNo", "count")).reset_index()
+        # 参加人数も
+        pl = dr.groupby("date")["name"].nunique().reset_index().rename(
+            columns={"date": "論理日付", "name": "参加者数"})
+        agg = agg.merge(pl, on="論理日付", how="left")
+        agg = agg.sort_values("半荘数", ascending=False).head(30).reset_index(drop=True)
+        wn = ["月", "火", "水", "木", "金", "土", "日"]
+        agg["曜日"] = agg["論理日付"].apply(lambda x: wn[x.weekday()] if pd.notna(x) else "")
+        agg.insert(0, "順位", agg.index + 1)
+        agg["日付"] = agg["論理日付"].astype(str)
+        st.dataframe(agg[["順位", "日付", "曜日", "半荘数", "参加者数"]],
+                     hide_index=True, use_container_width=True)
+
 
 def page_versus2():
     """2人対戦データ専用ページ (ホームから直接アクセス可能)"""
