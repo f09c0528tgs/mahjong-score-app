@@ -1476,6 +1476,69 @@ hide_style = """
         border-top: 1px dashed var(--border);
         margin: 0.8rem 0;
     }
+
+    /* ==================================================
+       最優先オーバーライド (Streamlit の後入れスタイルに勝つ)
+       選択済みの値・入力文字が背景と同化する問題の最終対策
+       ================================================== */
+    html body div[data-testid="stSelectbox"] div,
+    html body div[data-testid="stSelectbox"] span,
+    html body div[data-testid="stSelectbox"] input,
+    html body div[data-testid="stMultiSelect"] div,
+    html body div[data-testid="stMultiSelect"] span,
+    html body div[data-testid="stMultiSelect"] input,
+    html body .stSelectbox div[data-baseweb="select"] div,
+    html body .stSelectbox div[data-baseweb="select"] span,
+    html body .stSelectbox div[data-baseweb="select"] input,
+    html body div[data-baseweb="select"] div,
+    html body div[data-baseweb="select"] span,
+    html body div[data-baseweb="select"] input {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        opacity: 1 !important;
+    }
+    /* 選択済み値をさらに強調 */
+    html body div[data-baseweb="select"] > div > div,
+    html body div[data-testid="stSelectbox"] > div > div > div {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        font-weight: 700 !important;
+        opacity: 1 !important;
+    }
+    /* テキスト/数値/日付入力 */
+    html body div[data-testid="stTextInput"] input,
+    html body div[data-testid="stNumberInput"] input,
+    html body div[data-testid="stDateInput"] input,
+    html body div[data-testid="stTextArea"] textarea,
+    html body .stTextInput input,
+    html body .stNumberInput input,
+    html body .stDateInput input,
+    html body .stTextArea textarea {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        opacity: 1 !important;
+    }
+    /* ドロップダウン候補 (body直下にポータル描画される) */
+    html body div[data-baseweb="popover"] li,
+    html body div[data-baseweb="popover"] li div,
+    html body div[data-baseweb="popover"] li span,
+    html body div[data-baseweb="popover"] [role="option"],
+    html body div[data-baseweb="popover"] [role="option"] div,
+    html body ul[role="listbox"] li,
+    html body ul[role="listbox"] li div,
+    html body ul[role="listbox"] li span {
+        color: #ffffff !important;
+        -webkit-text-fill-color: #ffffff !important;
+        opacity: 1 !important;
+    }
+    /* disabled 状態でも読めるように */
+    html body div[data-baseweb="select"] [aria-disabled="true"],
+    html body input:disabled,
+    html body textarea:disabled {
+        color: #c8cddc !important;
+        -webkit-text-fill-color: #c8cddc !important;
+        opacity: 1 !important;
+    }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
