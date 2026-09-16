@@ -2104,9 +2104,12 @@ def load_score_data_effective():
 
 # --- 定数 ---
 RATING_INIT = 1500          # 初期レート
-RANK_POINTS_1 = 20.0        # 1着の基本ポイント
-RANK_POINTS_2 = -6.0        # 2着
-RANK_POINTS_3 = -12.0       # 3着 (合計+2で少しインフレ気味の設計)
+RANK_POINTS_1 = 30.0        # 1着の基本ポイント
+RANK_POINTS_2 = -10.0       # 2着
+RANK_POINTS_3 = -17.0       # 3着 (合計+3で少しインフレ気味の設計)
+
+# レート差による補正の上限 (±このpt数を超えて補正しない)
+RATING_CORRECTION_CAP = 5.0
 
 # 段位定義 (累積ptベース方式):
 #  (段位名, 段位到達に必要な累積pt閾値, 表示色)
@@ -2187,11 +2190,11 @@ def _get_dan_index_from_pts(cumulative_pts):
 def _rating_adjust_factor(games):
     """
     対局数に応じた調整係数。
-    序盤は変動大きめ、250戦で完全安定期(0.5固定)。
+    序盤は変動大きめ、350戦で完全安定期(0.3固定)。
     """
-    if games >= 250:
-        return 0.5
-    return max(0.5, 1.0 - games * 0.002)
+    if games >= 350:
+        return 0.3
+    return max(0.3, 1.0 - games * 0.002)
 
 def compute_ratings_from_scratch(df_score, until_dt=None, from_dt=None):
     """
@@ -2286,6 +2289,8 @@ def compute_ratings_from_scratch(df_score, until_dt=None, from_dt=None):
             games = snapshot_games[name]
             base = _get_rank_points(rank)
             correction = (opp_avg - cur) / 40.0
+            # レート差による補正は上限±RATING_CORRECTION_CAP ptに制限
+            correction = max(-RATING_CORRECTION_CAP, min(RATING_CORRECTION_CAP, correction))
             delta = (base + correction) * _rating_adjust_factor(games)
             ratings[name]["レート"] = cur + delta
             ratings[name]["対局数"] = games + 1
@@ -2523,6 +2528,8 @@ def get_player_rating_history(target_name, last_n=10):
             games = snapshot_games[name]
             base = _get_rank_points(rank)
             correction = (opp_avg - cur) / 40.0
+            # レート差による補正は上限±RATING_CORRECTION_CAP ptに制限
+            correction = max(-RATING_CORRECTION_CAP, min(RATING_CORRECTION_CAP, correction))
             delta = (base + correction) * _rating_adjust_factor(games)
             ratings[name]["レート"] = cur + delta
             ratings[name]["対局数"] = games + 1
@@ -6904,7 +6911,7 @@ def page_ranking():
             """)
 
     with t2:
-        st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +20 / 2着 −6 / 3着 −12 が基本pt。")
+        st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +30 / 2着 −10 / 3着 −17 が基本pt。レート差による補正は上限±5pt。")
         period_result_t1 = rating_period_selector("t1")
         rating_guest_t1, rating_staff_t1 = build_rating_stats_with_periods(period_result_t1)
         show_rating_ranking(rating_guest_t1, rating_staff_t1)
