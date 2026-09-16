@@ -4472,22 +4472,31 @@ def page_personal():
             着順分布
         </div>
         <div style="display:flex;height:38px;border-radius:8px;overflow:hidden;
-                    border:1px solid var(--border);font-weight:800;font-size:0.85rem;">
+                    border:1px solid var(--border);font-weight:800;font-size:0.8rem;">
             <div style="width:{max(r1_pct,0.1)}%;background:linear-gradient(135deg,#f0c040,#e0a828);
                         display:flex;align-items:center;justify-content:center;color:#1a1d2e;
-                        min-width:{'40px' if r1_pct > 0 else '0'};">
-                {f'🥇{r1_pct:.0f}%' if r1_pct >= 8 else ''}
+                        min-width:{'40px' if r1_pct > 0 else '0'};white-space:nowrap;overflow:hidden;">
+                {f'🥇{r1_pct:.2f}%' if r1_pct >= 14 else (f'{r1_pct:.1f}%' if r1_pct >= 8 else '')}
             </div>
             <div style="width:{max(r2_pct,0.1)}%;background:linear-gradient(135deg,#5b9cf6,#4183db);
                         display:flex;align-items:center;justify-content:center;color:#fff;
-                        min-width:{'40px' if r2_pct > 0 else '0'};">
-                {f'🥈{r2_pct:.0f}%' if r2_pct >= 8 else ''}
+                        min-width:{'40px' if r2_pct > 0 else '0'};white-space:nowrap;overflow:hidden;">
+                {f'🥈{r2_pct:.2f}%' if r2_pct >= 14 else (f'{r2_pct:.1f}%' if r2_pct >= 8 else '')}
             </div>
             <div style="width:{max(r3_pct,0.1)}%;background:linear-gradient(135deg,#e05c5c,#c04444);
                         display:flex;align-items:center;justify-content:center;color:#fff;
-                        min-width:{'40px' if r3_pct > 0 else '0'};">
-                {f'🥉{r3_pct:.0f}%' if r3_pct >= 8 else ''}
+                        min-width:{'40px' if r3_pct > 0 else '0'};white-space:nowrap;overflow:hidden;">
+                {f'🥉{r3_pct:.2f}%' if r3_pct >= 14 else (f'{r3_pct:.1f}%' if r3_pct >= 8 else '')}
             </div>
+        </div>
+        <div style="display:flex;gap:1rem;margin-top:0.4rem;font-size:0.78rem;
+                    color:var(--text-muted);flex-wrap:wrap;">
+            <span>🥇 1着 <strong style="color:var(--accent);">{r1_pct:.2f}%</strong>
+                <span style="opacity:0.7;">({c1_cnt}回)</span></span>
+            <span>🥈 2着 <strong style="color:#5b9cf6;">{r2_pct:.2f}%</strong>
+                <span style="opacity:0.7;">({c2_cnt}回)</span></span>
+            <span>🥉 3着 <strong style="color:#e05c5c;">{r3_pct:.2f}%</strong>
+                <span style="opacity:0.7;">({c3_cnt}回)</span></span>
         </div>
     </div>
     """
@@ -4582,16 +4591,65 @@ def page_personal():
 
     # 折りたたみで席別成績
     with st.expander("🪑 席別成績", expanded=False):
+        # 全席の合計打数 (着席率の分母)
+        seat_total = sum(len(player_seat_ranks[s]) for s in ["A", "B", "C"])
+
+        # === 着席率のビジュアルバー ===
+        if seat_total > 0:
+            sa = len(player_seat_ranks["A"]) / seat_total * 100
+            sb = len(player_seat_ranks["B"]) / seat_total * 100
+            sc = len(player_seat_ranks["C"]) / seat_total * 100
+            seat_bar = f"""
+            <div style="margin-bottom:0.8rem;">
+                <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:0.4rem;font-weight:600;">
+                    どの席に座ったか (着席率)
+                </div>
+                <div style="display:flex;height:34px;border-radius:8px;overflow:hidden;
+                            border:1px solid var(--border);font-weight:800;font-size:0.78rem;">
+                    <div style="width:{max(sa,0.1)}%;background:linear-gradient(135deg,#5b9cf6,#4183db);
+                                display:flex;align-items:center;justify-content:center;color:#fff;
+                                white-space:nowrap;overflow:hidden;">
+                        {f'A席 {sa:.2f}%' if sa >= 14 else (f'{sa:.0f}%' if sa >= 7 else '')}
+                    </div>
+                    <div style="width:{max(sb,0.1)}%;background:linear-gradient(135deg,#e07b39,#c96422);
+                                display:flex;align-items:center;justify-content:center;color:#fff;
+                                white-space:nowrap;overflow:hidden;">
+                        {f'B席 {sb:.2f}%' if sb >= 14 else (f'{sb:.0f}%' if sb >= 7 else '')}
+                    </div>
+                    <div style="width:{max(sc,0.1)}%;background:linear-gradient(135deg,#4caf87,#38956d);
+                                display:flex;align-items:center;justify-content:center;color:#fff;
+                                white-space:nowrap;overflow:hidden;">
+                        {f'C席 {sc:.2f}%' if sc >= 14 else (f'{sc:.0f}%' if sc >= 7 else '')}
+                    </div>
+                </div>
+                <div style="display:flex;gap:1rem;margin-top:0.4rem;font-size:0.78rem;
+                            color:var(--text-muted);flex-wrap:wrap;">
+                    <span>🟦 A席 <strong style="color:#5b9cf6;">{sa:.2f}%</strong>
+                        <span style="opacity:0.7;">({len(player_seat_ranks['A'])}戦)</span></span>
+                    <span>🟧 B席 <strong style="color:#e07b39;">{sb:.2f}%</strong>
+                        <span style="opacity:0.7;">({len(player_seat_ranks['B'])}戦)</span></span>
+                    <span>🟩 C席 <strong style="color:#4caf87;">{sc:.2f}%</strong>
+                        <span style="opacity:0.7;">({len(player_seat_ranks['C'])}戦)</span></span>
+                </div>
+            </div>
+            """
+            st.markdown(seat_bar, unsafe_allow_html=True)
+
         p_seat_rows = []
         for s in ["A", "B", "C"]:
             rs = player_seat_ranks[s]
             c = len(rs)
             if c > 0:
                 p_seat_rows.append({
-                    "席": f"{s}席", "打数": c, "平均着順": f"{sum(rs)/c:.3f}",
-                    "1着": f"{rs.count(1)} ({rs.count(1)/c*100:.1f}%)",
-                    "2着": f"{rs.count(2)} ({rs.count(2)/c*100:.1f}%)",
-                    "3着": f"{rs.count(3)} ({rs.count(3)/c*100:.1f}%)"
+                    "席": f"{s}席",
+                    "打数": c,
+                    "着席率": f"{c/seat_total*100:.2f}%",
+                    "平均着順": f"{sum(rs)/c:.3f}",
+                    "トップ率": f"{rs.count(1)/c*100:.2f}%",
+                    "ラス回避率": f"{(c-rs.count(3))/c*100:.2f}%",
+                    "1着": f"{rs.count(1)} ({rs.count(1)/c*100:.2f}%)",
+                    "2着": f"{rs.count(2)} ({rs.count(2)/c*100:.2f}%)",
+                    "3着": f"{rs.count(3)} ({rs.count(3)/c*100:.2f}%)"
                 })
         if p_seat_rows:
             st.dataframe(pd.DataFrame(p_seat_rows), hide_index=True, use_container_width=True)
