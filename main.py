@@ -2105,8 +2105,8 @@ def load_score_data_effective():
 # --- 定数 ---
 RATING_INIT = 1500          # 初期レート
 RANK_POINTS_1 = 20.0        # 1着の基本ポイント
-RANK_POINTS_2 = -8.0        # 2着
-RANK_POINTS_3 = -12.0       # 3着 (合計0でゼロサム設計)
+RANK_POINTS_2 = -7.0        # 2着
+RANK_POINTS_3 = -12.0       # 3着 (合計+1でごく僅かにインフレ気味の設計)
 
 # 段位定義 (累積ptベース方式):
 #  (段位名, 段位到達に必要な累積pt閾値, 表示色)
@@ -6904,7 +6904,7 @@ def page_ranking():
             """)
 
     with t2:
-        st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +20 / 2着 −8 / 3着 −12 が基本pt。")
+        st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +20 / 2着 −7 / 3着 −12 が基本pt。")
         period_result_t1 = rating_period_selector("t1")
         rating_guest_t1, rating_staff_t1 = build_rating_stats_with_periods(period_result_t1)
         show_rating_ranking(rating_guest_t1, rating_staff_t1)
