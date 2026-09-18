@@ -4895,6 +4895,207 @@ def page_personal():
             if month_rows:
                 st.dataframe(pd.DataFrame(month_rows), hide_index=True, use_container_width=True)
 
+    # === 追加分析: データから読み取れる情報 ===
+    st.divider()
+    section_title("🔍", "詳細分析")
+
+    an1, an2, an3, an4 = st.tabs([
+        "📈 調子の推移", "🎲 卓・同卓人数", "⏰ 時間帯別", "🏅 自己ベスト"
+    ])
+
+    # ---------- 調子の推移 (直近50戦の移動平均) ----------
+    with an1:
+        st.caption("直近の着順を時系列で見て、調子の波を確認します。")
+        if len(seq_ranks) >= 10:
+            window = min(20, max(5, len(seq_ranks) // 5))
+            recent = seq_ranks[-100:] if len(seq_ranks) > 100 else seq_ranks
+            ser = pd.Series(recent)
+            ma = ser.rolling(window=window, min_periods=1).mean()
+            df_tr = pd.DataFrame({
+                "戦": range(1, len(recent) + 1),
+                "着順": recent,
+                f"移動平均({window}戦)": ma.round(3),
+            })
+            base = alt.Chart(df_tr).encode(x=alt.X("戦:Q", title="直近からの経過"))
+            pts = base.mark_circle(size=45, color="#f0c040", opacity=0.55).encode(
+                y=alt.Y("着順:Q", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"),
+                tooltip=["戦", "着順"])
+            line = base.mark_line(color="#5b9cf6", strokeWidth=2.5).encode(
+                y=alt.Y(f"移動平均({window}戦):Q"),
+                tooltip=["戦", f"移動平均({window}戦)"])
+            ch = alt.layer(pts, line).properties(height=280).configure_view(
+                strokeWidth=0, fill="#1a1d2e").configure_axis(
+                gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+            st.altair_chart(ch, use_container_width=True)
+            st.caption("🟡 各対局の着順  /  🔵 移動平均 (下にあるほど好調)")
+
+            # 前半 vs 後半の比較
+            half = len(seq_ranks) // 2
+            if half >= 5:
+                fh = sum(seq_ranks[:half]) / half
+                sh = sum(seq_ranks[half:]) / len(seq_ranks[half:])
+                diff = fh - sh
+                trend = ("📈 上向き" if diff > 0.05 else
+                         "📉 下向き" if diff < -0.05 else "➡️ 横ばい")
+                st.markdown(f"""
+                <div style="margin-top:0.5rem;">
+                    <span class="rankpt-pt">前半 <strong>{fh:.3f}</strong></span>
+                    <span class="rankpt-pt">後半 <strong>{sh:.3f}</strong></span>
+                    <span class="rankpt-pt">傾向 <strong>{trend}</strong></span>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("データが少ないため表示できません (10戦以上必要)")
+
+    # ---------- 卓・同卓人数 ----------
+    with an2:
+        st.caption("どの卓でよく打っているか、同卓した相手の広さ。")
+        tbl_ranks = {}
+        for _, row in df_filtered.iterrows():
+            for s in ["A", "B", "C"]:
+                if row[f"{s}さん"] == selected_player:
+                    try:
+                        rk = int(float(row[f"{s}着順"]))
+                    except Exception:
+                        rk = 0
+                    if rk in (1, 2, 3):
+                        tno = row.get("TableNo", 0)
+                        tbl_ranks.setdefault(tno, []).append(rk)
+                    break
+        if tbl_ranks:
+            rows = []
+            tot = sum(len(v) for v in tbl_ranks.values())
+            for tno, rs in sorted(tbl_ranks.items(), key=lambda x: -len(x[1])):
+                c = len(rs)
+                rows.append({
+                    "卓": f"{int(tno)}卓" if tno else "不明",
+                    "打数": c,
+                    "使用率": f"{c/tot*100:.2f}%",
+                    "平均着順": f"{sum(rs)/c:.3f}",
+                    "トップ率": f"{rs.count(1)/c*100:.2f}%",
+                })
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+        st.markdown(f"""
+        <div style="margin-top:0.6rem;">
+            <span class="rankpt-pt">👥 対戦した人数 <strong>{len(compatibility)}</strong>人</span>
+            <span class="rankpt-pt">🀄 のべ同卓 <strong>{sum(d['count'] for d in compatibility.values())}</strong>回</span>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # ---------- 時間帯別 ----------
+    with an3:
+        st.caption("何時台に打っているか、時間帯で成績に差があるか。")
+        hour_ranks = {}
+        for _, row in df_filtered.iterrows():
+            for s in ["A", "B", "C"]:
+                if row[f"{s}さん"] == selected_player:
+                    try:
+                        rk = int(float(row[f"{s}着順"]))
+                    except Exception:
+                        rk = 0
+                    dto = row.get("日時Obj")
+                    if rk in (1, 2, 3) and pd.notna(dto):
+                        hour_ranks.setdefault(int(dto.hour), []).append(rk)
+                    break
+        if hour_ranks:
+            order = list(range(9, 24)) + list(range(0, 9))
+            rows = []
+            for h in order:
+                if h not in hour_ranks:
+                    continue
+                rs = hour_ranks[h]
+                c = len(rs)
+                rows.append({
+                    "時間帯": f"{h:02d}時台",
+                    "打数": c,
+                    "平均着順": f"{sum(rs)/c:.3f}",
+                    "トップ率": f"{rs.count(1)/c*100:.2f}%",
+                    "ラス回避率": f"{(c-rs.count(3))/c*100:.2f}%",
+                })
+            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
+
+            # 昼夜比較
+            day_r = [r for h, rs in hour_ranks.items() if 9 <= h <= 20 for r in rs]
+            night_r = [r for h, rs in hour_ranks.items() if not (9 <= h <= 20) for r in rs]
+            cols = st.columns(2)
+            for col, label, rs in [(cols[0], "☀️ 昼 (9-21時)", day_r),
+                                    (cols[1], "🌙 夜 (21-翌9時)", night_r)]:
+                with col:
+                    if rs:
+                        c = len(rs)
+                        st.markdown(f"""
+                        <div style="background:var(--bg-card);border:1px solid var(--border);
+                                    border-radius:10px;padding:0.7rem 1rem;">
+                            <div style="font-size:0.8rem;color:var(--text-muted);">{label}</div>
+                            <div style="font-size:1.3rem;font-weight:900;color:var(--accent);">
+                                {sum(rs)/c:.3f}</div>
+                            <div style="font-size:0.75rem;color:var(--text-muted);">
+                                {c}戦 / トップ率 {rs.count(1)/c*100:.1f}%</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.info(f"{label} のデータなし")
+        else:
+            st.info("時間情報のあるデータがありません")
+
+    # ---------- 自己ベスト ----------
+    with an4:
+        st.caption("これまでの記録の中でのベスト・ワースト。")
+        # 日別の成績
+        day_ranks = {}
+        for _, row in df_filtered.iterrows():
+            for s in ["A", "B", "C"]:
+                if row[f"{s}さん"] == selected_player:
+                    try:
+                        rk = int(float(row[f"{s}着順"]))
+                    except Exception:
+                        rk = 0
+                    if rk in (1, 2, 3):
+                        day_ranks.setdefault(row["論理日付"], []).append(rk)
+                    break
+        # 5戦以上打った日だけを対象
+        valid_days = {d: rs for d, rs in day_ranks.items() if len(rs) >= 5}
+        if valid_days:
+            best_day = min(valid_days.items(), key=lambda x: sum(x[1]) / len(x[1]))
+            worst_day = max(valid_days.items(), key=lambda x: sum(x[1]) / len(x[1]))
+            most_day = max(day_ranks.items(), key=lambda x: len(x[1]))
+            wn = ["月", "火", "水", "木", "金", "土", "日"]
+
+            def _day_card(label, d, rs, color):
+                c = len(rs)
+                try:
+                    dl = f"{d.strftime('%Y/%m/%d')} ({wn[d.weekday()]})"
+                except Exception:
+                    dl = str(d)
+                return f"""
+                <div style="background:var(--bg-card);border:1px solid {color};
+                            border-left:4px solid {color};border-radius:10px;
+                            padding:0.7rem 1rem;margin-bottom:0.5rem;">
+                    <div style="font-size:0.78rem;color:var(--text-muted);">{label}</div>
+                    <div style="font-size:1.05rem;font-weight:800;color:var(--text-primary);">{dl}</div>
+                    <div style="font-size:0.8rem;color:var(--text-muted);margin-top:0.2rem;">
+                        {c}戦 / 平均着順 <strong style="color:{color};">{sum(rs)/c:.3f}</strong>
+                        / 🥇{rs.count(1)} 🥈{rs.count(2)} 🥉{rs.count(3)}
+                    </div>
+                </div>"""
+
+            st.markdown(
+                _day_card("🌟 ベストな日 (5戦以上)", best_day[0], best_day[1], "var(--accent)") +
+                _day_card("💀 ワーストな日 (5戦以上)", worst_day[0], worst_day[1], "var(--red)") +
+                _day_card("🔥 最も打った日", most_day[0], most_day[1], "var(--accent2)"),
+                unsafe_allow_html=True)
+
+        # 通算の記録
+        st.markdown(f"""
+        <div style="margin-top:0.6rem;">
+            <span class="rankpt-pt">🔥 最長連勝 <strong>{max_win}</strong></span>
+            <span class="rankpt-pt">🛡️ 最長ラス回避 <strong>{max_lastavoid}</strong></span>
+            <span class="rankpt-pt">💀 最長連続ラス <strong>{max_last}</strong></span>
+            <span class="rankpt-pt">📅 1日最多 <strong>{max(len(v) for v in day_ranks.values()) if day_ranks else 0}</strong>戦</span>
+        </div>
+        """, unsafe_allow_html=True)
+
     st.divider()
     # 稼働日リスト
     section_title("📅", "稼働日")
@@ -6162,6 +6363,47 @@ def _page_history_overview(df):
         render_paper_sheet(df_filtered)
 
 # --- 月間成績画面 ---
+def _normalize_play_type(tp):
+    """
+    タイプ表記のゆれを吸収して A客 / AS / B客 / BS のいずれかに正規化する。
+    該当しなければ None を返す。
+    (全角/半角・空白・大小文字・「客」の有無などに対応)
+    """
+    if tp is None:
+        return None
+    s = str(tp).strip()
+    if not s:
+        return None
+    # 全角英数を半角に、空白類を除去
+    s = s.translate(str.maketrans(
+        "ＡＢＣＳａｂｃｓ０１２３４５６７８９",
+        "ABCSabcs0123456789"))
+    s = s.replace(" ", "").replace("\u3000", "").upper()
+    # 括弧内の補足を除去
+    import re as _re
+    s = _re.sub(r"[（(].*?[)）]", "", s)
+    if not s:
+        return None
+    if s in ("A客", "A", "AK", "ACLIENT"):
+        return "A客"
+    if s in ("B客", "B", "BK", "BCLIENT"):
+        return "B客"
+    if s in ("AS", "ASTAFF", "Aスタッフ".upper()):
+        return "AS"
+    if s in ("BS", "BSTAFF", "Bスタッフ".upper()):
+        return "BS"
+    # 先頭文字 + S でスタッフ判定
+    if s.startswith("A") and s.endswith("S"):
+        return "AS"
+    if s.startswith("B") and s.endswith("S"):
+        return "BS"
+    if s.startswith("A"):
+        return "A客"
+    if s.startswith("B"):
+        return "B客"
+    return None
+
+
 def page_sheets():
     """過去の着順表 (紙の着順表風に表示)"""
     render_top_nav("sheets")
@@ -6251,6 +6493,8 @@ def render_score_sheet(df_day):
         st.markdown(f'<div class="paper-title">🎲 {tbl_label}</div>', unsafe_allow_html=True)
 
         type_counts = {"A客": 0, "AS": 0, "B客": 0, "BS": 0}
+        type_unknown = 0          # タイプ未設定/不明の打数
+        player_counts = {}        # 名前 -> {タイプ: 打数}
         html = '<div class="paper-wrap"><table class="paper-table">'
         html += '<thead><tr>'
         html += '<th class="col-no">局</th>'
@@ -6272,8 +6516,17 @@ def render_score_sheet(df_day):
                 cur_names[seat] = nm
                 cur_types[seat] = tp
                 cur_ranks[seat] = rk
-                if rk in (1, 2, 3) and tp in type_counts:
-                    type_counts[tp] += 1
+                # ゲーム代枚数の集計: 名前があり着順が有効な行のみ
+                if nm and rk in (1, 2, 3):
+                    tp_norm = _normalize_play_type(tp)
+                    if tp_norm:
+                        type_counts[tp_norm] += 1
+                    else:
+                        type_unknown += 1
+                    if nm not in player_counts:
+                        player_counts[nm] = {}
+                    key = tp_norm if tp_norm else "不明"
+                    player_counts[nm][key] = player_counts[nm].get(key, 0) + 1
 
             members = (cur_names["A"], cur_names["B"], cur_names["C"])
             if members != prev_members:
@@ -6302,13 +6555,35 @@ def render_score_sheet(df_day):
             html += '</tr>'
 
         # ゲーム代枚数 (タイプ別打数)
+        total_pieces = sum(type_counts.values()) + type_unknown
         html += '<tr class="gamecount-row"><td class="col-no">代</td>'
         html += '<td colspan="3" style="text-align:left;padding-left:8px;">'
         parts = [f'{t} <strong>{type_counts[t]}</strong>' for t in ["A客", "AS", "B客", "BS"] if type_counts[t] > 0]
-        html += "　".join(parts) if parts else f'計 {len(df_tbl)} 戦'
+        if type_unknown > 0:
+            parts.append(f'<span style="color:#b04;">未設定 <strong>{type_unknown}</strong></span>')
+        html += ("　".join(parts) + f'　/　計 <strong>{total_pieces}</strong>枚') if parts else f'計 {len(df_tbl)} 戦'
         html += '</td></tr>'
         html += '</tbody></table></div>'
         st.markdown(html, unsafe_allow_html=True)
+
+        # プレイヤー別の内訳 (検算用)
+        if player_counts:
+            with st.expander(f"🧾 {tbl_label} のゲーム代内訳 (プレイヤー別)", expanded=False):
+                rows = []
+                for nm, d_ in sorted(player_counts.items(), key=lambda x: -sum(x[1].values())):
+                    row_ = {"名前": nm}
+                    for t in ["A客", "AS", "B客", "BS", "不明"]:
+                        if d_.get(t):
+                            row_[t] = d_[t]
+                    row_["合計"] = sum(d_.values())
+                    rows.append(row_)
+                df_pc = pd.DataFrame(rows).fillna(0)
+                for c in df_pc.columns:
+                    if c != "名前":
+                        df_pc[c] = df_pc[c].astype(int)
+                st.dataframe(df_pc, hide_index=True, use_container_width=True)
+                st.caption(f"この卓の総枚数: **{total_pieces}枚** "
+                           f"({len(df_tbl)}半荘 × 3人 = {len(df_tbl)*3}枚が理論値)")
 
 
 def page_monthly():
