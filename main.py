@@ -1230,6 +1230,19 @@ hide_style = """
         background: rgba(240,192,64,0.04) !important;
     }
 
+    /* ティール系: 過去の着順表 */
+    .menu-color-teal .stButton > button::before {
+        background: linear-gradient(180deg, #4dd0c7 0%, #2a9d94 100%);
+    }
+    .menu-color-teal .stButton > button::after {
+        background: radial-gradient(circle, #3bbdb3 0%, transparent 70%);
+    }
+    .menu-color-teal .stButton > button:hover {
+        border-color: rgba(59,189,179,0.4) !important;
+        box-shadow: 0 10px 30px rgba(59,189,179,0.25),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    }
+
     /* ========== ホームフッター ========== */
     .home-footer {
         margin-top: 2rem;
@@ -1468,6 +1481,66 @@ hide_style = """
         background: var(--bg-card2) !important;
         border: 1px solid var(--border) !important;
         color: var(--text-primary) !important;
+    }
+
+    /* ========== 紙の着順表 (過去の着順表ページ) ========== */
+    .paper-wrap {
+        background: #f8f6f0;
+        border-radius: 8px;
+        padding: 0.3rem;
+        overflow-x: auto;
+        margin: 0 0 0.9rem;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+    }
+    .paper-table {
+        border-collapse: collapse;
+        width: 100%;
+        max-width: 460px;
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        background: #fffdf7;
+    }
+    .paper-table th, .paper-table td {
+        border: 1px solid #c2bba5;
+        text-align: center;
+        color: #1a1a1a !important;
+        padding: 1px 4px;
+        font-size: 0.85rem;
+        line-height: 1.5;
+    }
+    .paper-table thead th {
+        background: #e8e2d0;
+        font-weight: 800;
+        font-size: 0.74rem;
+        color: #333 !important;
+        padding: 2px 4px;
+    }
+    .paper-table .col-no {
+        background: #ede8da; font-weight: 700; width: 30px;
+        color: #777 !important; font-size: 0.7rem;
+    }
+    .paper-table .seat-head-A { background: #d4e4f7; width: 33%; }
+    .paper-table .seat-head-B { background: #f7e0cc; width: 33%; }
+    .paper-table .seat-head-C { background: #d4f0e0; width: 33%; }
+    .paper-table .name-row td {
+        font-weight: 800; font-size: 0.82rem; background: #fbf8ee;
+        border-top: 2px solid #8a8268; padding: 3px 4px; line-height: 1.2;
+    }
+    .paper-table .name-type {
+        font-size: 0.62rem; color: #8a7a55 !important; margin-left: 3px;
+        background: #efe8d2; padding: 0 3px; border-radius: 3px;
+    }
+    .paper-table .rank1 { color: #c0392b !important; font-weight: 900; }
+    .paper-table .rank-cell { font-weight: 700; font-size: 0.92rem; }
+    .paper-table .gamecount-row td {
+        background: #f0ebd8; font-weight: 700; font-size: 0.74rem;
+        color: #555 !important; padding: 3px 4px;
+    }
+    .paper-table .empty-cell { color: #ccc !important; }
+    .paper-title {
+        font-weight: 900; font-size: 0.92rem; color: #2a2a2a !important;
+        padding: 0.25rem 0.6rem; background: #e8e2d0;
+        border-radius: 6px 6px 0 0; border: 1px solid #c2bba5;
+        border-bottom: none; display: inline-block; margin-top: 0.6rem;
     }
 
     /* ========== セクション区切り ========== */
@@ -2637,7 +2710,7 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
         day_keys = g["date"].tolist() if "date" in g.columns else [None] * len(ranks)
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
-        four_win = five_win = 0
+        three_win = four_win = five_win = 0
         second_total = ranks.count(2)
         top_after_top_d = top_after_top_n = 0
         sec_after_sec_d = sec_after_sec_n = 0
@@ -2671,6 +2744,7 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
+                if cur_win == 3: three_win += 1
                 if cur_win == 4: four_win += 1
                 if cur_win == 5: five_win += 1
             elif r == 2:
@@ -2698,6 +2772,7 @@ def get_player_top5_rankings(target_name, top_n=5, min_games=30):
             "max_win_streak": max_win, "max_last_streak": max_last,
             "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
             "max_no_top_streak": max_no_top,
+            "three_win_count": three_win,
             "four_win_count": four_win, "five_win_count": five_win,
             "five_win_rate": (five_win / len(ranks) * 100) if len(ranks) > 0 else None,
             "five_win_samples": len(ranks),
@@ -3017,7 +3092,7 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
         day_keys = g["date"].tolist() if "date" in g.columns else [None] * len(ranks)
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
-        four_win = five_win = 0
+        three_win = four_win = five_win = 0
         second_total = ranks.count(2)
         top_after_top_d = top_after_top_n = 0
         sec_after_sec_d = sec_after_sec_n = 0
@@ -3050,6 +3125,7 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
+                if cur_win == 3: three_win += 1
                 if cur_win == 4: four_win += 1
                 if cur_win == 5: five_win += 1
             elif r == 2:
@@ -3077,6 +3153,7 @@ def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
             "max_win_streak": max_win, "max_last_streak": max_last,
             "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
             "max_no_top_streak": max_no_top,
+            "three_win_count": three_win,
             "four_win_count": four_win, "five_win_count": five_win,
             "five_win_rate": (five_win / len(ranks) * 100) if len(ranks) > 0 else None,
             "five_win_samples": len(ranks),
@@ -3308,7 +3385,7 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
         day_keys = g["date"].tolist() if "date" in g.columns else [None] * len(ranks)
         max_win = max_last = max_second = 0
         max_last_avoid = max_no_top = 0
-        four_win = five_win = 0
+        three_win = four_win = five_win = 0
         second_total = ranks.count(2)
         top_after_top_d = top_after_top_n = 0
         sec_after_sec_d = sec_after_sec_n = 0
@@ -3343,6 +3420,7 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
+                if cur_win == 3: three_win += 1
                 if cur_win == 4: four_win += 1
                 if cur_win == 5: five_win += 1
             elif r == 2:
@@ -3394,6 +3472,7 @@ def compute_period_basic_stats(from_dt=None, until_dt=None, min_games=1):
             "max_win_streak": max_win, "max_last_streak": max_last,
             "max_second_streak": max_second, "max_last_avoid_streak": max_last_avoid,
             "max_no_top_streak": max_no_top,
+            "three_win_count": three_win,
             "four_win_count": four_win, "five_win_count": five_win,
             "five_win_rate": (five_win / len(ranks) * 100) if len(ranks) > 0 else None,
             "five_win_samples": len(ranks),
@@ -3799,6 +3878,7 @@ NAV_ITEMS = [
     ("📊", "データ", "history"),
     ("🏆", "順位", "ranking"),
     ("📅", "月間PT", "monthly"),
+    ("📆", "着順表", "sheets"),
 ]
 
 def render_top_nav(current_page):
@@ -4277,6 +4357,7 @@ def page_home():
         ("📊", "データ参照", "history", "green"),
         ("🏆", "ランキング", "ranking", "gold"),
         ("📅", "月間ランキングPT", "monthly", "orange"),
+        ("📆", "過去の着順表", "sheets", "teal"),
         ("🤝", "2人対戦データ", "versus2", "purple"),
         ("👥", "3人対戦データ", "versus3", "pink"),
     ]
@@ -6081,6 +6162,155 @@ def _page_history_overview(df):
         render_paper_sheet(df_filtered)
 
 # --- 月間成績画面 ---
+def page_sheets():
+    """過去の着順表 (紙の着順表風に表示)"""
+    render_top_nav("sheets")
+    st.title("📆 過去の着順表")
+    render_pending_bar(location_key="sheets")
+    st.caption("日付を選ぶと、その日の対局が紙の着順表と同じ形式で表示されます。")
+
+    df = load_score_data_effective()
+    if df is None or df.empty or "論理日付" not in df.columns:
+        st.info("対局データがありません。")
+        return
+
+    # 対局のある日付を新しい順で取得
+    dates = sorted(
+        [d for d in df["論理日付"].unique() if d and str(d) != "1900-01-01"],
+        reverse=True
+    )
+    if not dates:
+        st.info("対局データがありません。")
+        return
+
+    wn = ["月", "火", "水", "木", "金", "土", "日"]
+    labels = []
+    for d in dates:
+        try:
+            labels.append(f"{d.strftime('%Y年%m月%d日')} ({wn[d.weekday()]})")
+        except Exception:
+            labels.append(str(d))
+
+    idx = st.selectbox(
+        "📅 日付を選択",
+        range(len(dates)),
+        format_func=lambda i: labels[i],
+        key="sheets_date_select",
+    )
+    target_date = dates[idx]
+
+    df_day = df[df["論理日付"] == target_date].copy()
+    sort_keys = [k for k in ["TableNo", "SetNo", "GameNo"] if k in df_day.columns]
+    if sort_keys:
+        df_day = df_day.sort_values(sort_keys).reset_index(drop=True)
+
+    if df_day.empty:
+        st.info("この日の対局データはありません。")
+        return
+
+    # --- サマリ ---
+    total_games = len(df_day)
+    total_tables = df_day["TableNo"].nunique() if "TableNo" in df_day.columns else 0
+    players = set()
+    for _, row in df_day.iterrows():
+        for s in ["A", "B", "C"]:
+            nm = str(row.get(f"{s}さん", "")).strip()
+            if nm:
+                players.add(nm)
+    st.markdown(f"""
+    <div style="margin:0.5rem 0 0.8rem;">
+        <span class="rankpt-pt">🀄 対局数 <strong>{total_games}</strong></span>
+        <span class="rankpt-pt">🎲 卓数 <strong>{total_tables}</strong></span>
+        <span class="rankpt-pt">👥 参加者 <strong>{len(players)}</strong>人</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    render_score_sheet(df_day)
+
+
+def render_score_sheet(df_day):
+    """
+    1日分の対局を紙の着順表風に描画する。
+    卓ごとに、各局の実際の着席メンバーを表示し、
+    メンバーが変わったタイミングで名前行を挿入する。
+    """
+    tables = sorted(df_day["TableNo"].unique()) if "TableNo" in df_day.columns else [1]
+
+    for table_no in tables:
+        df_tbl = df_day[df_day["TableNo"] == table_no].copy()
+        if df_tbl.empty:
+            continue
+        sort_keys = [k for k in ["SetNo", "GameNo"] if k in df_tbl.columns]
+        if sort_keys:
+            df_tbl = df_tbl.sort_values(sort_keys).reset_index(drop=True)
+
+        try:
+            tbl_label = f"{int(table_no)}卓"
+        except Exception:
+            tbl_label = f"{table_no}卓"
+        st.markdown(f'<div class="paper-title">🎲 {tbl_label}</div>', unsafe_allow_html=True)
+
+        type_counts = {"A客": 0, "AS": 0, "B客": 0, "BS": 0}
+        html = '<div class="paper-wrap"><table class="paper-table">'
+        html += '<thead><tr>'
+        html += '<th class="col-no">局</th>'
+        html += '<th class="seat-head-A">A席</th>'
+        html += '<th class="seat-head-B">B席</th>'
+        html += '<th class="seat-head-C">C席</th>'
+        html += '</tr></thead><tbody>'
+
+        prev_members = None
+        for _, row in df_tbl.iterrows():
+            cur_names, cur_types, cur_ranks = {}, {}, {}
+            for seat in ["A", "B", "C"]:
+                nm = str(row.get(f"{seat}さん", "")).strip()
+                tp = str(row.get(f"{seat}タイプ", "")).strip()
+                try:
+                    rk = int(float(row.get(f"{seat}着順", 0)))
+                except Exception:
+                    rk = 0
+                cur_names[seat] = nm
+                cur_types[seat] = tp
+                cur_ranks[seat] = rk
+                if rk in (1, 2, 3) and tp in type_counts:
+                    type_counts[tp] += 1
+
+            members = (cur_names["A"], cur_names["B"], cur_names["C"])
+            if members != prev_members:
+                html += '<tr class="name-row"><td class="col-no"></td>'
+                for seat in ["A", "B", "C"]:
+                    nm = cur_names[seat] if cur_names[seat] else "-"
+                    tp = cur_types[seat]
+                    tp_disp = f'<span class="name-type">{tp}</span>' if tp else ""
+                    html += f'<td>{nm}{tp_disp}</td>'
+                html += '</tr>'
+                prev_members = members
+
+            try:
+                game_no = int(float(row.get("GameNo", 0)))
+            except Exception:
+                game_no = ""
+            html += f'<tr><td class="col-no">{game_no}</td>'
+            for seat in ["A", "B", "C"]:
+                rk = cur_ranks[seat]
+                if rk == 1:
+                    html += '<td class="rank-cell rank1">1</td>'
+                elif rk in (2, 3):
+                    html += f'<td class="rank-cell">{rk}</td>'
+                else:
+                    html += '<td class="empty-cell">·</td>'
+            html += '</tr>'
+
+        # ゲーム代枚数 (タイプ別打数)
+        html += '<tr class="gamecount-row"><td class="col-no">代</td>'
+        html += '<td colspan="3" style="text-align:left;padding-left:8px;">'
+        parts = [f'{t} <strong>{type_counts[t]}</strong>' for t in ["A客", "AS", "B客", "BS"] if type_counts[t] > 0]
+        html += "　".join(parts) if parts else f'計 {len(df_tbl)} 戦'
+        html += '</td></tr>'
+        html += '</tbody></table></div>'
+        st.markdown(html, unsafe_allow_html=True)
+
+
 def page_monthly():
     render_top_nav("monthly")
     st.title("📅 月間成績")
@@ -6349,7 +6579,7 @@ def _render_monthly_stats():
         "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
         "🔥 最長連勝", "💀 最長連続ラス", "😐 最長連続2着",
         "🛡️ 最長連続ラス回避", "😑 最長連続トップ無し",
-        "✨ 4連勝以上回数", "⭐ 5連勝以上回数", "🌠 5連勝以上確率",
+        "🎊 3連勝以上回数", "✨ 4連勝以上回数", "⭐ 5連勝以上回数", "🌠 5連勝以上確率",
         "🔁 連勝確率", "🔄 連続2着率", "☠️ 連続ラス率",
         "🌟 ベスト100半荘",
     ])
@@ -6398,28 +6628,31 @@ def _render_monthly_stats():
         st.caption("その月の最長連続トップ無し。記録0は非表示。")
         show_month_rank("max_no_top_streak", False, '{:.0f}'.format, exclude_zero=True)
     with tabs[12]:
+        st.caption("その月の3連勝以上回数。記録0は非表示。")
+        show_month_rank("three_win_count", False, '{:.0f}'.format, exclude_zero=True)
+    with tabs[13]:
         st.caption("その月の4連勝以上回数。記録0は非表示。")
         show_month_rank("four_win_count", False, '{:.0f}'.format, exclude_zero=True)
-    with tabs[13]:
+    with tabs[14]:
         st.caption("その月の5連勝以上回数。記録0は非表示。")
         show_month_rank("five_win_count", False, '{:.0f}'.format, exclude_zero=True)
-    with tabs[14]:
+    with tabs[15]:
         st.caption("5連勝以上を達成した回数 ÷ 打数。打数が多いほど達成しにくいので、打数あたりの爆発力の指標。20戦以上。")
         show_month_rank("five_win_rate", False, '{:.2f}%'.format,
                         min_samples_col="five_win_samples", min_samples=20)
-    with tabs[15]:
+    with tabs[16]:
         st.caption("トップの直後にトップを取った確率。サンプル5以上。")
         show_month_rank("top_after_top_rate", False, '{:.2f}%'.format,
                         min_samples_col="top_after_top_samples", min_samples=5)
-    with tabs[16]:
+    with tabs[17]:
         st.caption("2着の直後に2着を取った確率。サンプル5以上。")
         show_month_rank("second_after_second_rate", False, '{:.2f}%'.format,
                         min_samples_col="second_after_second_samples", min_samples=5)
-    with tabs[17]:
+    with tabs[18]:
         st.caption("ラスの直後にラスを取った確率。サンプル5以上。")
         show_month_rank("last_after_last_rate", False, '{:.2f}%'.format,
                         min_samples_col="last_after_last_samples", min_samples=5)
-    with tabs[18]:
+    with tabs[19]:
         st.caption("その月の連続100半荘での最良平均着順(100戦以上)。")
         show_month_rank("best100_avg", True, '{:.3f}'.format)
 
@@ -6510,6 +6743,7 @@ def page_ranking():
         max_second_streak = 0     # 最長連続2着
         max_last_avoid_streak = 0 # 最長連続ラス回避(1着or2着が連続)
         max_no_top_streak = 0     # 最長連続トップ無し(2着or3着が連続、= 1着を取れなかった連続)
+        three_win_count = 0       # 3連勝以上の達成回数
         four_win_count = 0        # 4連勝以上の達成回数
         five_win_count = 0        # 5連勝以上の達成回数
         second_total = ranks.count(2)
@@ -6579,6 +6813,8 @@ def page_ranking():
             if r == 1:
                 cur_win += 1
                 cur_last = cur_second = 0
+                if cur_win == 3:  # 3連勝到達時点でカウント (1つの連勝ストリークで1回)
+                    three_win_count += 1
                 if cur_win == 4:  # 4連勝到達時点でカウント (1つの連勝ストリークで1回)
                     four_win_count += 1
                 if cur_win == 5:  # 5連勝到達時点でカウント
@@ -6642,6 +6878,7 @@ def page_ranking():
             "max_second_streak": max_second_streak,
             "max_last_avoid_streak": max_last_avoid_streak,
             "max_no_top_streak": max_no_top_streak,
+            "three_win_count": three_win_count,
             "four_win_count": four_win_count,
             "five_win_count": five_win_count,
             "five_win_rate": (five_win_count / len(ranks) * 100) if len(ranks) > 0 else None,
@@ -6801,6 +7038,7 @@ def page_ranking():
                                 "max_second_streak": "最長連続2着",
                                 "max_last_avoid_streak": "最長連続ラス回避",
                                 "max_no_top_streak": "最長連続トップ無し",
+                                "three_win_count": "3連勝以上回数",
                                 "four_win_count": "4連勝以上回数",
                                 "five_win_count": "5連勝以上回数",
                                 "top_after_top_rate": "連勝確率",
@@ -6820,14 +7058,14 @@ def page_ranking():
                 else:
                     st.info("データなし")
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25 = st.tabs([
         "🏆 ランキングPT総合",
         "🏅 レーティング", "🎖️ 段位",
         "📊 打数", "🥇 平均着順", "🎯 平均着順(ルール別)", "💺 平均着順(席別)",
         "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
         "🔥 最長連勝", "💀 最長連続ラス", "😐 最長連続2着",
         "🛡️ 最長連続ラス回避", "😑 最長連続トップ無し",
-        "✨ 4連勝以上回数", "⭐ 5連勝以上回数", "🌠 5連勝以上確率",
+        "🎊 3連勝以上回数", "✨ 4連勝以上回数", "⭐ 5連勝以上回数", "🌠 5連勝以上確率",
         "🔁 連勝確率", "🔄 連続2着率", "☠️ 連続ラス率",
         "🌟 ベスト100半荘",
         "💥 最大飜数", "🀅 役満回数"
@@ -7273,9 +7511,12 @@ def page_ranking():
         st.caption("2着または3着を連続で取った歴代最長回数(=1着を取れなかった連続回数)。多いほど「トップ運が無い期間」があったことを表す。")
         show_ranking_split(stats_guest, stats_staff, "max_no_top_streak", False, '{:.0f}'.format, "max_no_top_streak", exclude_zero=True)
     with t16:
+        st.caption("3連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。4連勝・5連勝も1回としてカウント。")
+        show_ranking_split(stats_guest, stats_staff, "three_win_count", False, '{:.0f}'.format, "three_win_count", exclude_zero=True)
+    with t17:
         st.caption("4連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。5連勝も1回カウント。")
         show_ranking_split(stats_guest, stats_staff, "four_win_count", False, '{:.0f}'.format, "four_win_count", exclude_zero=True)
-    with t17:
+    with t18:
         st.caption("5連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。")
         show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count", exclude_zero=True)
 
@@ -7321,7 +7562,7 @@ def page_ranking():
                     st.info("データなし")
 
     # --- t18: 5連勝以上確率 ---
-    with t18:
+    with t19:
         st.caption("**5連勝以上を達成した回数 ÷ 打数**(50戦以上のプレイヤーのみ表示)。打数あたりどれだけ大型連勝を決めたかの指標。")
         show_streak_prob_ranking(
             "five_win_rate", "five_win_samples",
@@ -7329,7 +7570,7 @@ def page_ranking():
         )
 
     # --- t19: 連勝確率 ---
-    with t19:
+    with t20:
         st.caption("トップを取った直後の半荘で再度トップを取った確率(サンプル数10以上のプレイヤーのみ表示)。")
         show_streak_prob_ranking(
             "top_after_top_rate", "top_after_top_samples",
@@ -7337,7 +7578,7 @@ def page_ranking():
         )
 
     # --- t17: 連続2着率 ---
-    with t20:
+    with t21:
         st.caption("2着を取った直後の半荘で再度2着を取った確率(サンプル数10以上のプレイヤーのみ表示)。")
         show_streak_prob_ranking(
             "second_after_second_rate", "second_after_second_samples",
@@ -7345,7 +7586,7 @@ def page_ranking():
         )
 
     # --- t18: 連続ラス率 ---
-    with t21:
+    with t22:
         st.caption("ラス(3着)を取った直後の半荘で再度ラスを取った確率(サンプル数10以上のプレイヤーのみ表示)。多いと「連ラス」しがちなプレイヤー。")
         show_streak_prob_ranking(
             "last_after_last_rate", "last_after_last_samples",
@@ -7427,7 +7668,7 @@ def page_ranking():
                 html += '</tbody></table>'
                 st.markdown(html, unsafe_allow_html=True)
 
-    with t22:
+    with t23:
         st.caption("各プレイヤーが**連続100半荘**でもっとも良い平均着順を出した期間を抽出。100半荘未満のプレイヤーは非表示です。")
         show_best100_ranking(stats_guest, stats_staff)
 
@@ -7456,8 +7697,8 @@ def page_ranking():
                     else: st.info("データなし")
                 else: st.info("データなし")
 
-    with t23: show_mem_ranking(mem_g, mem_s, "最大飜数")
-    with t24: show_mem_ranking(mem_g, mem_s, "役満回数")
+    with t24: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t25: show_mem_ranking(mem_g, mem_s, "役満回数")
 
     # 段位システム詳細を折りたたみで表示
     with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
@@ -7517,4 +7758,5 @@ elif page == "versus3":  page_versus3()
 elif page == "edit":     page_edit()
 elif page == "ranking":  page_ranking()
 elif page == "monthly":  page_monthly()
+elif page == "sheets":   page_sheets()
 else:                    page_home()
