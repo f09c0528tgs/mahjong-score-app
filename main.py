@@ -7783,8 +7783,9 @@ def page_ranking():
                 else:
                     st.info("データなし")
 
-    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25 = st.tabs([
+    t1, t2, t3, t4, t5, t6, t7, t8, t9, t10, t11, t12, t13, t14, t15, t16, t17, t18, t19, t20, t21, t22, t23, t24, t25, t26 = st.tabs([
         "🏆 ランキングPT総合",
+        "💴 通算収支",
         "🏅 レーティング", "🎖️ 段位",
         "📊 打数", "🥇 平均着順", "🎯 平均着順(ルール別)", "💺 平均着順(席別)",
         "👑 トップ率", "🥈 2着率", "🛡 ラス回避率",
@@ -8126,21 +8127,91 @@ def page_ranking():
             - 1項目で獲得できる最大は 10pt、8項目すべて1位なら理論値 **80pt**
             """)
 
+    # --- t2: 通算収支 ---
     with t2:
+        st.caption("収支管理で登録した月別収支ptの合計ランキング。プラスは獲得、マイナスは支払いです。")
+        df_pp = load_player_profits()
+        if df_pp.empty:
+            st.info("収支データが登録されていません。「💴 収支管理」から登録してください。")
+        else:
+            all_yms = sorted(df_pp["年月"].unique())
+            pc1, pc2 = st.columns(2)
+            with pc1:
+                pp_from = st.selectbox("開始月", all_yms, index=0, key="rank_pp_from")
+            with pc2:
+                pp_to = st.selectbox("終了月", all_yms, index=len(all_yms) - 1, key="rank_pp_to")
+
+            d_pp = df_pp[(df_pp["年月"] >= pp_from) & (df_pp["年月"] <= pp_to)]
+            if d_pp.empty:
+                st.warning("該当期間のデータがありません")
+            else:
+                agg_pp = d_pp.groupby("名前").agg(
+                    通算収支=("収支pt", "sum"),
+                    登録月数=("年月", "nunique"),
+                    最高月=("収支pt", "max"),
+                    最低月=("収支pt", "min"),
+                ).reset_index()
+                agg_pp["月平均"] = (agg_pp["通算収支"] / agg_pp["登録月数"]).round(0).astype(int)
+                # お客さん / スタッフ を判定 (末尾s)
+                agg_pp["cat"] = agg_pp["名前"].apply(
+                    lambda x: "staff" if str(x).lower().endswith("s") else "guest")
+                # 表示名は括弧内を除去
+                agg_pp["表示名"] = agg_pp["名前"].astype(str).str.replace(
+                    r'[（\(].*?[）\)]', '', regex=True)
+
+                sub_total, sub_avg = st.tabs(["💰 通算収支", "📊 月平均"])
+                for sub_, col_, label_ in [(sub_total, "通算収支", "通算収支"),
+                                            (sub_avg, "月平均", "月平均")]:
+                    with sub_:
+                        cg, cs = st.columns(2)
+                        for col_obj, cat_key, title, icon in [
+                            (cg, "guest", "お客さん", "🧑‍🤝‍🧑"),
+                            (cs, "staff", "スタッフ", "👔"),
+                        ]:
+                            with col_obj:
+                                st.markdown(f"#### {icon} {title} Top20")
+                                d_cat = agg_pp[agg_pp["cat"] == cat_key]
+                                if d_cat.empty:
+                                    st.info("データなし")
+                                    continue
+                                ranked = assign_competition_rank(d_cat, col_, ascending=False)
+                                res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
+                                disp = pd.DataFrame({
+                                    "順位": res["順位"],
+                                    "名前": res["表示名"],
+                                    label_: res[col_].map(lambda v: f"{int(v):+,} pt"),
+                                    "月数": res["登録月数"].astype(int),
+                                    "最高月": res["最高月"].map(lambda v: f"{int(v):+,}"),
+                                    "最低月": res["最低月"].map(lambda v: f"{int(v):+,}"),
+                                })
+                                st.dataframe(disp, hide_index=True, use_container_width=True)
+
+                # 期間サマリ
+                grand_pp = int(d_pp["収支pt"].sum())
+                gcol = "var(--green)" if grand_pp > 0 else "var(--red)" if grand_pp < 0 else "var(--text-primary)"
+                st.markdown(f"""
+                <div style="margin-top:0.6rem;">
+                    <span class="rankpt-pt">📅 期間 <strong>{pp_from} 〜 {pp_to}</strong></span>
+                    <span class="rankpt-pt">👥 対象 <strong>{agg_pp['名前'].nunique()}</strong>人</span>
+                    <span class="rankpt-pt">合計 <strong style="color:{gcol};">{grand_pp:+,}</strong> pt</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+    with t3:
         st.caption("勝つほど、そして強い人に勝つほど大きく上がります。1着 +30 / 2着 −10 / 3着 −17 が基本pt。レート差による補正は上限±5pt。")
         period_result_t1 = rating_period_selector("t1")
         rating_guest_t1, rating_staff_t1 = build_rating_stats_with_periods(period_result_t1)
         show_rating_ranking(rating_guest_t1, rating_staff_t1)
-    with t3:
+    with t4:
         st.caption("段位が高い順で表示。同段位内は段位ptの多い順です。")
         period_result_t2 = rating_period_selector("t2")
         rating_guest_t2, rating_staff_t2 = build_rating_stats_with_periods(period_result_t2)
         show_dan_ranking(rating_guest_t2, rating_staff_t2)
-    with t4: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
-    with t5: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
+    with t5: show_ranking_split(stats_guest, stats_staff, "games", False, None, "games")
+    with t6: show_ranking_split(stats_guest, stats_staff, "avg_rank", True, '{:.3f}'.format, "avg_rank")
 
     # --- t5: 平均着順(ルール別) - サブタブで A客/AS/B客/BS を切り替え ---
-    with t6:
+    with t7:
         st.caption("プレイヤーが打った時のルール(タイプ)別の平均着順。各タイプで規定打数以上のプレイヤーのみ表示。")
         sub_t1, sub_t2, sub_t3, sub_t4 = st.tabs(["🟦 A客", "🟪 AS", "🟨 B客", "🟩 BS"])
 
@@ -8180,7 +8251,7 @@ def page_ranking():
         show_type_ranking(sub_t4, "BS")
 
     # --- t6: 席別平均着順 (A/B/C席のサブタブ) ---
-    with t7:
+    with t8:
         st.caption("プレイヤーがどの席に座ったかで平均着順を集計。各席で10戦以上のプレイヤーのみ表示。")
         sub_s_a, sub_s_b, sub_s_c = st.tabs(["🅰️ A席", "🅱️ B席", "🇨 C席"])
 
@@ -8217,31 +8288,31 @@ def page_ranking():
         show_seat_ranking(sub_s_b, "B")
         show_seat_ranking(sub_s_c, "C")
 
-    with t8: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
-    with t9: show_ranking_split(stats_guest, stats_staff, "second_rate", False, '{:.3f}%'.format, "second_rate")
-    with t10: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
-    with t11:
+    with t9: show_ranking_split(stats_guest, stats_staff, "top_rate", False, '{:.3f}%'.format, "top_rate")
+    with t10: show_ranking_split(stats_guest, stats_staff, "second_rate", False, '{:.3f}%'.format, "second_rate")
+    with t11: show_ranking_split(stats_guest, stats_staff, "last_avoid_rate", False, '{:.3f}%'.format, "last_avoid_rate")
+    with t12:
         st.caption("時系列で1着を連続で取った歴代最長回数。")
         show_ranking_split(stats_guest, stats_staff, "max_win_streak", False, '{:.0f}'.format, "max_win_streak", exclude_zero=True)
-    with t12:
+    with t13:
         st.caption("時系列で3着(ラス)を連続で取った歴代最長回数。少ないほど良い指標ですが、多いと目立ちます。")
         show_ranking_split(stats_guest, stats_staff, "max_last_streak", False, '{:.0f}'.format, "max_last_streak", exclude_zero=True)
-    with t13:
+    with t14:
         st.caption("時系列で2着を連続で取った歴代最長回数。")
         show_ranking_split(stats_guest, stats_staff, "max_second_streak", False, '{:.0f}'.format, "max_second_streak", exclude_zero=True)
-    with t14:
+    with t15:
         st.caption("1着または2着を連続で取った歴代最長回数(=ラスを回避し続けた連続回数)。安定感の指標。")
         show_ranking_split(stats_guest, stats_staff, "max_last_avoid_streak", False, '{:.0f}'.format, "max_last_avoid_streak", exclude_zero=True)
-    with t15:
+    with t16:
         st.caption("2着または3着を連続で取った歴代最長回数(=1着を取れなかった連続回数)。多いほど「トップ運が無い期間」があったことを表す。")
         show_ranking_split(stats_guest, stats_staff, "max_no_top_streak", False, '{:.0f}'.format, "max_no_top_streak", exclude_zero=True)
-    with t16:
+    with t17:
         st.caption("3連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。4連勝・5連勝も1回としてカウント。")
         show_ranking_split(stats_guest, stats_staff, "three_win_count", False, '{:.0f}'.format, "three_win_count", exclude_zero=True)
-    with t17:
+    with t18:
         st.caption("4連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。5連勝も1回カウント。")
         show_ranking_split(stats_guest, stats_staff, "four_win_count", False, '{:.0f}'.format, "four_win_count", exclude_zero=True)
-    with t18:
+    with t19:
         st.caption("5連勝以上を達成した回数(1つの連勝ストリークにつき1回カウント)。")
         show_ranking_split(stats_guest, stats_staff, "five_win_count", False, '{:.0f}'.format, "five_win_count", exclude_zero=True)
 
@@ -8287,7 +8358,7 @@ def page_ranking():
                     st.info("データなし")
 
     # --- t18: 5連勝以上確率 ---
-    with t19:
+    with t20:
         st.caption("**5連勝以上を達成した回数 ÷ 打数**(50戦以上のプレイヤーのみ表示)。打数あたりどれだけ大型連勝を決めたかの指標。")
         show_streak_prob_ranking(
             "five_win_rate", "five_win_samples",
@@ -8295,7 +8366,7 @@ def page_ranking():
         )
 
     # --- t19: 連勝確率 ---
-    with t20:
+    with t21:
         st.caption("トップを取った直後の半荘で再度トップを取った確率(サンプル数10以上のプレイヤーのみ表示)。")
         show_streak_prob_ranking(
             "top_after_top_rate", "top_after_top_samples",
@@ -8303,7 +8374,7 @@ def page_ranking():
         )
 
     # --- t17: 連続2着率 ---
-    with t21:
+    with t22:
         st.caption("2着を取った直後の半荘で再度2着を取った確率(サンプル数10以上のプレイヤーのみ表示)。")
         show_streak_prob_ranking(
             "second_after_second_rate", "second_after_second_samples",
@@ -8311,7 +8382,7 @@ def page_ranking():
         )
 
     # --- t18: 連続ラス率 ---
-    with t22:
+    with t23:
         st.caption("ラス(3着)を取った直後の半荘で再度ラスを取った確率(サンプル数10以上のプレイヤーのみ表示)。多いと「連ラス」しがちなプレイヤー。")
         show_streak_prob_ranking(
             "last_after_last_rate", "last_after_last_samples",
@@ -8393,7 +8464,7 @@ def page_ranking():
                 html += '</tbody></table>'
                 st.markdown(html, unsafe_allow_html=True)
 
-    with t23:
+    with t24:
         st.caption("各プレイヤーが**連続100半荘**でもっとも良い平均着順を出した期間を抽出。100半荘未満のプレイヤーは非表示です。")
         show_best100_ranking(stats_guest, stats_staff)
 
@@ -8422,8 +8493,8 @@ def page_ranking():
                     else: st.info("データなし")
                 else: st.info("データなし")
 
-    with t24: show_mem_ranking(mem_g, mem_s, "最大飜数")
-    with t25: show_mem_ranking(mem_g, mem_s, "役満回数")
+    with t25: show_mem_ranking(mem_g, mem_s, "最大飜数")
+    with t26: show_mem_ranking(mem_g, mem_s, "役満回数")
 
     # 段位システム詳細を折りたたみで表示
     with st.expander("📖 レーティング・段位システムの詳細", expanded=False):
