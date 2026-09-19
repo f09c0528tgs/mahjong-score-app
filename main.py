@@ -1625,6 +1625,10 @@ SHEET_LOG = "logs"
 SHEET_PROFIT = "daily_profits"
 SHEET_PENDING = "pending_buffer"  # 仮保存データ用の専用シート
 SHEET_RATING = "ratings"  # レーティング/段位データ
+SHEET_PLAYER_PROFIT = "player_profits"  # 個人別・月別の収支pt
+
+# 個人収支シートの列
+PLAYER_PROFIT_COLS = ["名前", "年月", "収支pt", "備考"]
 
 # pending_buffer シートに必要な列
 PENDING_COLS = [
@@ -1825,6 +1829,160 @@ def save_profit_data(df):
         else:
             st.error(f"保存エラー: {e}")
         st.stop()
+
+# ==========================================
+# 2.4.5 個人収支データ (月別 pt)
+# ==========================================
+@st.cache_data(ttl=60, show_spinner=False)
+def _fetch_player_profit(_conn):
+    """player_profits シートを読む (60秒キャッシュ)"""
+    try:
+        return _conn.read(worksheet=SHEET_PLAYER_PROFIT, ttl=0)
+    except Exception:
+        return pd.DataFrame(columns=PLAYER_PROFIT_COLS)
+
+
+def load_player_profits():
+    """
+    個人収支データを読み込む。
+    Returns: DataFrame [名前, 年月, 収支pt, 備考]
+      年月は "2026-01" 形式の文字列、収支pt は数値 (int)
+    """
+    conn = get_conn()
+    df = _fetch_player_profit(conn)
+    if df is None or df.empty:
+        return pd.DataFrame(columns=PLAYER_PROFIT_COLS)
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    for c in PLAYER_PROFIT_COLS:
+        if c not in df.columns:
+            df[c] = "" if c != "収支pt" else 0
+    df = df[PLAYER_PROFIT_COLS].fillna("")
+    df["名前"] = df["名前"].astype(str).str.strip()
+    df["年月"] = df["年月"].astype(str).str.strip().apply(_normalize_ym)
+    df["収支pt"] = pd.to_numeric(df["収支pt"], errors="coerce").fillna(0).astype(int)
+    df["備考"] = df["備考"].astype(str)
+    # 名前・年月が空の行は除外
+    df = df[(df["名前"] != "") & (df["年月"] != "")]
+    return df.reset_index(drop=True)
+
+
+def _normalize_ym(s):
+    """
+    年月表記のゆれを "YYYY-MM" に正規化する。
+    "2026/1", "2026年1月", "202601", "2026-01" などに対応。
+    解釈できなければ空文字。
+    """
+    if s is None:
+        return ""
+    t = str(s).strip()
+    if not t:
+        return ""
+    t = t.translate(str.maketrans("０１２３４５６７８９", "0123456789"))
+    import re as _re
+    m = _re.match(r"^(\d{4})\D*(\d{1,2})", t)
+    if m:
+        y, mo = int(m.group(1)), int(m.group(2))
+        if 1 <= mo <= 12:
+            return f"{y:04d}-{mo:02d}"
+    m2 = _re.match(r"^(\d{4})(\d{2})$", t)
+    if m2:
+        y, mo = int(m2.group(1)), int(m2.group(2))
+        if 1 <= mo <= 12:
+            return f"{y:04d}-{mo:02d}"
+    return ""
+
+
+def save_player_profits(df):
+    """個人収支データをシートに保存する"""
+    conn = get_conn()
+    out = df.copy()
+    for c in PLAYER_PROFIT_COLS:
+        if c not in out.columns:
+            out[c] = "" if c != "収支pt" else 0
+    out = out[PLAYER_PROFIT_COLS]
+    out["収支pt"] = pd.to_numeric(out["収支pt"], errors="coerce").fillna(0).astype(int)
+    try:
+        conn.update(worksheet=SHEET_PLAYER_PROFIT, data=out)
+        _fetch_player_profit.clear()
+        return True, None
+    except Exception as e:
+        msg = str(e)
+        if "WorksheetNotFound" in msg:
+            # シートが無ければ作成を試みる
+            try:
+                conn.create(worksheet=SHEET_PLAYER_PROFIT, data=out)
+                _fetch_player_profit.clear()
+                return True, None
+            except Exception as e2:
+                return False, (f"シート '{SHEET_PLAYER_PROFIT}' が見つからず、自動作成にも失敗しました。"
+                               f"スプレッドシートに列 [{', '.join(PLAYER_PROFIT_COLS)}] を持つ "
+                               f"'{SHEET_PLAYER_PROFIT}' シートを作成してください。({e2})")
+        return False, msg
+
+
+def upsert_player_profit(name, ym, pt, memo=""):
+    """
+    1件の収支を登録/更新する (同じ 名前×年月 があれば上書き)。
+    Returns: (成功したか, エラーメッセージ)
+    """
+    ym_norm = _normalize_ym(ym)
+    if not str(name).strip() or not ym_norm:
+        return False, "名前と年月は必須です"
+    df = load_player_profits()
+    mask = (df["名前"] == str(name).strip()) & (df["年月"] == ym_norm)
+    if mask.any():
+        df.loc[mask, "収支pt"] = int(pt)
+        df.loc[mask, "備考"] = str(memo)
+    else:
+        df = pd.concat([df, pd.DataFrame([{
+            "名前": str(name).strip(), "年月": ym_norm,
+            "収支pt": int(pt), "備考": str(memo),
+        }])], ignore_index=True)
+    df = df.sort_values(["名前", "年月"]).reset_index(drop=True)
+    return save_player_profits(df)
+
+
+def delete_player_profit(name, ym):
+    """1件の収支を削除する"""
+    ym_norm = _normalize_ym(ym)
+    df = load_player_profits()
+    before = len(df)
+    df = df[~((df["名前"] == str(name).strip()) & (df["年月"] == ym_norm))].reset_index(drop=True)
+    if len(df) == before:
+        return False, "該当データが見つかりません"
+    return save_player_profits(df)
+
+
+def get_player_profit_summary(name):
+    """
+    指定プレイヤーの収支サマリを返す。
+    Returns: dict or None
+      {"total": 通算pt, "months": 月数, "avg": 月平均, "best": (年月,pt),
+       "worst": (年月,pt), "plus_months": プラス月数, "rows": DataFrame}
+    """
+    df = load_player_profits()
+    if df.empty:
+        return None
+    d = df[df["名前"] == str(name).strip()].copy()
+    if d.empty:
+        return None
+    d = d.sort_values("年月").reset_index(drop=True)
+    total = int(d["収支pt"].sum())
+    months = len(d)
+    best_i = d["収支pt"].idxmax()
+    worst_i = d["収支pt"].idxmin()
+    return {
+        "total": total,
+        "months": months,
+        "avg": total / months if months else 0,
+        "best": (d.loc[best_i, "年月"], int(d.loc[best_i, "収支pt"])),
+        "worst": (d.loc[worst_i, "年月"], int(d.loc[worst_i, "収支pt"])),
+        "plus_months": int((d["収支pt"] > 0).sum()),
+        "minus_months": int((d["収支pt"] < 0).sum()),
+        "rows": d,
+    }
+
 
 # ==========================================
 # 2.5 永続バッファ機構 (一括保存)
@@ -3879,6 +4037,7 @@ NAV_ITEMS = [
     ("🏆", "順位", "ranking"),
     ("📅", "月間PT", "monthly"),
     ("📆", "着順表", "sheets"),
+    ("💴", "収支", "profitpt"),
 ]
 
 def render_top_nav(current_page):
@@ -4358,6 +4517,7 @@ def page_home():
         ("🏆", "ランキング", "ranking", "gold"),
         ("📅", "月間ランキングPT", "monthly", "orange"),
         ("📆", "過去の着順表", "sheets", "teal"),
+        ("💴", "収支管理", "profitpt", "green"),
         ("🤝", "2人対戦データ", "versus2", "purple"),
         ("👥", "3人対戦データ", "versus3", "pink"),
     ]
@@ -4895,6 +5055,57 @@ def page_personal():
             if month_rows:
                 st.dataframe(pd.DataFrame(month_rows), hide_index=True, use_container_width=True)
 
+    # === 収支 (登録があれば表示) ===
+    _pp = get_player_profit_summary(selected_player)
+    if _pp:
+        st.divider()
+        section_title("💴", "収支")
+        _tc = "var(--green)" if _pp["total"] > 0 else "var(--red)" if _pp["total"] < 0 else "var(--text-primary)"
+        _ac = "var(--green)" if _pp["avg"] > 0 else "var(--red)" if _pp["avg"] < 0 else "var(--text-primary)"
+        st.markdown(f"""
+        <table class="stats-table">
+            <thead><tr>
+                <th>通算収支</th><th>登録月数</th><th>月平均</th>
+                <th>プラス月 / マイナス月</th><th>最高の月</th><th>最低の月</th>
+            </tr></thead>
+            <tbody><tr>
+                <td style="color:{_tc};font-weight:900;font-size:1.15rem;">{_pp['total']:+,} pt</td>
+                <td>{_pp['months']} ヶ月</td>
+                <td style="color:{_ac};font-weight:800;">{_pp['avg']:+,.0f} pt</td>
+                <td><span style="color:var(--green);font-weight:800;">{_pp['plus_months']}</span>
+                    <span style="color:var(--text-muted);"> / </span>
+                    <span style="color:var(--red);font-weight:800;">{_pp['minus_months']}</span></td>
+                <td>{_pp['best'][0]}<br>
+                    <span style="color:var(--green);font-weight:800;">{_pp['best'][1]:+,}</span></td>
+                <td>{_pp['worst'][0]}<br>
+                    <span style="color:var(--red);font-weight:800;">{_pp['worst'][1]:+,}</span></td>
+            </tr></tbody>
+        </table>
+        """, unsafe_allow_html=True)
+
+        with st.expander("📈 月別収支の推移", expanded=False):
+            _dg = _pp["rows"].copy()
+            _dg["累計"] = _dg["収支pt"].cumsum()
+            if len(_dg) >= 2:
+                _base = alt.Chart(_dg).encode(x=alt.X("年月:N", title="年月", sort=None))
+                _bars = _base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+                    y=alt.Y("収支pt:Q", title="月別収支 (pt)"),
+                    color=alt.condition(alt.datum.収支pt >= 0,
+                                        alt.value("#4caf87"), alt.value("#e05c5c")),
+                    tooltip=["年月", "収支pt", "累計"])
+                _line = _base.mark_line(color="#f0c040", strokeWidth=2.5, point=True).encode(
+                    y=alt.Y("累計:Q", title="累計 (pt)"), tooltip=["年月", "累計"])
+                _ch = alt.layer(_bars, _line).resolve_scale(y="independent").properties(
+                    height=280).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(
+                    gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+                st.altair_chart(_ch, use_container_width=True)
+                st.caption("🟩 プラスの月 / 🟥 マイナスの月 / 🟡 累計の推移")
+            _show = _dg.copy()
+            _show["収支pt"] = _show["収支pt"].map(lambda v: f"{int(v):+,}")
+            _show["累計"] = _show["累計"].map(lambda v: f"{int(v):+,}")
+            st.dataframe(_show[["年月", "収支pt", "累計", "備考"]].iloc[::-1],
+                         hide_index=True, use_container_width=True)
+
     # === 追加分析: データから読み取れる情報 ===
     st.divider()
     section_title("🔍", "詳細分析")
@@ -4983,10 +5194,10 @@ def page_personal():
         </div>
         """, unsafe_allow_html=True)
 
-    # ---------- 時間帯別 ----------
+    # ---------- 時間帯別 (昼夜のみ) ----------
     with an3:
-        st.caption("何時台に打っているか、時間帯で成績に差があるか。")
-        hour_ranks = {}
+        st.caption("昼 (9:00-21:00) と 夜 (21:00-翌9:00) で成績に差があるかを比較します。")
+        day_r, night_r = [], []
         for _, row in df_filtered.iterrows():
             for s in ["A", "B", "C"]:
                 if row[f"{s}さん"] == selected_player:
@@ -4996,48 +5207,60 @@ def page_personal():
                         rk = 0
                     dto = row.get("日時Obj")
                     if rk in (1, 2, 3) and pd.notna(dto):
-                        hour_ranks.setdefault(int(dto.hour), []).append(rk)
+                        if 9 <= int(dto.hour) <= 20:
+                            day_r.append(rk)
+                        else:
+                            night_r.append(rk)
                     break
-        if hour_ranks:
-            order = list(range(9, 24)) + list(range(0, 9))
-            rows = []
-            for h in order:
-                if h not in hour_ranks:
-                    continue
-                rs = hour_ranks[h]
-                c = len(rs)
-                rows.append({
-                    "時間帯": f"{h:02d}時台",
-                    "打数": c,
-                    "平均着順": f"{sum(rs)/c:.3f}",
-                    "トップ率": f"{rs.count(1)/c*100:.2f}%",
-                    "ラス回避率": f"{(c-rs.count(3))/c*100:.2f}%",
-                })
-            st.dataframe(pd.DataFrame(rows), hide_index=True, use_container_width=True)
 
-            # 昼夜比較
-            day_r = [r for h, rs in hour_ranks.items() if 9 <= h <= 20 for r in rs]
-            night_r = [r for h, rs in hour_ranks.items() if not (9 <= h <= 20) for r in rs]
+        if not day_r and not night_r:
+            st.info("時間情報のあるデータがありません")
+        else:
+            total_n = len(day_r) + len(night_r)
             cols = st.columns(2)
-            for col, label, rs in [(cols[0], "☀️ 昼 (9-21時)", day_r),
-                                    (cols[1], "🌙 夜 (21-翌9時)", night_r)]:
+            for col, label, rs, accent in [
+                (cols[0], "☀️ 昼 (9:00-21:00)", day_r, "var(--accent)"),
+                (cols[1], "🌙 夜 (21:00-翌9:00)", night_r, "var(--accent2)"),
+            ]:
                 with col:
                     if rs:
                         c = len(rs)
+                        r1, r2, r3 = rs.count(1), rs.count(2), rs.count(3)
                         st.markdown(f"""
-                        <div style="background:var(--bg-card);border:1px solid var(--border);
-                                    border-radius:10px;padding:0.7rem 1rem;">
-                            <div style="font-size:0.8rem;color:var(--text-muted);">{label}</div>
-                            <div style="font-size:1.3rem;font-weight:900;color:var(--accent);">
-                                {sum(rs)/c:.3f}</div>
-                            <div style="font-size:0.75rem;color:var(--text-muted);">
-                                {c}戦 / トップ率 {rs.count(1)/c*100:.1f}%</div>
+                        <div style="background:var(--bg-card);border:1px solid {accent};
+                                    border-left:4px solid {accent};
+                                    border-radius:10px;padding:0.8rem 1rem;">
+                            <div style="font-size:0.82rem;color:var(--text-muted);font-weight:700;">
+                                {label}</div>
+                            <div style="font-size:1.8rem;font-weight:900;color:{accent};
+                                        line-height:1.2;">{sum(rs)/c:.3f}</div>
+                            <div style="font-size:0.72rem;color:var(--text-muted);
+                                        margin-bottom:0.4rem;">平均着順</div>
+                            <div style="font-size:0.8rem;color:var(--text-primary);">
+                                {c}戦 <span style="color:var(--text-muted);">
+                                ({c/total_n*100:.1f}%)</span>
+                            </div>
+                            <div style="font-size:0.78rem;color:var(--text-muted);margin-top:0.3rem;">
+                                🥇{r1} 🥈{r2} 🥉{r3}<br>
+                                トップ率 <strong style="color:{accent};">{r1/c*100:.2f}%</strong> /
+                                ラス回避率 <strong style="color:{accent};">{(c-r3)/c*100:.2f}%</strong>
+                            </div>
                         </div>
                         """, unsafe_allow_html=True)
                     else:
                         st.info(f"{label} のデータなし")
-        else:
-            st.info("時間情報のあるデータがありません")
+
+            # 差の判定
+            if day_r and night_r:
+                da = sum(day_r) / len(day_r)
+                na = sum(night_r) / len(night_r)
+                diff = abs(da - na)
+                better = "☀️ 昼" if da < na else "🌙 夜"
+                if diff < 0.03:
+                    msg = "💡 昼夜での成績差はほとんどありません"
+                else:
+                    msg = f"💡 **{better}** の方が平均着順が **{diff:.3f}** 良い"
+                st.caption(msg)
 
     # ---------- 自己ベスト ----------
     with an4:
@@ -6363,6 +6586,15 @@ def _page_history_overview(df):
         render_paper_sheet(df_filtered)
 
 # --- 月間成績画面 ---
+# ゲーム代枚数: トップを取った人が、自分のタイプに応じた枚数を払う
+GAME_FEE_TABLE = {
+    "A客": 3,
+    "B客": 4,
+    "AS": 1,
+    "BS": 1,
+}
+
+
 def _normalize_play_type(tp):
     """
     タイプ表記のゆれを吸収して A客 / AS / B客 / BS のいずれかに正規化する。
@@ -6402,6 +6634,219 @@ def _normalize_play_type(tp):
     if s.startswith("B"):
         return "B客"
     return None
+
+
+def page_profit_pt():
+    """個人収支 (月別pt) の入力・閲覧ページ"""
+    render_top_nav("profitpt")
+    st.title("💴 収支管理")
+    render_pending_bar(location_key="profitpt")
+    st.caption("プレイヤーごとの月別収支(pt)を登録・閲覧します。プラスは獲得、マイナスは支払いです。")
+
+    df_profit = load_player_profits()
+    members = get_all_member_names()
+
+    tab_input, tab_view, tab_rank = st.tabs(["✏️ 入力・編集", "📋 一覧", "🏆 収支ランキング"])
+
+    # ============ 入力・編集 ============
+    with tab_input:
+        st.markdown("### ✏️ 収支を登録する")
+        st.caption("同じ「名前 × 年月」が既にある場合は上書きされます。")
+
+        c1, c2 = st.columns([2, 1])
+        with c1:
+            if members:
+                name_opts = ["--選択--"] + members
+                sel_name = st.selectbox("名前", name_opts, key="pp_name")
+            else:
+                sel_name = st.text_input("名前", key="pp_name_text")
+        with c2:
+            today = date.today()
+            years = list(range(today.year - 3, today.year + 2))
+            c_y, c_m = st.columns(2)
+            with c_y:
+                sel_y = st.selectbox("年", years, index=years.index(today.year), key="pp_year")
+            with c_m:
+                sel_m = st.selectbox("月", list(range(1, 13)), index=today.month - 1, key="pp_month")
+
+        c3, c4 = st.columns([1, 2])
+        with c3:
+            pt = st.number_input("収支pt", value=0, step=100, key="pp_pt",
+                                 help="プラスは獲得、マイナスは支払い")
+        with c4:
+            memo = st.text_input("備考 (任意)", key="pp_memo")
+
+        ym_str = f"{sel_y:04d}-{sel_m:02d}"
+        # 既存データのプレビュー
+        target_name = sel_name if sel_name and sel_name != "--選択--" else ""
+        if target_name:
+            exist = df_profit[(df_profit["名前"] == target_name) & (df_profit["年月"] == ym_str)]
+            if not exist.empty:
+                cur = int(exist.iloc[0]["収支pt"])
+                st.info(f"📝 既存データあり: **{target_name}** の **{ym_str}** は現在 "
+                        f"**{cur:+,}pt** です。保存すると上書きされます。")
+
+        valid = bool(target_name)
+        bc1, bc2 = st.columns([1, 3])
+        with bc1:
+            if st.button("💾 保存", type="primary", disabled=not valid, use_container_width=True):
+                ok, err = upsert_player_profit(target_name, ym_str, int(pt), memo)
+                if ok:
+                    st.success(f"✅ {target_name} / {ym_str} : {int(pt):+,}pt を保存しました")
+                    st.rerun()
+                else:
+                    st.error(f"❌ 保存に失敗しました: {err}")
+        if not valid:
+            st.warning("⚠️ 名前を選択してください")
+
+        # --- 削除 ---
+        st.divider()
+        with st.expander("🗑 データを削除", expanded=False):
+            if df_profit.empty:
+                st.info("削除できるデータがありません")
+            else:
+                del_opts = [f"{r['名前']} / {r['年月']} / {int(r['収支pt']):+,}pt"
+                            for _, r in df_profit.iterrows()]
+                del_idx = st.selectbox("削除するデータ", range(len(del_opts)),
+                                       format_func=lambda i: del_opts[i], key="pp_del")
+                if st.button("🗑 削除する", use_container_width=True):
+                    row = df_profit.iloc[del_idx]
+                    ok, err = delete_player_profit(row["名前"], row["年月"])
+                    if ok:
+                        st.success("✅ 削除しました")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {err}")
+
+    # ============ 一覧 ============
+    with tab_view:
+        if df_profit.empty:
+            st.info("収支データがまだありません。「✏️ 入力・編集」から登録してください。")
+        else:
+            # フィルタ
+            fc1, fc2 = st.columns(2)
+            all_names = sorted(df_profit["名前"].unique())
+            all_yms = sorted(df_profit["年月"].unique(), reverse=True)
+            with fc1:
+                f_name = st.selectbox("名前で絞る", ["すべて"] + all_names, key="pp_f_name")
+            with fc2:
+                f_ym = st.selectbox("年月で絞る", ["すべて"] + all_yms, key="pp_f_ym")
+
+            d = df_profit.copy()
+            if f_name != "すべて":
+                d = d[d["名前"] == f_name]
+            if f_ym != "すべて":
+                d = d[d["年月"] == f_ym]
+
+            if d.empty:
+                st.warning("条件に合うデータがありません")
+            else:
+                total = int(d["収支pt"].sum())
+                plus_n = int((d["収支pt"] > 0).sum())
+                minus_n = int((d["収支pt"] < 0).sum())
+                tc = "var(--green)" if total > 0 else "var(--red)" if total < 0 else "var(--text-primary)"
+                st.markdown(f"""
+                <div style="margin:0.5rem 0 0.8rem;">
+                    <span class="rankpt-pt">合計 <strong style="color:{tc};">{total:+,}</strong> pt</span>
+                    <span class="rankpt-pt">件数 <strong>{len(d)}</strong></span>
+                    <span class="rankpt-pt">プラス <strong style="color:var(--green);">{plus_n}</strong>
+                        / マイナス <strong style="color:var(--red);">{minus_n}</strong></span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                show = d.sort_values(["年月", "名前"], ascending=[False, True]).reset_index(drop=True)
+                show["収支pt"] = show["収支pt"].map(lambda v: f"{int(v):+,}")
+                st.dataframe(show, hide_index=True, use_container_width=True)
+
+                # 個人を選んでいる場合は推移グラフ
+                if f_name != "すべて" and len(d) >= 2:
+                    st.markdown("#### 📈 月別収支の推移")
+                    dg = d.sort_values("年月").copy()
+                    dg["累計"] = dg["収支pt"].cumsum()
+                    base = alt.Chart(dg).encode(x=alt.X("年月:N", title="年月", sort=None))
+                    bars = base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+                        y=alt.Y("収支pt:Q", title="月別収支 (pt)"),
+                        color=alt.condition(alt.datum.収支pt >= 0,
+                                            alt.value("#4caf87"), alt.value("#e05c5c")),
+                        tooltip=["年月", "収支pt", "累計"])
+                    line = base.mark_line(color="#f0c040", strokeWidth=2.5, point=True).encode(
+                        y=alt.Y("累計:Q", title="累計 (pt)"), tooltip=["年月", "累計"])
+                    ch = alt.layer(bars, line).resolve_scale(y="independent").properties(
+                        height=300).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(
+                        gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+                    st.altair_chart(ch, use_container_width=True)
+                    st.caption("🟩 プラスの月 / 🟥 マイナスの月 / 🟡 累計の推移")
+
+    # ============ 収支ランキング ============
+    with tab_rank:
+        if df_profit.empty:
+            st.info("収支データがまだありません。")
+        else:
+            st.caption("登録済みの収支を集計したランキングです。")
+            # 期間で絞る
+            all_yms = sorted(df_profit["年月"].unique())
+            rc1, rc2 = st.columns(2)
+            with rc1:
+                from_ym = st.selectbox("開始月", all_yms, index=0, key="pp_r_from")
+            with rc2:
+                to_ym = st.selectbox("終了月", all_yms, index=len(all_yms) - 1, key="pp_r_to")
+
+            d = df_profit[(df_profit["年月"] >= from_ym) & (df_profit["年月"] <= to_ym)]
+            if d.empty:
+                st.warning("該当期間のデータがありません")
+            else:
+                agg = d.groupby("名前").agg(
+                    通算収支=("収支pt", "sum"),
+                    登録月数=("年月", "nunique"),
+                    最高月=("収支pt", "max"),
+                    最低月=("収支pt", "min"),
+                ).reset_index()
+                agg["月平均"] = (agg["通算収支"] / agg["登録月数"]).round(0).astype(int)
+
+                r1, r2 = st.tabs(["💰 通算収支", "📊 月平均"])
+                for tab_, col_, label_ in [(r1, "通算収支", "通算収支"), (r2, "月平均", "月平均")]:
+                    with tab_:
+                        ranked = assign_competition_rank(agg, col_, ascending=False)
+                        ranked = ranked[ranked["順位"] <= 20].reset_index(drop=True)
+                        disp = pd.DataFrame({
+                            "順位": ranked["順位"],
+                            "名前": ranked["名前"],
+                            label_: ranked[col_].map(lambda v: f"{int(v):+,} pt"),
+                            "登録月数": ranked["登録月数"],
+                            "最高月": ranked["最高月"].map(lambda v: f"{int(v):+,}"),
+                            "最低月": ranked["最低月"].map(lambda v: f"{int(v):+,}"),
+                        })
+                        st.dataframe(disp, hide_index=True, use_container_width=True)
+
+                # 店舗全体のサマリ
+                st.divider()
+                grand = int(d["収支pt"].sum())
+                gc = "var(--green)" if grand > 0 else "var(--red)"
+                st.markdown(f"""
+                <div style="margin:0.3rem 0;">
+                    <span class="rankpt-pt">📅 期間 <strong>{from_ym} 〜 {to_ym}</strong></span>
+                    <span class="rankpt-pt">👥 対象 <strong>{agg['名前'].nunique()}</strong>人</span>
+                    <span class="rankpt-pt">合計 <strong style="color:{gc};">{grand:+,}</strong> pt</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+    # --- シート未作成時の案内 ---
+    with st.expander("ℹ️ スプレッドシートの設定について", expanded=False):
+        st.markdown(f"""
+        収支データは **`{SHEET_PLAYER_PROFIT}`** シートに保存されます。
+
+        **列構成**: `{' / '.join(PLAYER_PROFIT_COLS)}`
+
+        | 名前 | 年月 | 収支pt | 備考 |
+        |---|---|---|---|
+        | 加藤 | 2026-01 | 10000 | |
+        | 加藤 | 2026-02 | -2700 | |
+
+        - **年月** は `2026-01` 形式で保存されます
+          (`2026/1`、`2026年1月` などで入力しても自動変換されます)
+        - **収支pt** はプラス/マイナスの整数
+        - スプレッドシートに直接書き込んでも、アプリ側に反映されます
+        """)
 
 
 def page_sheets():
@@ -6516,17 +6961,21 @@ def render_score_sheet(df_day):
                 cur_names[seat] = nm
                 cur_types[seat] = tp
                 cur_ranks[seat] = rk
-                # ゲーム代枚数の集計: 名前があり着順が有効な行のみ
-                if nm and rk in (1, 2, 3):
+                # ゲーム代枚数の集計: トップ(1着)を取った人が自分のタイプ分を払う
+                #   A客 3枚 / B客 4枚 / AS 1枚 / BS 1枚
+                if nm and rk == 1:
                     tp_norm = _normalize_play_type(tp)
                     if tp_norm:
-                        type_counts[tp_norm] += 1
+                        fee = GAME_FEE_TABLE.get(tp_norm, 0)
+                        type_counts[tp_norm] += fee
+                        if nm not in player_counts:
+                            player_counts[nm] = {}
+                        player_counts[nm][tp_norm] = player_counts[nm].get(tp_norm, 0) + fee
                     else:
                         type_unknown += 1
-                    if nm not in player_counts:
-                        player_counts[nm] = {}
-                    key = tp_norm if tp_norm else "不明"
-                    player_counts[nm][key] = player_counts[nm].get(key, 0) + 1
+                        if nm not in player_counts:
+                            player_counts[nm] = {}
+                        player_counts[nm]["不明"] = player_counts[nm].get("不明", 0) + 1
 
             members = (cur_names["A"], cur_names["B"], cur_names["C"])
             if members != prev_members:
@@ -6560,7 +7009,7 @@ def render_score_sheet(df_day):
         html += '<td colspan="3" style="text-align:left;padding-left:8px;">'
         parts = [f'{t} <strong>{type_counts[t]}</strong>' for t in ["A客", "AS", "B客", "BS"] if type_counts[t] > 0]
         if type_unknown > 0:
-            parts.append(f'<span style="color:#b04;">未設定 <strong>{type_unknown}</strong></span>')
+            parts.append(f'<span style="color:#b04;">タイプ未設定のトップ <strong>{type_unknown}</strong>回</span>')
         html += ("　".join(parts) + f'　/　計 <strong>{total_pieces}</strong>枚') if parts else f'計 {len(df_tbl)} 戦'
         html += '</td></tr>'
         html += '</tbody></table></div>'
@@ -6582,8 +7031,9 @@ def render_score_sheet(df_day):
                     if c != "名前":
                         df_pc[c] = df_pc[c].astype(int)
                 st.dataframe(df_pc, hide_index=True, use_container_width=True)
-                st.caption(f"この卓の総枚数: **{total_pieces}枚** "
-                           f"({len(df_tbl)}半荘 × 3人 = {len(df_tbl)*3}枚が理論値)")
+                st.caption(
+                    f"この卓の総枚数: **{total_pieces}枚** (全{len(df_tbl)}半荘)　"
+                    "／　料金: A客3枚・B客4枚・AS1枚・BS1枚 (トップを取った人が支払い)")
 
 
 def page_monthly():
@@ -8034,4 +8484,5 @@ elif page == "edit":     page_edit()
 elif page == "ranking":  page_ranking()
 elif page == "monthly":  page_monthly()
 elif page == "sheets":   page_sheets()
+elif page == "profitpt": page_profit_pt()
 else:                    page_home()
