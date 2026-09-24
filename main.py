@@ -6803,20 +6803,20 @@ def page_profit_pt():
                 ).reset_index()
                 agg["月平均"] = (agg["通算収支"] / agg["登録月数"]).round(0).astype(int)
 
-                r1, r2 = st.tabs(["💰 通算収支", "📊 月平均"])
-                for tab_, col_, label_ in [(r1, "通算収支", "通算収支"), (r2, "月平均", "月平均")]:
-                    with tab_:
-                        ranked = assign_competition_rank(agg, col_, ascending=False)
-                        ranked = ranked[ranked["順位"] <= 20].reset_index(drop=True)
-                        disp = pd.DataFrame({
-                            "順位": ranked["順位"],
-                            "名前": ranked["名前"],
-                            label_: ranked[col_].map(lambda v: f"{int(v):+,} pt"),
-                            "登録月数": ranked["登録月数"],
-                            "最高月": ranked["最高月"].map(lambda v: f"{int(v):+,}"),
-                            "最低月": ranked["最低月"].map(lambda v: f"{int(v):+,}"),
-                        })
-                        st.dataframe(disp, hide_index=True, use_container_width=True)
+                sort_key = st.selectbox("並び替え", ["通算収支", "月平均"], key="pp_r_sort")
+                ranked = assign_competition_rank(agg, sort_key, ascending=False)
+                ranked = ranked.reset_index(drop=True)
+                disp = pd.DataFrame({
+                    "順位": ranked["順位"],
+                    "名前": ranked["名前"],
+                    "通算収支": ranked["通算収支"].map(lambda v: f"{int(v):+,}"),
+                    "月平均": ranked["月平均"].map(lambda v: f"{int(v):+,}"),
+                    "登録月数": ranked["登録月数"],
+                    "最高月": ranked["最高月"].map(lambda v: f"{int(v):+,}"),
+                    "最低月": ranked["最低月"].map(lambda v: f"{int(v):+,}"),
+                })
+                st.dataframe(disp, hide_index=True, use_container_width=True)
+                st.caption(f"💡 **{sort_key}** の大きい順。単位はすべて pt。")
 
                 # 店舗全体のサマリ
                 st.divider()
@@ -8129,17 +8129,23 @@ def page_ranking():
 
     # --- t2: 通算収支 ---
     with t2:
-        st.caption("収支管理で登録した月別収支ptの合計ランキング。プラスは獲得、マイナスは支払いです。")
+        st.caption("収支管理で登録した月別収支ptの集計。プラスは獲得、マイナスは支払いです。"
+                   "「1半荘あたり」は同じ期間の対局データから打数を集計して算出しています。")
         df_pp = load_player_profits()
         if df_pp.empty:
             st.info("収支データが登録されていません。「💴 収支管理」から登録してください。")
         else:
             all_yms = sorted(df_pp["年月"].unique())
-            pc1, pc2 = st.columns(2)
+            pc1, pc2, pc3 = st.columns([1, 1, 1])
             with pc1:
                 pp_from = st.selectbox("開始月", all_yms, index=0, key="rank_pp_from")
             with pc2:
                 pp_to = st.selectbox("終了月", all_yms, index=len(all_yms) - 1, key="rank_pp_to")
+            with pc3:
+                pp_sort = st.selectbox(
+                    "並び替え",
+                    ["通算収支", "月平均", "1半荘あたり"],
+                    key="rank_pp_sort")
 
             d_pp = df_pp[(df_pp["年月"] >= pp_from) & (df_pp["年月"] <= pp_to)]
             if d_pp.empty:
@@ -8176,84 +8182,50 @@ def page_ranking():
                                 games_map[_nm] = games_map.get(_nm, 0) + 1
 
                 agg_pp["打数"] = agg_pp["名前"].map(lambda n: games_map.get(n, 0)).astype(int)
-                agg_pp["半荘収支"] = agg_pp.apply(
+                agg_pp["1半荘あたり"] = agg_pp.apply(
                     lambda r: (r["通算収支"] / r["打数"]) if r["打数"] > 0 else None, axis=1)
-
-                # お客さん / スタッフ を判定 (末尾s)
-                agg_pp["cat"] = agg_pp["名前"].apply(
-                    lambda x: "staff" if str(x).lower().endswith("s") else "guest")
                 # 表示名は括弧内を除去
                 agg_pp["表示名"] = agg_pp["名前"].astype(str).str.replace(
                     r'[（\(].*?[）\)]', '', regex=True)
 
-                sub_total, sub_avg, sub_per = st.tabs(
-                    ["💰 通算収支", "📊 月平均", "🀄 1半荘あたり"])
-
-                for sub_, col_, label_ in [(sub_total, "通算収支", "通算収支"),
-                                            (sub_avg, "月平均", "月平均")]:
-                    with sub_:
-                        cg, cs = st.columns(2)
-                        for col_obj, cat_key, title, icon in [
-                            (cg, "guest", "お客さん", "🧑‍🤝‍🧑"),
-                            (cs, "staff", "スタッフ", "👔"),
-                        ]:
-                            with col_obj:
-                                st.markdown(f"#### {icon} {title} Top20")
-                                d_cat = agg_pp[agg_pp["cat"] == cat_key]
-                                if d_cat.empty:
-                                    st.info("データなし")
-                                    continue
-                                ranked = assign_competition_rank(d_cat, col_, ascending=False)
-                                res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
-                                disp = pd.DataFrame({
-                                    "順位": res["順位"],
-                                    "名前": res["表示名"],
-                                    label_: res[col_].map(lambda v: f"{int(v):+,} pt"),
-                                    "月数": res["登録月数"].astype(int),
-                                    "最高月": res["最高月"].map(lambda v: f"{int(v):+,}"),
-                                    "最低月": res["最低月"].map(lambda v: f"{int(v):+,}"),
-                                })
-                                st.dataframe(disp, hide_index=True, use_container_width=True)
-
-                # --- 1半荘あたりの収支 ---
-                with sub_per:
-                    st.caption("**収支 ÷ 打数**。同じ期間の対局データから打数を集計しています。"
-                               "打数の多い人ほど数値が安定するため、規定打数でフィルタできます。")
+                # 「1半荘あたり」で並べる場合は打数0を除外
+                d_show = agg_pp.copy()
+                if pp_sort == "1半荘あたり":
+                    d_show = d_show[d_show["1半荘あたり"].notna()]
                     min_g_pp = st.slider("規定打数 (この打数未満は非表示)", 1, 200, 20,
                                          key="rank_pp_mingames")
-                    cg2, cs2 = st.columns(2)
-                    for col_obj, cat_key, title, icon in [
-                        (cg2, "guest", "お客さん", "🧑‍🤝‍🧑"),
-                        (cs2, "staff", "スタッフ", "👔"),
-                    ]:
-                        with col_obj:
-                            st.markdown(f"#### {icon} {title} Top20")
-                            d_cat = agg_pp[(agg_pp["cat"] == cat_key)
-                                           & (agg_pp["半荘収支"].notna())
-                                           & (agg_pp["打数"] >= min_g_pp)]
-                            if d_cat.empty:
-                                st.info(f"打数{min_g_pp}戦以上の該当者がいません")
-                                continue
-                            ranked = assign_competition_rank(d_cat, "半荘収支", ascending=False)
-                            res = ranked[ranked["順位"] <= 20].reset_index(drop=True)
-                            disp = pd.DataFrame({
-                                "順位": res["順位"],
-                                "名前": res["表示名"],
-                                "1半荘あたり": res["半荘収支"].map(lambda v: f"{v:+,.1f} pt"),
-                                "通算収支": res["通算収支"].map(lambda v: f"{int(v):+,}"),
-                                "打数": res["打数"].astype(int),
-                            })
-                            st.dataframe(disp, hide_index=True, use_container_width=True)
+                    d_show = d_show[d_show["打数"] >= min_g_pp]
 
-                    # 打数が取れなかった人の注意喚起
-                    no_games = agg_pp[agg_pp["打数"] == 0]
-                    if not no_games.empty:
-                        st.caption(
-                            f"⚠️ 収支は登録されているが、この期間の対局データが無い人が "
-                            f"**{len(no_games)}人** います "
-                            f"({'、'.join(no_games['表示名'].head(5).tolist())}"
-                            f"{' ほか' if len(no_games) > 5 else ''})。"
-                            "この集計からは除外されています。")
+                if d_show.empty:
+                    st.warning("表示できるデータがありません")
+                else:
+                    ranked = assign_competition_rank(d_show, pp_sort, ascending=False)
+                    res = ranked.reset_index(drop=True)
+
+                    disp = pd.DataFrame({
+                        "順位": res["順位"],
+                        "名前": res["表示名"],
+                        "通算収支": res["通算収支"].map(lambda v: f"{int(v):+,}"),
+                        "月平均": res["月平均"].map(lambda v: f"{int(v):+,}"),
+                        "1半荘あたり": res["1半荘あたり"].map(
+                            lambda v: f"{v:+,.1f}" if pd.notna(v) else "—"),
+                        "打数": res["打数"].astype(int),
+                        "月数": res["登録月数"].astype(int),
+                        "最高月": res["最高月"].map(lambda v: f"{int(v):+,}"),
+                        "最低月": res["最低月"].map(lambda v: f"{int(v):+,}"),
+                    })
+                    st.dataframe(disp, hide_index=True, use_container_width=True)
+                    st.caption(f"💡 **{pp_sort}** の大きい順に並べています。単位はすべて pt。")
+
+                # 打数が取れなかった人の注意喚起
+                no_games = agg_pp[agg_pp["打数"] == 0]
+                if not no_games.empty:
+                    st.caption(
+                        f"⚠️ 収支は登録されているが、この期間の対局データが無い人が "
+                        f"**{len(no_games)}人** います "
+                        f"({'、'.join(no_games['表示名'].head(5).tolist())}"
+                        f"{' ほか' if len(no_games) > 5 else ''})。"
+                        "「1半荘あたり」での並び替え時は除外されます。")
 
                 # 期間サマリ
                 grand_pp = int(d_pp["収支pt"].sum())
