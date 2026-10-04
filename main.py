@@ -3290,6 +3290,17 @@ def _rank_to_pt(rank_pos):
     return RANKING_PT_TABLE.get(rank_pos, 0)
 
 
+def _html(s):
+    """
+    st.markdown に渡す HTML を安全化する。
+    Markdown は行頭4スペース以上をコードブロックとみなすため、
+    改行と行頭インデントを除去して1行にまとめる。
+    """
+    if not s:
+        return ""
+    return "".join(line.strip() for line in str(s).split("\n"))
+
+
 def assign_competition_rank(df, sort_col, ascending=False):
     """
     標準競争順位方式 (1224方式) で順位を付ける。
@@ -3361,7 +3372,7 @@ def render_rankpt_breakdown(breakdown):
         <span class="rankpt-bd-total-pt">{total_pt}<span class="rankpt-bd-total-unit">pt</span></span>
     </div>'''
     html += '</div>'
-    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(_html(html), unsafe_allow_html=True)
 
 
 def compute_ranking_points_all(min_games=30, from_dt=None, until_dt=None):
@@ -4201,7 +4212,7 @@ def render_paper_sheet(df):
             </td>
         </tr></tbody></table>'''
 
-        st.markdown(html, unsafe_allow_html=True)
+        st.markdown(_html(html), unsafe_allow_html=True)
 
 # ==========================================
 # 4. UI ユーティリティ (改善版)
@@ -4454,7 +4465,7 @@ def render_recent_rating_history(player_name, last_n=10):
             <td style="text-align:center;">{dan_html}</td>
         </tr>'''
     html += '</tbody></table>'
-    st.markdown(html, unsafe_allow_html=True)
+    st.markdown(_html(html), unsafe_allow_html=True)
 
 
 def render_pending_bar(location_key=""):
@@ -4808,7 +4819,7 @@ def page_personal():
                     </td>
                 </tr>'''
             html += '</tbody></table>'
-            st.markdown(html, unsafe_allow_html=True)
+            st.markdown(_html(html), unsafe_allow_html=True)
 
             # サマリバッジ
             counts = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0}
@@ -4960,7 +4971,7 @@ def page_personal():
         </tr></tbody>
     </table>
     """
-    st.markdown(stats_html, unsafe_allow_html=True)
+    st.markdown(_html(stats_html), unsafe_allow_html=True)
 
     # === 着順分布のビジュアル (バー) ===
     r1_pct = c1_cnt / games * 100
@@ -5000,7 +5011,7 @@ def page_personal():
         </div>
     </div>
     """
-    st.markdown(dist_html, unsafe_allow_html=True)
+    st.markdown(_html(dist_html), unsafe_allow_html=True)
 
     # === 連続系・現在の調子を計算 ===
     # ranks は時系列順 (df_filtered が既にソート済でない可能性があるので、日時でソート済のものを使う)
@@ -5087,7 +5098,7 @@ def page_personal():
         </tr></tbody>
     </table>
     """
-    st.markdown(streak_html, unsafe_allow_html=True)
+    st.markdown(_html(streak_html), unsafe_allow_html=True)
 
     # 折りたたみで席別成績
     with st.expander("🪑 席別成績", expanded=False):
@@ -5133,7 +5144,7 @@ def page_personal():
                 </div>
             </div>
             """
-            st.markdown(seat_bar, unsafe_allow_html=True)
+            st.markdown(_html(seat_bar), unsafe_allow_html=True)
 
         p_seat_rows = []
         for s in ["A", "B", "C"]:
@@ -6648,7 +6659,7 @@ def _page_history_overview(df):
                 </tr></tbody>
             </table>
             """
-            st.markdown(stats_html, unsafe_allow_html=True)
+            st.markdown(_html(stats_html), unsafe_allow_html=True)
 
             with st.expander("🪑 席別成績", expanded=False):
                 p_seat_rows = []
@@ -6983,7 +6994,7 @@ def page_event():
                         <td style="text-align:left;">{span}</td>
                     </tr>'''
                 html += '</tbody></table>'
-                st.markdown(html, unsafe_allow_html=True)
+                st.markdown(_html(html), unsafe_allow_html=True)
                 st.caption("🟡 1着 ／ 🔵 2着 ／ 🔴 3着 の割合")
 
     # ================= 役満回数 =================
@@ -7013,14 +7024,19 @@ def _show_event_member_rank(mem, col, unit, icon, detail_col=None, date_col=None
     res = ranked.reset_index(drop=True)
 
     medals = {1: "🥇", 2: "🥈", 3: "🥉"}
-    html = '<table class="stats-table" style="width:100%;">'
-    html += f"""<thead><tr>
-        <th style="width:54px;">順位</th>
-        <th style="text-align:left;">名前</th>
-        <th style="width:110px;">{icon} {col}</th>
-        {'<th style="text-align:left;">詳細</th>' if detail_col else ''}
-        {'<th style="width:110px;">記録日</th>' if date_col else ''}
-    </tr></thead><tbody>"""
+    # 注意: st.markdown は行頭4スペース以上をコードブロックとみなすため、
+    #       HTML は改行・インデントを入れずに1行で組み立てる
+    parts = ['<table class="stats-table" style="width:100%;">']
+    head = ('<thead><tr><th style="width:54px;">順位</th>'
+            '<th style="text-align:left;">名前</th>'
+            f'<th style="width:110px;">{icon} {col}</th>')
+    if detail_col:
+        head += '<th style="text-align:left;">詳細</th>'
+    if date_col:
+        head += '<th style="width:110px;">記録日</th>'
+    head += '</tr></thead><tbody>'
+    parts.append(head)
+
     for _, r in res.iterrows():
         pos = int(r["順位"])
         medal = medals.get(pos, "")
@@ -7030,28 +7046,26 @@ def _show_event_member_rank(mem, col, unit, icon, detail_col=None, date_col=None
         bg = "rgba(240,192,64,0.08)" if pos == 1 else "transparent"
         nm = r["表示名"] if "表示名" in r.index else r["名前"]
 
-        detail_td = ""
+        row = f'<tr style="background:{bg};">'
+        row += (f'<td style="text-align:center;font-weight:900;color:{acc};">'
+                f'{medal} {pos}</td>')
+        row += f'<td style="text-align:left;font-weight:700;">{nm}</td>'
+        row += (f'<td style="text-align:center;color:{acc};font-weight:900;'
+                f"font-family:'Zen Kaku Gothic New';font-size:1.1rem;\">"
+                f'{int(r[col])} <span style="font-size:0.75rem;">{unit}</span></td>')
         if detail_col:
             dv = str(r.get(detail_col, "")).strip()
-            detail_td = (f'<td style="text-align:left;font-size:0.82rem;'
-                         f'color:var(--text-muted);">{dv if dv else "—"}</td>')
-        date_td = ""
+            row += (f'<td style="text-align:left;font-size:0.82rem;'
+                    f'color:var(--text-muted);">{dv if dv else "—"}</td>')
         if date_col:
             dtv = str(r.get(date_col, "")).strip()
-            date_td = (f'<td style="text-align:center;font-size:0.78rem;'
-                       f'color:var(--text-muted);">{dtv if dtv else "—"}</td>')
+            row += (f'<td style="text-align:center;font-size:0.78rem;'
+                    f'color:var(--text-muted);">{dtv if dtv else "—"}</td>')
+        row += '</tr>'
+        parts.append(row)
 
-        html += f'''<tr style="background:{bg};">
-            <td style="text-align:center;font-weight:900;color:{acc};">{medal} {pos}</td>
-            <td style="text-align:left;font-weight:700;">{nm}</td>
-            <td style="text-align:center;color:{acc};font-weight:900;
-                       font-family:'Zen Kaku Gothic New';font-size:1.1rem;">
-                {int(r[col])} <span style="font-size:0.75rem;">{unit}</span></td>
-            {detail_td}
-            {date_td}
-        </tr>'''
-    html += '</tbody></table>'
-    st.markdown(html, unsafe_allow_html=True)
+    parts.append('</tbody></table>')
+    st.markdown("".join(parts), unsafe_allow_html=True)
 
 
 def page_profit_pt():
@@ -7431,7 +7445,7 @@ def render_score_sheet(df_day):
         html += ("　".join(parts) + f'　/　計 <strong>{total_pieces}</strong>枚') if parts else f'計 {len(df_tbl)} 戦'
         html += '</td></tr>'
         html += '</tbody></table></div>'
-        st.markdown(html, unsafe_allow_html=True)
+        st.markdown(_html(html), unsafe_allow_html=True)
 
         # プレイヤー別の内訳 (検算用)
         if player_counts:
@@ -8412,7 +8426,7 @@ def page_ranking():
                             <td style="text-align:center;color:var(--text-muted);">{int(r["games"])}</td>
                         </tr>'''
                     html += '</tbody></table>'
-                    st.markdown(html, unsafe_allow_html=True)
+                    st.markdown(_html(html), unsafe_allow_html=True)
                 else:
                     st.info("データなし")
 
@@ -8456,7 +8470,7 @@ def page_ranking():
                             <td style="text-align:center;color:var(--text-muted);">{int(r["games"])}</td>
                         </tr>'''
                     html += '</tbody></table>'
-                    st.markdown(html, unsafe_allow_html=True)
+                    st.markdown(_html(html), unsafe_allow_html=True)
                 else:
                     st.info("データなし")
 
@@ -8921,7 +8935,7 @@ def page_ranking():
                         <td style="text-align:left;">{period_html}</td>
                     </tr>'''
                 html += '</tbody></table>'
-                st.markdown(html, unsafe_allow_html=True)
+                st.markdown(_html(html), unsafe_allow_html=True)
 
     with t24:
         st.caption("各プレイヤーが**連続100半荘**でもっとも良い平均着順を出した期間を抽出。100半荘未満のプレイヤーは非表示です。")
@@ -8982,7 +8996,7 @@ def page_ranking():
                 <td style="text-align:center;color:{col};font-weight:700;">{th_display} pt</td>
             </tr>'''
         dan_table_html += '</tbody></table>'
-        st.markdown(dan_table_html, unsafe_allow_html=True)
+        st.markdown(_html(dan_table_html), unsafe_allow_html=True)
 
     # 手動再計算ボタン
     with st.expander("⚙️ レーティング再計算 (管理用)", expanded=False):
