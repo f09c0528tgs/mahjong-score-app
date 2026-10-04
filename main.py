@@ -1243,6 +1243,82 @@ hide_style = """
                     inset 0 1px 0 rgba(255,255,255,0.08) !important;
     }
 
+    /* ========== ランキングイベント ========== */
+    .event-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+        padding: 1.6rem 1.4rem;
+        margin-bottom: 1rem;
+        background: linear-gradient(135deg,
+            rgba(240,192,64,0.18) 0%,
+            rgba(224,123,57,0.14) 50%,
+            rgba(217,90,140,0.12) 100%);
+        border: 1px solid rgba(240,192,64,0.4);
+        box-shadow: 0 8px 32px rgba(0,0,0,0.35);
+    }
+    .event-hero-bg {
+        position: absolute;
+        top: -60px; right: -40px;
+        width: 180px; height: 180px;
+        background: radial-gradient(circle, rgba(240,192,64,0.5) 0%, transparent 70%);
+        filter: blur(30px);
+        pointer-events: none;
+        animation: eventGlow 5s ease-in-out infinite;
+    }
+    @keyframes eventGlow {
+        0%, 100% { opacity: 0.5; transform: scale(1); }
+        50% { opacity: 0.85; transform: scale(1.12); }
+    }
+    .event-hero-content { position: relative; text-align: center; }
+    .event-badge {
+        display: inline-block;
+        padding: 0.28rem 0.9rem;
+        background: rgba(240,192,64,0.2);
+        border: 1px solid rgba(240,192,64,0.5);
+        border-radius: 999px;
+        font-size: 0.68rem;
+        font-weight: 900;
+        letter-spacing: 0.2em;
+        color: var(--accent);
+        margin-bottom: 0.6rem;
+    }
+    .event-title {
+        font-family: 'Zen Kaku Gothic New', sans-serif;
+        font-size: 1.7rem;
+        font-weight: 900;
+        background: linear-gradient(135deg, var(--accent) 0%, #ffd97a 50%, #e07b39 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: 0.04em;
+        line-height: 1.25;
+    }
+    .event-sub {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-top: 0.35rem;
+    }
+    @media (max-width: 640px) {
+        .event-hero { padding: 1.2rem 0.9rem; }
+        .event-title { font-size: 1.25rem; }
+        .event-sub { font-size: 0.72rem; }
+    }
+
+    /* ピンク系: ランキングイベント */
+    .menu-color-event .stButton > button::before {
+        background: linear-gradient(180deg, #ffd97a 0%, #e07b39 100%);
+    }
+    .menu-color-event .stButton > button::after {
+        background: radial-gradient(circle, #f0c040 0%, transparent 70%);
+    }
+    .menu-color-event .stButton > button:hover {
+        border-color: rgba(240,192,64,0.55) !important;
+        box-shadow: 0 10px 30px rgba(240,192,64,0.3),
+                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+    }
+
     /* ========== ホームフッター ========== */
     .home-footer {
         margin-top: 2rem;
@@ -1626,6 +1702,13 @@ SHEET_PROFIT = "daily_profits"
 SHEET_PENDING = "pending_buffer"  # 仮保存データ用の専用シート
 SHEET_RATING = "ratings"  # レーティング/段位データ
 SHEET_PLAYER_PROFIT = "player_profits"  # 個人別・月別の収支pt
+SHEET_EVENT = "event_records"  # イベント用の役満・最大飜数の記録
+
+# イベント記録シートの列
+EVENT_COLS = ["名前", "年月", "役満回数", "最大飜数", "最大飜数詳細", "備考"]
+
+# ランキングイベントの対象月 (YYYY-MM)
+EVENT_TARGET_YM = "2026-10"
 
 # 個人収支シートの列
 PLAYER_PROFIT_COLS = ["名前", "年月", "収支pt", "備考"]
@@ -1982,6 +2065,202 @@ def get_player_profit_summary(name):
         "minus_months": int((d["収支pt"] < 0).sum()),
         "rows": d,
     }
+
+
+# ==========================================
+# 2.4.6 イベント記録 (役満・最大飜数)
+# ==========================================
+@st.cache_data(ttl=60, show_spinner=False)
+def _fetch_event_records(_conn):
+    """event_records シートを読む (60秒キャッシュ)"""
+    try:
+        return _conn.read(worksheet=SHEET_EVENT, ttl=0)
+    except Exception:
+        return pd.DataFrame(columns=EVENT_COLS)
+
+
+def load_event_records(ym=None):
+    """
+    イベント用の役満・最大飜数の記録を読み込む。
+    ym を指定するとその月だけに絞る。
+    Returns: DataFrame [名前, 年月, 役満回数, 最大飜数, 最大飜数詳細, 備考]
+    """
+    conn = get_conn()
+    df = _fetch_event_records(conn)
+    if df is None or df.empty:
+        return pd.DataFrame(columns=EVENT_COLS)
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    for c in EVENT_COLS:
+        if c not in df.columns:
+            df[c] = 0 if c in ("役満回数", "最大飜数") else ""
+    df = df[EVENT_COLS].fillna("")
+    df["名前"] = df["名前"].astype(str).str.strip()
+    df["年月"] = df["年月"].astype(str).str.strip().apply(_normalize_ym)
+    for c in ("役満回数", "最大飜数"):
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0).astype(int)
+    df["最大飜数詳細"] = df["最大飜数詳細"].astype(str)
+    df["備考"] = df["備考"].astype(str)
+    df = df[(df["名前"] != "") & (df["年月"] != "")]
+    if ym:
+        df = df[df["年月"] == _normalize_ym(ym)]
+    return df.reset_index(drop=True)
+
+
+def save_event_records(df):
+    """イベント記録をシートに保存する"""
+    conn = get_conn()
+    out = df.copy()
+    for c in EVENT_COLS:
+        if c not in out.columns:
+            out[c] = 0 if c in ("役満回数", "最大飜数") else ""
+    out = out[EVENT_COLS]
+    for c in ("役満回数", "最大飜数"):
+        out[c] = pd.to_numeric(out[c], errors="coerce").fillna(0).astype(int)
+    try:
+        conn.update(worksheet=SHEET_EVENT, data=out)
+        _fetch_event_records.clear()
+        return True, None
+    except Exception as e:
+        msg = str(e)
+        if "WorksheetNotFound" in msg:
+            try:
+                conn.create(worksheet=SHEET_EVENT, data=out)
+                _fetch_event_records.clear()
+                return True, None
+            except Exception as e2:
+                return False, (f"シート '{SHEET_EVENT}' が見つからず、自動作成にも失敗しました。"
+                               f"列 [{', '.join(EVENT_COLS)}] を持つシートを作成してください。({e2})")
+        return False, msg
+
+
+def upsert_event_record(name, ym, yakuman, han, detail="", memo=""):
+    """イベント記録を1件登録/更新する (同じ 名前×年月 は上書き)"""
+    ym_norm = _normalize_ym(ym)
+    if not str(name).strip() or not ym_norm:
+        return False, "名前と年月は必須です"
+    df = load_event_records()
+    mask = (df["名前"] == str(name).strip()) & (df["年月"] == ym_norm)
+    if mask.any():
+        df.loc[mask, "役満回数"] = int(yakuman)
+        df.loc[mask, "最大飜数"] = int(han)
+        df.loc[mask, "最大飜数詳細"] = str(detail)
+        df.loc[mask, "備考"] = str(memo)
+    else:
+        df = pd.concat([df, pd.DataFrame([{
+            "名前": str(name).strip(), "年月": ym_norm,
+            "役満回数": int(yakuman), "最大飜数": int(han),
+            "最大飜数詳細": str(detail), "備考": str(memo),
+        }])], ignore_index=True)
+    df = df.sort_values(["年月", "名前"]).reset_index(drop=True)
+    return save_event_records(df)
+
+
+def delete_event_record(name, ym):
+    """イベント記録を1件削除する"""
+    ym_norm = _normalize_ym(ym)
+    df = load_event_records()
+    before = len(df)
+    df = df[~((df["名前"] == str(name).strip()) & (df["年月"] == ym_norm))].reset_index(drop=True)
+    if len(df) == before:
+        return False, "該当データが見つかりません"
+    return save_event_records(df)
+
+
+def compute_event_window_stats(ym, window=100):
+    """
+    指定月の対局データから、各プレイヤーの連続 window 半荘の最良平均着順を算出する。
+    window に満たない場合は、その月の全打数での平均着順を使う。
+
+    Returns: DataFrame
+      [名前, 打数, 平均着順, 対象打数, 開始戦, 終了戦, 開始日, 終了日,
+       1着, 2着, 3着, トップ率, ラス回避率, 規定到達]
+    """
+    df = load_score_data_effective()
+    if df is None or df.empty or "日時Obj" not in df.columns:
+        return pd.DataFrame()
+
+    ym_norm = _normalize_ym(ym)
+    if not ym_norm:
+        return pd.DataFrame()
+    try:
+        p = pd.Period(ym_norm, freq="M")
+        d = df[(df["日時Obj"] >= pd.Timestamp(p.start_time))
+               & (df["日時Obj"] <= pd.Timestamp(p.end_time))]
+    except Exception:
+        return pd.DataFrame()
+    if d.empty:
+        return pd.DataFrame()
+
+    # プレイヤーごとの時系列着順を収集
+    recs = []
+    for _, row in d.iterrows():
+        dto = row.get("日時Obj")
+        gno = row.get("GameNo", 0)
+        for seat in ["A", "B", "C"]:
+            nm = str(row.get(f"{seat}さん", "")).strip()
+            if not nm:
+                continue
+            try:
+                rk = int(float(row.get(f"{seat}着順", 0)))
+            except Exception:
+                rk = 0
+            if rk in (1, 2, 3):
+                recs.append({"name": nm, "rank": rk, "dt": dto, "game_no": gno})
+    if not recs:
+        return pd.DataFrame()
+    dr = pd.DataFrame(recs)
+
+    rows = []
+    for nm, g in dr.groupby("name"):
+        g = g.sort_values(["dt", "game_no"]).reset_index(drop=True)
+        ranks = g["rank"].tolist()
+        dts = g["dt"].tolist()
+        n = len(ranks)
+
+        if n >= window:
+            # スライディングウィンドウで最良区間を探す
+            s = sum(ranks[:window])
+            best = s / window
+            bi = 0
+            for i in range(1, n - window + 1):
+                s += ranks[i + window - 1] - ranks[i - 1]
+                a = s / window
+                if a < best:
+                    best, bi = a, i
+            be = bi + window - 1
+            seg = ranks[bi:be + 1]
+            reached = True
+        else:
+            # 100戦に満たない場合はその月の全打数で算出
+            best = sum(ranks) / n
+            bi, be = 0, n - 1
+            seg = ranks
+            reached = False
+
+        def _d(x):
+            try:
+                return pd.to_datetime(x).strftime("%m/%d")
+            except Exception:
+                return "?"
+
+        rows.append({
+            "名前": nm,
+            "打数": n,
+            "平均着順": best,
+            "対象打数": len(seg),
+            "開始戦": bi + 1,
+            "終了戦": be + 1,
+            "開始日": _d(dts[bi]),
+            "終了日": _d(dts[be]),
+            "1着": seg.count(1),
+            "2着": seg.count(2),
+            "3着": seg.count(3),
+            "トップ率": seg.count(1) / len(seg) * 100,
+            "ラス回避率": (len(seg) - seg.count(3)) / len(seg) * 100,
+            "規定到達": reached,
+        })
+    return pd.DataFrame(rows)
 
 
 # ==========================================
@@ -4038,6 +4317,7 @@ NAV_ITEMS = [
     ("📅", "月間PT", "monthly"),
     ("📆", "着順表", "sheets"),
     ("💴", "収支", "profitpt"),
+    ("🎊", "イベント", "event"),
 ]
 
 def render_top_nav(current_page):
@@ -4512,6 +4792,7 @@ def page_home():
 
     # メニュー項目 (絵文字, ラベル, page, カラークラス)
     menu_items = [
+        ("🎊", "ランキングイベント", "event", "event"),
         ("👤", "個人成績", "personal", "blue"),
         ("📊", "データ参照", "history", "green"),
         ("🏆", "ランキング", "ranking", "gold"),
@@ -6636,6 +6917,274 @@ def _normalize_play_type(tp):
     return None
 
 
+def page_event():
+    """ランキングイベント専用ページ"""
+    render_top_nav("event")
+    render_pending_bar(location_key="event")
+
+    # --- 月の選択 (既定はイベント対象月) ---
+    df_all = load_score_data_effective()
+    months = []
+    if df_all is not None and not df_all.empty and "日時Obj" in df_all.columns:
+        dv = df_all[df_all["日時Obj"].notna()].copy()
+        if not dv.empty:
+            months = sorted({str(p) for p in dv["日時Obj"].dt.to_period("M")}, reverse=True)
+    if not months:
+        months = [EVENT_TARGET_YM]
+    default_idx = months.index(EVENT_TARGET_YM) if EVENT_TARGET_YM in months else 0
+
+    try:
+        ev_label = pd.Period(EVENT_TARGET_YM, freq="M").strftime("%Y年%m月")
+    except Exception:
+        ev_label = EVENT_TARGET_YM
+
+    # --- ヒーローヘッダー ---
+    st.markdown(f"""
+    <div class="event-hero">
+        <div class="event-hero-bg"></div>
+        <div class="event-hero-content">
+            <div class="event-badge">🎊 RANKING EVENT</div>
+            <div class="event-title">{ev_label} ランキングイベント</div>
+            <div class="event-sub">ベスト100半荘平均着順 ／ 役満回数 ／ 最大飜数 の3部門</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    sel_ym = st.selectbox(
+        "📅 対象月", months, index=default_idx,
+        format_func=lambda s: (pd.Period(s, freq="M").strftime("%Y年%m月")
+                               + (" 🎊 イベント開催月" if s == EVENT_TARGET_YM else "")),
+        key="event_ym")
+
+    with st.spinner("集計中..."):
+        win_stats = compute_event_window_stats(sel_ym, window=100)
+        ev_rec = load_event_records(sel_ym)
+
+    t_avg, t_yaku, t_han, t_input = st.tabs([
+        "🥇 ベスト100半荘 平均着順", "🀅 役満回数", "💥 最大飜数", "✏️ 記録を入力"
+    ])
+
+    # ================= 平均着順 =================
+    with t_avg:
+        st.caption(
+            "その月の中で**連続100半荘**の平均着順が最も良かった区間を抽出します。"
+            "100半荘に満たない人は、その月の**全打数での平均着順**を表示します。")
+        if win_stats.empty:
+            st.info("この月の対局データがありません。")
+        else:
+            min_g_ev = st.slider("表示する最低打数", 1, 100, 1, key="event_min_games")
+            d = win_stats[win_stats["打数"] >= min_g_ev].copy()
+            if d.empty:
+                st.warning("該当者がいません")
+            else:
+                ranked = assign_competition_rank(d, "平均着順", ascending=True)
+                res = ranked.reset_index(drop=True)
+
+                reached_n = int(res["規定到達"].sum())
+                st.markdown(f"""
+                <div style="margin:0.4rem 0 0.8rem;">
+                    <span class="rankpt-pt">👥 参加者 <strong>{len(res)}</strong>人</span>
+                    <span class="rankpt-pt">🀄 100半荘到達 <strong>{reached_n}</strong>人</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+                medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+                html = '<table class="stats-table" style="width:100%;">'
+                html += """<thead><tr>
+                    <th style="width:54px;">順位</th>
+                    <th style="text-align:left;">名前</th>
+                    <th style="width:80px;">平均着順</th>
+                    <th style="width:150px;">着順分布</th>
+                    <th style="width:84px;">内訳</th>
+                    <th style="text-align:left;">対象区間</th>
+                </tr></thead><tbody>"""
+                for _, r in res.iterrows():
+                    pos = int(r["順位"])
+                    medal = medals.get(pos, "")
+                    acc = ("var(--accent)" if pos == 1 else
+                           "#c8cddc" if pos == 2 else
+                           "#e07b39" if pos == 3 else "var(--text-primary)")
+                    bg = "rgba(240,192,64,0.08)" if pos == 1 else "transparent"
+
+                    tgt = int(r["対象打数"])
+                    c1_, c2_, c3_ = int(r["1着"]), int(r["2着"]), int(r["3着"])
+                    p1 = c1_ / tgt * 100
+                    p2 = c2_ / tgt * 100
+                    p3 = c3_ / tgt * 100
+                    dist = f'''<div style="display:flex;height:20px;border-radius:4px;
+                                overflow:hidden;border:1px solid var(--border);
+                                font-size:0.62rem;font-weight:800;">
+                        <div style="width:{max(p1,0.1)}%;background:#f0c040;color:#1a1d2e;
+                            display:flex;align-items:center;justify-content:center;">
+                            {f'{p1:.0f}%' if p1 >= 16 else ''}</div>
+                        <div style="width:{max(p2,0.1)}%;background:#5b9cf6;color:#fff;
+                            display:flex;align-items:center;justify-content:center;">
+                            {f'{p2:.0f}%' if p2 >= 16 else ''}</div>
+                        <div style="width:{max(p3,0.1)}%;background:#e05c5c;color:#fff;
+                            display:flex;align-items:center;justify-content:center;">
+                            {f'{p3:.0f}%' if p3 >= 16 else ''}</div>
+                    </div>'''
+
+                    if r["規定到達"]:
+                        span = f'''<div style="font-size:0.82rem;font-weight:600;">
+                                📅 {r["開始日"]} 〜 {r["終了日"]}</div>
+                            <div style="font-size:0.72rem;color:var(--text-muted);">
+                                第{int(r["開始戦"])}戦目 〜 第{int(r["終了戦"])}戦目
+                                （月内 全{int(r["打数"])}戦中の100戦）</div>'''
+                    else:
+                        span = f'''<div style="font-size:0.82rem;font-weight:600;">
+                                📅 {r["開始日"]} 〜 {r["終了日"]}</div>
+                            <div style="font-size:0.72rem;color:var(--orange,#e07b39);">
+                                ⚠️ 100半荘未満のため全{int(r["打数"])}戦の平均</div>'''
+
+                    html += f'''<tr style="background:{bg};">
+                        <td style="text-align:center;font-weight:900;color:{acc};">{medal} {pos}</td>
+                        <td style="text-align:left;font-weight:700;">{r["名前"]}</td>
+                        <td style="text-align:center;color:{acc};font-weight:900;
+                                   font-family:'Zen Kaku Gothic New';font-size:1.05rem;">
+                            {r["平均着順"]:.3f}</td>
+                        <td>{dist}</td>
+                        <td style="text-align:center;font-size:0.72rem;">
+                            🥇{c1_} 🥈{c2_} 🥉{c3_}<br>
+                            <span style="color:var(--text-muted);">{tgt}戦</span></td>
+                        <td style="text-align:left;">{span}</td>
+                    </tr>'''
+                html += '</tbody></table>'
+                st.markdown(html, unsafe_allow_html=True)
+                st.caption("🟡 1着 ／ 🔵 2着 ／ 🔴 3着 の割合")
+
+    # ================= 役満回数 =================
+    with t_yaku:
+        st.caption(f"{ev_label} に出た役満の回数。「✏️ 記録を入力」から登録します。")
+        _show_event_simple_rank(ev_rec, "役満回数", "回", "🀅")
+
+    # ================= 最大飜数 =================
+    with t_han:
+        st.caption(f"{ev_label} に記録した最大飜数。「✏️ 記録を入力」から登録します。")
+        _show_event_simple_rank(ev_rec, "最大飜数", "飜", "💥", detail_col="最大飜数詳細")
+
+    # ================= 入力 =================
+    with t_input:
+        st.markdown("### ✏️ 役満・最大飜数を登録")
+        st.caption("同じ「名前 × 年月」は上書きされます。対局データから自動計算できない項目のため手入力です。")
+        members = get_all_member_names()
+        ic1, ic2 = st.columns([2, 1])
+        with ic1:
+            if members:
+                nm_opts = ["--選択--"] + members
+                ev_name = st.selectbox("名前", nm_opts, key="ev_name")
+            else:
+                ev_name = st.text_input("名前", key="ev_name_text")
+        with ic2:
+            st.text_input("年月", value=sel_ym, disabled=True, key="ev_ym_disp")
+
+        ic3, ic4 = st.columns(2)
+        with ic3:
+            ev_yaku = st.number_input("役満回数", value=0, min_value=0, step=1, key="ev_yaku")
+        with ic4:
+            ev_han = st.number_input("最大飜数", value=0, min_value=0, step=1, key="ev_han")
+        ev_detail = st.text_input("最大飜数の詳細 (役名など・任意)", key="ev_detail")
+        ev_memo = st.text_input("備考 (任意)", key="ev_memo")
+
+        tgt_name = ev_name if ev_name and ev_name != "--選択--" else ""
+        if tgt_name and not ev_rec.empty:
+            ex = ev_rec[ev_rec["名前"] == tgt_name]
+            if not ex.empty:
+                e = ex.iloc[0]
+                st.info(f"📝 既存データ: 役満 **{int(e['役満回数'])}回** / "
+                        f"最大 **{int(e['最大飜数'])}飜**。保存すると上書きされます。")
+
+        bc1, _ = st.columns([1, 3])
+        with bc1:
+            if st.button("💾 保存", type="primary", disabled=not tgt_name,
+                         use_container_width=True):
+                ok, err = upsert_event_record(tgt_name, sel_ym, int(ev_yaku),
+                                              int(ev_han), ev_detail, ev_memo)
+                if ok:
+                    st.success(f"✅ {tgt_name} の記録を保存しました")
+                    st.rerun()
+                else:
+                    st.error(f"❌ 保存に失敗: {err}")
+        if not tgt_name:
+            st.warning("⚠️ 名前を選択してください")
+
+        if not ev_rec.empty:
+            st.divider()
+            st.markdown("#### 📋 登録済みの記録")
+            show = ev_rec[["名前", "役満回数", "最大飜数", "最大飜数詳細", "備考"]]
+            st.dataframe(show, hide_index=True, use_container_width=True)
+            with st.expander("🗑 記録を削除", expanded=False):
+                opts = [f"{r['名前']} (役満{int(r['役満回数'])}回 / 最大{int(r['最大飜数'])}飜)"
+                        for _, r in ev_rec.iterrows()]
+                di = st.selectbox("削除する記録", range(len(opts)),
+                                  format_func=lambda i: opts[i], key="ev_del")
+                if st.button("🗑 削除する", use_container_width=True):
+                    row = ev_rec.iloc[di]
+                    ok, err = delete_event_record(row["名前"], row["年月"])
+                    if ok:
+                        st.success("✅ 削除しました")
+                        st.rerun()
+                    else:
+                        st.error(f"❌ {err}")
+
+        with st.expander("ℹ️ スプレッドシートの設定", expanded=False):
+            st.markdown(f"""
+            イベント記録は **`{SHEET_EVENT}`** シートに保存されます。
+
+            **列構成**: `{' / '.join(EVENT_COLS)}`
+
+            | 名前 | 年月 | 役満回数 | 最大飜数 | 最大飜数詳細 | 備考 |
+            |---|---|---|---|---|---|
+            | 加藤 | {EVENT_TARGET_YM} | 1 | 12 | 国士無双 | |
+
+            シートに直接書き込んでもアプリに反映されます。
+            """)
+
+
+def _show_event_simple_rank(ev_rec, col, unit, icon, detail_col=None):
+    """イベントの役満回数・最大飜数ランキングを表示する共通処理"""
+    if ev_rec.empty:
+        st.info("まだ記録が登録されていません。「✏️ 記録を入力」から登録してください。")
+        return
+    d = ev_rec[ev_rec[col] > 0].copy()
+    if d.empty:
+        st.info(f"{col}の記録がまだありません。")
+        return
+    ranked = assign_competition_rank(d, col, ascending=False)
+    res = ranked.reset_index(drop=True)
+
+    medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+    html = '<table class="stats-table" style="width:100%;">'
+    html += f"""<thead><tr>
+        <th style="width:54px;">順位</th>
+        <th style="text-align:left;">名前</th>
+        <th style="width:110px;">{icon} {col}</th>
+        {'<th style="text-align:left;">詳細</th>' if detail_col else ''}
+    </tr></thead><tbody>"""
+    for _, r in res.iterrows():
+        pos = int(r["順位"])
+        medal = medals.get(pos, "")
+        acc = ("var(--accent)" if pos == 1 else
+               "#c8cddc" if pos == 2 else
+               "#e07b39" if pos == 3 else "var(--text-primary)")
+        bg = "rgba(240,192,64,0.08)" if pos == 1 else "transparent"
+        detail_td = ""
+        if detail_col:
+            dv = str(r.get(detail_col, "")).strip()
+            detail_td = (f'<td style="text-align:left;font-size:0.82rem;'
+                         f'color:var(--text-muted);">{dv if dv else "—"}</td>')
+        html += f'''<tr style="background:{bg};">
+            <td style="text-align:center;font-weight:900;color:{acc};">{medal} {pos}</td>
+            <td style="text-align:left;font-weight:700;">{r["名前"]}</td>
+            <td style="text-align:center;color:{acc};font-weight:900;
+                       font-family:'Zen Kaku Gothic New';font-size:1.1rem;">
+                {int(r[col])} <span style="font-size:0.75rem;">{unit}</span></td>
+            {detail_td}
+        </tr>'''
+    html += '</tbody></table>'
+    st.markdown(html, unsafe_allow_html=True)
+
+
 def page_profit_pt():
     """個人収支 (月別pt) の入力・閲覧ページ"""
     render_top_nav("profitpt")
@@ -8597,4 +9146,5 @@ elif page == "ranking":  page_ranking()
 elif page == "monthly":  page_monthly()
 elif page == "sheets":   page_sheets()
 elif page == "profitpt": page_profit_pt()
+elif page == "event":    page_event()
 else:                    page_home()
