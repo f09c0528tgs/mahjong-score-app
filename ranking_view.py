@@ -13,7 +13,6 @@ import time
 import streamlit as st
 import pandas as pd
 from datetime import datetime, date, timedelta, timezone
-from streamlit_gsheets import GSheetsConnection
 
 JST = timezone(timedelta(hours=9), 'JST')
 
@@ -142,11 +141,60 @@ button[data-testid="stBaseButton-segmented_controlActive"] * { color: #000000 !i
     color: var(--text-muted) !important; opacity: 1 !important;
 }
 
-/* お知らせ枠 (st.info / success / warning / error)。既定の文字色は背景と同系色で読みにくいので、明るい色にする */
+/* お知らせ枠 (st.info / success / warning / error)。
+   既定の色はテーマ (ライト/ダーク) で変わり、ライトだと「明るい背景×明るい文字」になる。
+   テーマに関係なく、暗い色付き背景×明るい文字に固定する */
+[data-testid="stAlertContainer"] { opacity: 1 !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"])    { background: #1d3550 !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { background: #173d2c !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { background: #4a3c12 !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"])   { background: #4d1f22 !important; }
 [data-testid="stAlertContentInfo"], [data-testid="stAlertContentInfo"] * { color: #b9dcff !important; }
 [data-testid="stAlertContentSuccess"], [data-testid="stAlertContentSuccess"] * { color: #b4f0cc !important; }
 [data-testid="stAlertContentWarning"], [data-testid="stAlertContentWarning"] * { color: #ffe7a3 !important; }
 [data-testid="stAlertContentError"], [data-testid="stAlertContentError"] * { color: #ffc9c9 !important; }
+
+/* ===== テーマ (ライト/ダーク) に左右されないように、入力まわりの色を固定する =====
+   サーバー側で config.toml のダークテーマが効いていない (ライトテーマで動いている) と、
+   Streamlit 既定の「白背景×濃い文字」と、このCSSの「暗い背景×明るい文字」が混ざって読めなくなるため */
+[data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="base-input"],
+[data-baseweb="input"] input, [data-baseweb="textarea"], textarea {
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: rgba(255,255,255,0.18) !important;
+}
+[data-baseweb="select"] *, [data-baseweb="input"] input, textarea {
+    color: var(--text-primary) !important;
+    -webkit-text-fill-color: var(--text-primary) !important;
+}
+[data-baseweb="select"] svg { fill: var(--text-primary) !important; color: var(--text-primary) !important; }
+input::placeholder, textarea::placeholder {
+    color: #a3a8bc !important; -webkit-text-fill-color: #a3a8bc !important; opacity: 1 !important;
+}
+/* 名前欄の「名前を選択」(プレースホルダ) */
+[data-baseweb="select"] [id$="placeholder"], [data-baseweb="select"] div[aria-hidden="true"] {
+    color: #a3a8bc !important; -webkit-text-fill-color: #a3a8bc !important;
+}
+/* 折りたたみ (日時・備考) */
+[data-testid="stExpander"] details, [data-testid="stExpander"] summary {
+    background: var(--bg-card) !important; color: var(--text-primary) !important;
+    border-color: rgba(255,255,255,0.18) !important;
+}
+[data-testid="stExpander"] summary *, [data-testid="stExpander"] summary svg {
+    color: var(--text-primary) !important; fill: var(--text-primary) !important;
+}
+/* チェックボックス・ラジオの文字 */
+[data-testid="stCheckbox"] *, [data-testid="stRadio"] label * { color: var(--text-primary) !important; }
+/* タイプ・着順のボタン (選ばれていないもの) */
+button[data-testid="stBaseButton-segmented_control"] {
+    background: var(--bg-card) !important;
+    color: var(--text-primary) !important;
+    border-color: rgba(255,255,255,0.25) !important;
+}
+button[data-testid="stBaseButton-segmented_control"] * { color: var(--text-primary) !important; }
+/* 卓番・セットの −/＋ ボタン */
+button[data-testid^="stNumberInputStep"] { background: #2f3550 !important; color: #ffffff !important; }
+button[data-testid^="stNumberInputStep"] svg { color: inherit !important; fill: currentColor !important; }
 
 /* 入力欄の見出し (卓番・日付 など)。使えない状態でも読めるようにする */
 [data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] * {
@@ -250,7 +298,7 @@ hr { border-color: var(--border) !important; opacity: 0.4 !important; }
     line-height: 1.2;
 }
 .paper-table .name-type {
-    font-size: 0.6rem; color: #4f3f14; margin-left: 2px;
+    font-size: 0.6rem; color: #4f3f14; margin-left: 2px; white-space: nowrap;
     background: #efe8d2; padding: 0 3px; border-radius: 3px;
     vertical-align: middle;
 }
@@ -340,16 +388,138 @@ RANK_OPTIONS = [1, 2, 3]
 # ==========================================
 # 3. データ読み書き
 # ==========================================
-def get_conn():
-    return st.connection("gsheets", type=GSheetsConnection)
+# --- 接続 ---
+# st-gsheets-connection (st.connection) は、読み書きのたびに「スプレッドシートを開く → シートを探す → 読む」で
+# 3回通信し、保存はシート全体を消して書き直す。遅いので、このアプリは gspread を直接使う。
+#   - 接続とシート情報は使い回す (st.cache_resource)
+#   - 表示用の読み込みは score / members / fee_collections を1回の通信でまとめて取る (values_batch_get)
+#   - 成績の保存は「末尾に1行追記」(append_row)。他の行には触らないので、他端末の入力を消すこともない
+# 接続情報は今までどおり .streamlit/secrets.toml の [connections.gsheets] を使う。
+
+class SheetMissing(Exception):
+    """シートが存在しない"""
+
+
+def _is_sheet_missing(err):
+    """gspread の WorksheetNotFound はメッセージがシート名だけなので、例外の型で判定する"""
+    if isinstance(err, SheetMissing):
+        return True
+    return any(c.__name__ == "WorksheetNotFound" for c in type(err).__mro__)
+
+
+def _status_code(err):
+    resp = getattr(err, "response", None)
+    return getattr(resp, "status_code", None)
+
+
+def _with_retry(fn, write=False):
+    """
+    通信が混み合ったとき (429) や Google 側の一時エラー (5xx) なら、少し待ってやり直す。
+    書き込みは「実は成功していた」のに二重に書くのを避けるため、確実に受け付けられていない 429 のときだけやり直す。
+    """
+    for i in range(3):
+        try:
+            return fn()
+        except Exception as e:
+            code = _status_code(e)
+            retryable = code == 429 or (not write and code is not None and code >= 500)
+            if i < 2 and retryable:
+                time.sleep(1.0 * (i + 1))
+                continue
+            raise
+
+
+@st.cache_resource(show_spinner=False)
+def _get_spreadsheet():
+    """スプレッドシートへの接続 (アプリ全体で使い回す)"""
+    import gspread
+    info = dict(st.secrets["connections"]["gsheets"])
+    target = info.pop("spreadsheet", None)
+    folder_id = info.pop("worksheet", None)
+    if info.get("type") != "service_account":
+        raise RuntimeError("secrets.toml の [connections.gsheets] にサービスアカウントの設定が必要です（保存に必要）")
+    client = gspread.service_account_from_dict(info)
+    if str(target).startswith("http"):
+        return client.open_by_url(target)
+    return client.open(target, folder_id=folder_id) if folder_id else client.open(target)
+
+
+@st.cache_resource(show_spinner=False)
+def _sheet_meta():
+    """シート (Worksheet) と、各シートの見出し行の使い回し用"""
+    return {"ws": {}, "titles": None, "header": {}}
+
+
+def _sheet_titles(refresh=False):
+    meta = _sheet_meta()
+    if refresh or meta["titles"] is None:
+        wss = _with_retry(lambda: _get_spreadsheet().worksheets())
+        meta["titles"] = [w.title for w in wss]
+        meta["ws"].update({w.title: w for w in wss})
+    return meta["titles"]
+
+
+def _get_ws(name):
+    """シートを返す。無ければ (他端末で作られた可能性があるので一度だけ確認し直してから) SheetMissing"""
+    meta = _sheet_meta()
+    if name not in meta["ws"]:
+        if name not in _sheet_titles(refresh=True):
+            raise SheetMissing(name)
+    return meta["ws"][name]
+
+
+def _values_to_df(values, keep_row=False):
+    """シートの値 (2次元リスト) を DataFrame に。1行目が見出し。空行は除く。keep_row なら _row (シート上の行番号) を付ける"""
+    if not values:
+        return pd.DataFrame()
+    header = [str(h).strip() for h in values[0]]
+    width = len(header)
+    rows, row_nos = [], []
+    for n, r in enumerate(values[1:], start=2):
+        r = (list(r) + [""] * width)[:width]
+        if any(str(c).strip() for c in r):
+            rows.append(r)
+            row_nos.append(n)
+    df = pd.DataFrame(rows, columns=header)
+    df = df.loc[:, [c != "" for c in df.columns]]
+    df = df.loc[:, ~df.columns.duplicated()]
+    if keep_row:
+        df["_row"] = row_nos
+    return df
+
+
+def _batch_read(names, keep_row=False):
+    """複数のシートを1回の通信で読む。存在しないシートは空の DataFrame。"""
+    titles = _sheet_titles()
+    exist = [n for n in names if n in titles]
+    out = {n: pd.DataFrame() for n in names}
+    if exist:
+        res = _with_retry(lambda: _get_spreadsheet().values_batch_get([f"'{n}'" for n in exist]))
+        for n, vr in zip(exist, res.get("valueRanges", [])):
+            out[n] = _values_to_df(vr.get("values", []), keep_row=keep_row)
+    return out
+
 
 @st.cache_data(ttl=60, show_spinner=False)
-def _fetch_sheet(_conn, sheet_name):
-    """シート読み込み (60秒キャッシュ、エラー時は空DF)"""
+def _fetch_all():
+    """表示用: 成績・メンバー・集金記録をまとめて読む (60秒キャッシュ)"""
+    return _batch_read([SHEET_SCORE, SHEET_MEMBER, SHEET_FEE])
+
+
+def clear_cache():
+    _fetch_all.clear()
+
+
+def _get_all_or_stop():
     try:
-        return _conn.read(worksheet=sheet_name, ttl=0)
-    except Exception:
-        return pd.DataFrame()
+        return _fetch_all()
+    except Exception as e:
+        st.error(f"スプレッドシートを読み込めませんでした。少し待ってから「再読み込み」を押してください。（{type(e).__name__}: {e}）")
+        if st.button("🔄 再読み込み", key="reload_err"):
+            clear_cache()
+            st.rerun()
+        st.stop()
+
 
 def process_score_df(df):
     if df is None or df.empty:
@@ -369,14 +539,12 @@ def process_score_df(df):
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
     return df
 
+
 def load_score_data():
-    conn = get_conn()
-    df = _fetch_sheet(conn, SHEET_SCORE)
-    processed = process_score_df(df)
+    processed = process_score_df(_get_all_or_stop()[SHEET_SCORE])
     if processed is None:
-        _fetch_sheet.clear()
-        df = _fetch_sheet(conn, SHEET_SCORE)
-        processed = process_score_df(df)
+        clear_cache()
+        processed = process_score_df(_get_all_or_stop()[SHEET_SCORE])
     if processed is None:
         st.error("スプレッドシートの列名が想定と異なります。管理者に連絡してください。")
         st.stop()
@@ -433,13 +601,12 @@ def _guess_type_from_name(name):
     return "A客"
 
 
-@st.cache_data(ttl=60, show_spinner=False)
-def load_members(_conn):
+def load_members():
     """
     メンバー一覧と、メンバーシートに書かれたタイプ (正規化済み) を取得。
     Returns: (names: list, member_type: dict 名前→タイプ。タイプ欄が空・読めない人は入らない)
     """
-    df = _fetch_sheet(_conn, SHEET_MEMBER)
+    df = _get_all_or_stop()[SHEET_MEMBER]
     if df.empty or "名前" not in df.columns:
         return [], {}
     df = df.fillna("")
@@ -489,61 +656,50 @@ def resolve_player_type(name, member_type, last_types):
         return last_types[name], "前回の対局"
     return _guess_type_from_name(name), "名前から推測"
 
-def _fetch_sheet_fresh(conn, sheet_name):
-    """保存直前用: キャッシュを使わずに読む。失敗時は最大3回リトライし、それでも駄目なら例外。"""
-    for i in range(3):
-        try:
-            return conn.read(worksheet=sheet_name, ttl=0)
-        except Exception:
-            if i < 2:
-                time.sleep(2)
-                continue
-            raise
+def _header(name, refresh=False):
+    """シートの見出し行 (使い回す)"""
+    meta = _sheet_meta()
+    if refresh or name not in meta["header"]:
+        ws = _get_ws(name)
+        meta["header"][name] = [str(h).strip() for h in _with_retry(lambda: ws.row_values(1))]
+    return meta["header"][name]
+
+
+def _append(name, row_dict, cols):
+    """シートの末尾に1行追記する (見出しの並びに合わせる)。日付などはスプレッドシートの手入力と同じ扱い (USER_ENTERED)"""
+    ws = _get_ws(name)
+    header = _header(name)
+    if any(c not in header for c in cols):
+        header = _header(name, refresh=True)
+        missing = [c for c in cols if c not in header]
+        if missing:
+            raise RuntimeError(f"'{name}' シートに列が見つかりません: {missing}")
+    values = [row_dict.get(h, "") for h in header]
+    _with_retry(lambda: ws.append_row(values, value_input_option="USER_ENTERED", table_range="A1"),
+                write=True)
 
 
 def append_score_row(row_dict):
     """
-    scoreシートに1行追加する。GameNo はここで最新データから採番する。
-    シート全体を上書き保存するため、必ずキャッシュを使わず最新を読んでから追記する
-    (他端末で入力された行を消さないため)。読み込みに失敗したら保存しない。
+    score シートの末尾に1行追記する。GameNo は保存直前に GameNo 列だけ読んで (最大値+1) 決める。
+    シート全体を書き直さないので、他端末で入力された行を消すことはない。
     Returns: (ok, game_no or None, err or None)
     """
-    conn = get_conn()
     try:
-        _fetch_sheet.clear()
-        raw = _fetch_sheet_fresh(conn, SHEET_SCORE)
-        if raw is None:
-            return False, None, "スプレッドシートを読み込めませんでした"
-        current = raw.copy()
-        current.columns = current.columns.astype(str).str.strip()
-        if not current.empty:
-            missing = [c for c in EXPECTED_COLS if c not in current.columns]
-            if missing:
-                return False, None, f"列が見つかりません: {missing}"
-        for c in EXPECTED_COLS:
-            if c not in current.columns:
-                current[c] = ""
-        current = current[EXPECTED_COLS]
-
-        game_no = get_next_game_no(current)
+        ws = _get_ws(SHEET_SCORE)
+        header = _header(SHEET_SCORE)
+        if "GameNo" not in header:
+            header = _header(SHEET_SCORE, refresh=True)
+        col = header.index("GameNo") + 1
+        nos = pd.to_numeric(pd.Series(_with_retry(lambda: ws.col_values(col))[1:], dtype=object), errors="coerce")
+        game_no = int(nos.max()) + 1 if nos.notna().any() else 1
         new_row = dict(row_dict)
         new_row["GameNo"] = game_no
-        new_row_df = pd.DataFrame([new_row])
-        for c in EXPECTED_COLS:
-            if c not in new_row_df.columns:
-                new_row_df[c] = ""
-        new_row_df = new_row_df[EXPECTED_COLS]
-
-        merged = pd.concat([current, new_row_df], ignore_index=True)
-        conn.update(worksheet=SHEET_SCORE, data=merged)
-        _fetch_sheet.clear()
+        _append(SHEET_SCORE, new_row, EXPECTED_COLS)
+        clear_cache()
         return True, game_no, None
     except Exception as e:
-        return False, None, str(e)
-
-def _is_sheet_missing(err):
-    msg = str(err)
-    return "WorksheetNotFound" in msg or "not found" in msg.lower()
+        return False, None, f"{type(e).__name__}: {e}"
 
 
 def _clean_fee_df(df):
@@ -555,7 +711,8 @@ def _clean_fee_df(df):
     for c in FEE_COLS:
         if c not in df.columns:
             df[c] = ""
-    df = df[FEE_COLS]
+    keep = FEE_COLS + (["_row"] if "_row" in df.columns else [])
+    df = df[keep]
     df["TableNo"] = pd.to_numeric(df["TableNo"], errors="coerce")
     df["LastGameNo"] = pd.to_numeric(df["LastGameNo"], errors="coerce")
     df = df.dropna(subset=["TableNo", "LastGameNo"])
@@ -569,50 +726,52 @@ def _clean_fee_df(df):
 
 def load_fee_collections():
     """集金記録 (表示用、60秒キャッシュ)。シートがまだ無ければ空。"""
-    return _clean_fee_df(_fetch_sheet(get_conn(), SHEET_FEE))
+    return _clean_fee_df(_get_all_or_stop()[SHEET_FEE])
 
 
-def _read_fee_fresh(conn):
-    """保存直前用に集金記録を最新で読む。シートが無いだけなら空を返し、それ以外の失敗は例外。"""
+def _read_score_and_fee_fresh():
+    """保存直前用: 成績と集金記録を最新で (1回の通信で) 読む。fee には _row (シート上の行番号) が付く"""
+    _sheet_titles(refresh=True)   # 他端末で fee_collections が作られていても拾えるように
+    got = _batch_read([SHEET_SCORE, SHEET_FEE], keep_row=True)
+    df_score = process_score_df(got[SHEET_SCORE].drop(columns="_row", errors="ignore"))
+    if df_score is None:
+        raise RuntimeError("成績シートの列名が想定と異なります")
+    return df_score, _clean_fee_df(got[SHEET_FEE])
+
+
+def _ensure_fee_sheet():
+    """fee_collections シートが無ければ作る (見出し行つき)"""
     try:
-        return _clean_fee_df(_fetch_sheet_fresh(conn, SHEET_FEE))
-    except Exception as e:
-        if _is_sheet_missing(e):
-            return _clean_fee_df(None)
-        raise
-
-
-def _write_fee(conn, df):
-    """集金記録を上書き保存。シートが無ければ作成する。"""
-    out = df[FEE_COLS].copy()
+        return _get_ws(SHEET_FEE)
+    except SheetMissing:
+        pass
     try:
-        conn.update(worksheet=SHEET_FEE, data=out)
+        ws = _with_retry(lambda: _get_spreadsheet().add_worksheet(title=SHEET_FEE, rows=200, cols=len(FEE_COLS)),
+                         write=True)
     except Exception as e:
-        if not _is_sheet_missing(e):
-            raise
-        try:
-            conn.create(worksheet=SHEET_FEE, data=out)
-        except Exception as e2:
-            raise RuntimeError(
-                f"'{SHEET_FEE}' シートが見つからず、自動作成にも失敗しました。"
-                f"スプレッドシートに列 [{', '.join(FEE_COLS)}] を持つ '{SHEET_FEE}' シートを作ってください。({e2})"
-            )
-    _fetch_sheet.clear()
+        # 同時に他端末が作った場合など
+        if SHEET_FEE in _sheet_titles(refresh=True):
+            return _get_ws(SHEET_FEE)
+        raise RuntimeError(
+            f"'{SHEET_FEE}' シートを自動で作れませんでした。スプレッドシートに '{SHEET_FEE}' シートを作り、"
+            f"1行目に [{', '.join(FEE_COLS)}] と入れてください。（{type(e).__name__}: {e}）")
+    _with_retry(lambda: ws.update([FEE_COLS], "A1"), write=True)
+    meta = _sheet_meta()
+    meta["ws"][SHEET_FEE] = ws
+    meta["header"][SHEET_FEE] = list(FEE_COLS)
+    if meta["titles"] is not None and SHEET_FEE not in meta["titles"]:
+        meta["titles"].append(SHEET_FEE)
+    return ws
 
 
 def collect_game_fee(table_no):
     """
     指定卓のゲーム代を集める (= 着順表に区切りを入れる)。
-    他の端末の入力を取りこぼさないよう、成績も集金記録も最新を読み直してから計算・保存する。
+    他の端末の入力を取りこぼさないよう、成績も集金記録も最新を読み直してから計算し、集金記録に1行追記する。
     Returns: (ok, message, fee_info or None)
     """
-    conn = get_conn()
     try:
-        _fetch_sheet.clear()
-        df_score = process_score_df(_fetch_sheet_fresh(conn, SHEET_SCORE))
-        if df_score is None:
-            return False, "成績シートの列名が想定と異なります", None
-        fees = _read_fee_fresh(conn)
+        df_score, fees = _read_score_and_fee_fresh()
         df_open = get_open_section_games(df_score, fees, table_no, get_today_logical_date())
         if df_open.empty:
             return False, "前回の集金のあとの対局がありません", None
@@ -624,29 +783,30 @@ def collect_game_fee(table_no):
             "枚数": info["total"],
             "内訳": fee_breakdown_text(info),
         }
-        _write_fee(conn, pd.concat([fees, pd.DataFrame([new_row])], ignore_index=True))
+        _ensure_fee_sheet()
+        _append(SHEET_FEE, new_row, FEE_COLS)
+        clear_cache()
         return True, None, info
     except Exception as e:
-        return False, str(e), None
+        return False, f"{type(e).__name__}: {e}", None
 
 
 def undo_last_fee_collection(table_no, target_date):
-    """指定卓の、指定日の最後の集金 (区切り) を取り消す。対局データには触らない。"""
-    conn = get_conn()
+    """指定卓の、指定日の最後の集金 (区切り) を1行削除して取り消す。対局データには触らない。"""
     try:
-        _fetch_sheet.clear()
-        df_score = process_score_df(_fetch_sheet_fresh(conn, SHEET_SCORE))
-        fees = _read_fee_fresh(conn)
+        df_score, fees = _read_score_and_fee_fresh()
         day_nos = set(df_score.loc[(df_score["論理日付"] == target_date)
                                    & (df_score["TableNo"] == int(table_no)), "GameNo"])
         cand = fees[(fees["TableNo"] == int(table_no)) & fees["LastGameNo"].isin(day_nos)]
         if cand.empty:
             return False, "取り消せる集金がありません"
-        drop_idx = cand["LastGameNo"].idxmax()
-        _write_fee(conn, fees.drop(index=drop_idx))
+        row_no = int(cand.loc[cand["LastGameNo"].idxmax(), "_row"])
+        ws = _get_ws(SHEET_FEE)
+        _with_retry(lambda: ws.delete_rows(row_no), write=True)
+        clear_cache()
         return True, None
     except Exception as e:
-        return False, str(e)
+        return False, f"{type(e).__name__}: {e}"
 
 
 # ==========================================
@@ -882,10 +1042,9 @@ def _clear_seats():
 def page_input():
     st.title("📝 成績を付ける")
 
-    conn = get_conn()
     with st.spinner("データ読込中..."):
         df_all = load_score_data()
-        member_names, member_type = load_members(conn)
+        member_names, member_type = load_members()
     last_types = get_last_played_types(df_all)
 
     if not member_names:
@@ -1131,7 +1290,7 @@ def page_today():
     if df_day.empty:
         st.info("今日の対局データはまだありません。")
         if st.button("🔄 再読み込み", use_container_width=True):
-            _fetch_sheet.clear()
+            clear_cache()
             st.rerun()
         return
 
@@ -1139,7 +1298,7 @@ def page_today():
     render_paper_sheet(df_day, today, load_fee_collections())
 
     if st.button("🔄 データを再読み込み", use_container_width=True):
-        _fetch_sheet.clear()
+        clear_cache()
         st.rerun()
 
 
