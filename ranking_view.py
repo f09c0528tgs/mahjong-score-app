@@ -7,10 +7,29 @@
   3. 📆 過去の着順表    - 日付を選んで過去の着順表を表示
 """
 
+import re
+import time
 import streamlit as st
 import pandas as pd
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 from streamlit_gsheets import GSheetsConnection
+
+JST = timezone(timedelta(hours=9), 'JST')
+
+
+def now_jst():
+    """JST の現在時刻 (タイムゾーン情報なし)。サーバーがUTCでもずれないようにする。"""
+    return datetime.now(JST).replace(tzinfo=None)
+
+
+def _html(s):
+    """
+    st.markdown に渡す HTML を安全化する (メインアプリと同じ)。
+    行頭4スペース以上はコードブロック扱いになるので、改行とインデントを除去する。
+    """
+    if not s:
+        return ""
+    return re.sub(r"\n\s*", "", s)
 
 # ==========================================
 # 1. ページ設定
@@ -86,6 +105,15 @@ button[role="tab"][aria-selected="true"] * { color: #000000 !important; }
 .stButton > button[kind="primary"]:hover {
     box-shadow: 0 6px 20px rgba(240,192,64,0.4) !important;
 }
+
+/* タイプ・着順のボタン: 選ばれているものを金色で塗りつぶして一目で分かるように */
+button[data-testid="stBaseButton-segmented_controlActive"] {
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: #000000 !important;
+    font-weight: 900 !important;
+}
+button[data-testid="stBaseButton-segmented_controlActive"] * { color: #000000 !important; }
 
 /* 入力 */
 .stTextInput input, .stNumberInput input, .stSelectbox select,
@@ -232,6 +260,9 @@ EXPECTED_COLS = [
 ]
 
 TYPE_OPTIONS = ["A客", "AS", "B客", "BS"]
+# 入力画面のボタンの並びと表示名 (保存する値は A客/B客/AS/BS のまま)
+TYPE_BUTTON_ORDER = ["A客", "B客", "AS", "BS"]
+TYPE_LABELS = {"A客": "A客", "B客": "B客", "AS": "Aスタッフ", "BS": "Bスタッフ"}
 RANK_OPTIONS = [1, 2, 3]
 
 # ==========================================
@@ -279,80 +310,170 @@ def load_score_data():
         st.stop()
     return processed
 
+_ZEN2HAN = str.maketrans("ＡＢＣＳａｂｃｓ０１２３４５６７８９", "ABCSabcs0123456789")
+
+
+def _normalize_play_type(tp):
+    """
+    タイプ表記のゆれを吸収して A客 / AS / B客 / BS のいずれかに正規化する。該当しなければ None。
+    メインアプリ (pine_score_manager_v2.py) の同名関数と同じルール。片方を直したらもう片方も直すこと。
+    """
+    if tp is None:
+        return None
+    s = str(tp).strip()
+    if not s:
+        return None
+    s = s.translate(_ZEN2HAN).replace(" ", "").replace("　", "").upper()
+    s = re.sub(r"[（(].*?[)）]", "", s)
+    if not s:
+        return None
+    if s in ("A客", "A", "AK", "ACLIENT"):
+        return "A客"
+    if s in ("B客", "B", "BK", "BCLIENT"):
+        return "B客"
+    if s in ("AS", "ASTAFF", "Aスタッフ".upper()):
+        return "AS"
+    if s in ("BS", "BSTAFF", "Bスタッフ".upper()):
+        return "BS"
+    if s.startswith("A") and s.endswith("S"):
+        return "AS"
+    if s.startswith("B") and s.endswith("S"):
+        return "BS"
+    if s.startswith("A"):
+        return "A客"
+    if s.startswith("B"):
+        return "B客"
+    return None
+
+
 def _guess_type_from_name(name):
     """
-    名前末尾の記号からタイプを推測する。
-    末尾 'B' → B客、末尾 'BS' → BS、末尾 'S' → AS、それ以外 → A客
-    (メンバーシートにタイプ列がない場合のフォールバック)
+    名前末尾の記号からタイプを推測する (最後の手段)。
+    末尾 'BS' → BS、末尾 's'/'S' → AS (スタッフ扱い)、末尾 'B' → B客、それ以外 → A客
     """
-    n = str(name).strip()
+    n = str(name).strip().translate(_ZEN2HAN).upper()
     if n.endswith("BS"):
         return "BS"
-    if n.endswith("B"):
-        return "B客"
     if n.endswith("S"):
         return "AS"
+    if n.endswith("B"):
+        return "B客"
     return "A客"
+
 
 @st.cache_data(ttl=60, show_spinner=False)
 def load_members(_conn):
     """
-    メンバー一覧と名前→タイプの対応辞書を取得。
-    Returns: (names: list, name_to_type: dict)
+    メンバー一覧と、メンバーシートに書かれたタイプ (正規化済み) を取得。
+    Returns: (names: list, member_type: dict 名前→タイプ。タイプ欄が空・読めない人は入らない)
     """
     df = _fetch_sheet(_conn, SHEET_MEMBER)
     if df.empty or "名前" not in df.columns:
         return [], {}
     df = df.fillna("")
     names = []
-    name_to_type = {}
+    member_type = {}
     has_type_col = "タイプ" in df.columns
     for _, row in df.iterrows():
         name = str(row["名前"]).strip()
-        if not name:
-            continue
-        if name in name_to_type:
+        if not name or name in names:
             continue
         names.append(name)
-        # タイプ列があればそれを使う、なければ名前から推測
         if has_type_col:
-            t = str(row["タイプ"]).strip()
-            if t not in TYPE_OPTIONS:
-                t = _guess_type_from_name(name)
-        else:
-            t = _guess_type_from_name(name)
-        name_to_type[name] = t
-    return names, name_to_type
+            t = _normalize_play_type(row["タイプ"])
+            if t:
+                member_type[name] = t
+    return names, member_type
+
+
+def get_last_played_types(df_score):
+    """成績データから、各プレイヤーが最後の対局で使ったタイプを返す (名前→タイプ)"""
+    if df_score is None or df_score.empty:
+        return {}
+    parts = []
+    for seat in ["A", "B", "C"]:
+        parts.append(pd.DataFrame({
+            "t": df_score["日時Obj"] if "日時Obj" in df_score.columns else range(len(df_score)),
+            "g": df_score["GameNo"],
+            "name": df_score[f"{seat}さん"].astype(str).str.strip(),
+            "type": df_score[f"{seat}タイプ"].astype(str),
+        }))
+    long = pd.concat(parts, ignore_index=True)
+    norm = {v: _normalize_play_type(v) for v in long["type"].unique()}
+    long["type"] = long["type"].map(norm)
+    long = long[(long["name"] != "") & long["type"].notna()]
+    long = long.sort_values(["t", "g"]).drop_duplicates("name", keep="last")
+    return dict(zip(long["name"], long["type"]))
+
+
+def resolve_player_type(name, member_type, last_types):
+    """
+    名前からタイプを決める。優先順: メンバーシートのタイプ → 前回の対局のタイプ → 名前から推測
+    Returns: (type, 出どころの説明)
+    """
+    if name in member_type:
+        return member_type[name], "メンバー登録"
+    if name in last_types:
+        return last_types[name], "前回の対局"
+    return _guess_type_from_name(name), "名前から推測"
+
+def _fetch_sheet_fresh(conn, sheet_name):
+    """保存直前用: キャッシュを使わずに読む。失敗時は最大3回リトライし、それでも駄目なら例外。"""
+    for i in range(3):
+        try:
+            return conn.read(worksheet=sheet_name, ttl=0)
+        except Exception:
+            if i < 2:
+                time.sleep(2)
+                continue
+            raise
+
 
 def append_score_row(row_dict):
-    """scoreシートに1行追加する。"""
+    """
+    scoreシートに1行追加する。GameNo はここで最新データから採番する。
+    シート全体を上書き保存するため、必ずキャッシュを使わず最新を読んでから追記する
+    (他端末で入力された行を消さないため)。読み込みに失敗したら保存しない。
+    Returns: (ok, game_no or None, err or None)
+    """
     conn = get_conn()
     try:
-        current = _fetch_sheet(conn, SHEET_SCORE)
-        if current is None or current.empty:
-            current = pd.DataFrame(columns=EXPECTED_COLS)
-        new_row_df = pd.DataFrame([row_dict])
-        for c in EXPECTED_COLS:
-            if c not in new_row_df.columns:
-                new_row_df[c] = ""
-        new_row_df = new_row_df[EXPECTED_COLS]
+        _fetch_sheet.clear()
+        raw = _fetch_sheet_fresh(conn, SHEET_SCORE)
+        if raw is None:
+            return False, None, "スプレッドシートを読み込めませんでした"
+        current = raw.copy()
+        current.columns = current.columns.astype(str).str.strip()
+        if not current.empty:
+            missing = [c for c in EXPECTED_COLS if c not in current.columns]
+            if missing:
+                return False, None, f"列が見つかりません: {missing}"
         for c in EXPECTED_COLS:
             if c not in current.columns:
                 current[c] = ""
         current = current[EXPECTED_COLS]
+
+        game_no = get_next_game_no(current)
+        new_row = dict(row_dict)
+        new_row["GameNo"] = game_no
+        new_row_df = pd.DataFrame([new_row])
+        for c in EXPECTED_COLS:
+            if c not in new_row_df.columns:
+                new_row_df[c] = ""
+        new_row_df = new_row_df[EXPECTED_COLS]
+
         merged = pd.concat([current, new_row_df], ignore_index=True)
         conn.update(worksheet=SHEET_SCORE, data=merged)
         _fetch_sheet.clear()
-        return True, None
+        return True, game_no, None
     except Exception as e:
-        return False, str(e)
+        return False, None, str(e)
 
 # ==========================================
 # 4. 日付・集計ヘルパー
 # ==========================================
 def get_today_logical_date():
-    now = datetime.now()
-    return (now - timedelta(hours=9)).date()
+    return (now_jst() - timedelta(hours=9)).date()
 
 def get_games_by_date(df, target_date):
     """指定した論理日付の対局を返す (卓・SetNo・GameNo順)"""
@@ -427,7 +548,7 @@ def _render_table(df_tbl):
 
     prev_members = None  # 直前の (A名, B名, C名)
 
-    for _, row in df_tbl.iterrows():
+    for game_idx, (_, row) in enumerate(df_tbl.iterrows(), start=1):
         # この局の各席の名前・タイプ・着順を取得
         cur_names = {}
         cur_types = {}
@@ -460,13 +581,9 @@ def _render_table(df_tbl):
             html += '</tr>'
             prev_members = members
 
-        # 着順行
-        try:
-            game_no = int(float(row.get("GameNo", 0)))
-        except:
-            game_no = ""
+        # 着順行 (局番号はその日・その卓での連番。内部用の GameNo は出さない)
         html += '<tr>'
-        html += f'<td class="col-no">{game_no}</td>'
+        html += f'<td class="col-no">{game_idx}</td>'
         for seat in ["A", "B", "C"]:
             rk = cur_ranks[seat]
             if rk == 1:
@@ -497,173 +614,182 @@ def _render_table(df_tbl):
 # ==========================================
 # 6. 成績を付けるページ
 # ==========================================
+SEATS = ["A", "B", "C"]
+SEAT_LABELS = {"A": "🟦 A席", "B": "🟧 B席", "C": "🟩 C席"}
+
+
+def _clear_seats():
+    """
+    全員を空席にする (ボタンの on_click、またはウィジェットを描く前に呼ぶ)。
+    キーを del するだけだとブラウザ側の表示が残るので、値を None に明示的にセットする。
+    """
+    for seat in SEATS:
+        st.session_state[f"sel_name_{seat}"] = None
+    st.session_state["input_round"] = st.session_state.get("input_round", 0) + 1
+
+
 def page_input():
     st.title("📝 成績を付ける")
 
     conn = get_conn()
     with st.spinner("データ読込中..."):
         df_all = load_score_data()
-        member_names, name_to_type = load_members(conn)
+        member_names, member_type = load_members(conn)
+    last_types = get_last_played_types(df_all)
 
     if not member_names:
         st.warning("メンバーが登録されていません。管理画面から先にメンバー登録をしてください。")
         return
 
-    # --- セッション状態の初期化 ---
     ss = st.session_state
-    if "input_table_no" not in ss:
-        ss["input_table_no"] = 1
-    if "input_set_no" not in ss:
-        ss["input_set_no"] = 1
-    # 着席中のメンバー (連続入力用)
-    if "seated" not in ss:
-        ss["seated"] = {"A": None, "B": None, "C": None}
+    ss.setdefault("input_table_no", 1)
+    ss.setdefault("input_set_no", 1)
+    ss.setdefault("input_round", 0)   # 保存のたびに+1 → 着順ボタンをリセット
 
-    next_game_no = get_next_game_no(df_all)
+    # 保存後のリセット (ウィジェットを描く前でないと値を書き換えられないので、ここで行う)
+    pending = ss.pop("input_pending_reset", None)
+    if pending:
+        ss["input_memo"] = ""
+        if pending == "seats":
+            _clear_seats()
 
-    # --- 対局情報 ---
-    st.markdown("### ⚙️ 卓・局の設定")
-    col_a, col_b, col_c = st.columns(3)
-    with col_a:
-        game_no = st.number_input("GameNo", value=next_game_no, min_value=1, step=1, key="input_game_no")
+    # 直前の保存結果 (rerun後に表示する)
+    flash = ss.pop("input_flash", None)
+    if flash:
+        st.success(flash)
+
+    # --- 卓・セット ---
+    col_b, col_c = st.columns(2)
     with col_b:
-        table_no = st.number_input("卓番", value=ss["input_table_no"], min_value=1, step=1, key="input_table_widget")
-        ss["input_table_no"] = table_no
+        table_no = st.number_input("卓番", min_value=1, step=1, key="input_table_no")
     with col_c:
-        set_no = st.number_input("セット", value=ss["input_set_no"], min_value=1, step=1, key="input_set_widget")
-        ss["input_set_no"] = set_no
+        set_no = st.number_input("セット", min_value=1, step=1, key="input_set_no")
 
-    col_dt, col_time = st.columns(2)
-    with col_dt:
-        input_date = st.date_input("日付", value=date.today(), key="input_date")
-    with col_time:
-        input_time = st.time_input("時刻", value=datetime.now().time().replace(microsecond=0), key="input_time")
-    memo = st.text_input("備考 (任意)", value="", key="input_memo")
+    # --- メンバー ---
+    st.markdown("### 🪑 メンバー")
+    st.caption("名前は文字を打つと絞り込めます。名前を選ぶとタイプ（A客・B客・Aスタッフ・Bスタッフ）が自動で選ばれます。違うときはタップで変更できます。")
 
-    # --- 着席メンバーの選択 ---
-    st.markdown("### 🪑 メンバーを着席させる")
-    st.caption("名前を選ぶとタイプ(A客/AS/B客/BS)が自動でセットされます。着席させると連続入力できます。")
+    seat_info = {}
+    for seat in SEATS:
+        sel_name = st.selectbox(
+            SEAT_LABELS[seat], member_names, index=None,
+            placeholder="名前を選択", key=f"sel_name_{seat}",
+        )
+        sel_type = None
+        if sel_name:
+            auto_type, source = resolve_player_type(sel_name, member_type, last_types)
+            c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
+            with c1:
+                # 名前ごとに別キーにすることで、名前を変えたらタイプも自動で切り替わる
+                picked = st.segmented_control(
+                    f"{seat}席のタイプ", TYPE_BUTTON_ORDER, default=auto_type,
+                    format_func=lambda t: TYPE_LABELS[t],
+                    key=f"sel_type_{seat}_{sel_name}", label_visibility="collapsed",
+                )
+            sel_type = picked or auto_type
+            with c2:
+                note = source if sel_type == auto_type else "手動で変更"
+                st.caption(f"（{note}）")
+        seat_info[seat] = {"name": sel_name, "type": sel_type}
 
-    name_opts = ["--空席--"] + member_names
-    seat_colors = {"A": "🟦 A席", "B": "🟧 B席", "C": "🟩 C席"}
-    seat_types = {}
+    names_sel = [seat_info[s]["name"] for s in SEATS]
+    members_ready = all(names_sel) and len(set(names_sel)) == 3
 
-    for seat in ["A", "B", "C"]:
-        st.markdown(f'<div class="seat-card seat-{seat}"><div class="seat-label">{seat_colors[seat]}</div></div>',
-                    unsafe_allow_html=True)
-        c1, c2 = st.columns([3, 1])
-        with c1:
-            # 現在着席中のメンバーをデフォルト選択
-            cur = ss["seated"].get(seat)
-            default_idx = name_opts.index(cur) if cur in name_opts else 0
-            sel_name = st.selectbox(
-                f"{seat}席の名前", name_opts, index=default_idx,
-                key=f"sel_name_{seat}", label_visibility="collapsed"
-            )
-        with c2:
-            # タイプ自動判定 (手動上書きも可)
-            auto_type = name_to_type.get(sel_name, "A客") if sel_name != "--空席--" else "A客"
-            type_idx = TYPE_OPTIONS.index(auto_type) if auto_type in TYPE_OPTIONS else 0
-            sel_type = st.selectbox(
-                f"{seat}席のタイプ", TYPE_OPTIONS, index=type_idx,
-                key=f"sel_type_{seat}", label_visibility="collapsed"
-            )
-        seat_types[seat] = {"name": sel_name, "type": sel_type}
-
-    # --- 着順入力 ---
-    st.markdown("### 🎯 着順を入力")
-    rc1, rc2, rc3 = st.columns(3)
+    # --- 着順 (1着→2着をタップ、3着は自動) ---
+    st.markdown("### 🎯 着順")
     ranks = {}
-    for seat, col in [("A", rc1), ("B", rc2), ("C", rc3)]:
-        with col:
-            nm = seat_types[seat]["name"]
-            label = nm if nm != "--空席--" else f"{seat}席"
-            ranks[seat] = st.selectbox(
-                f"{label} の着順", RANK_OPTIONS, key=f"rank_{seat}"
-            )
-
-    st.divider()
-
-    # --- バリデーション ---
-    errors = []
-    names_sel = [seat_types[s]["name"] for s in ["A", "B", "C"]]
-    ranks_sel = [ranks[s] for s in ["A", "B", "C"]]
-    if any(n == "--空席--" for n in names_sel):
-        errors.append("全ての席にメンバーを着席させてください")
+    if not all(names_sel):
+        st.info("3人とも名前を選ぶと着順を入力できます。")
+    elif not members_ready:
+        st.error("⚠️ 同じ人が複数の席にいます")
     else:
-        if len(set(names_sel)) != 3:
-            errors.append("同じ人が複数の席にいます")
-    if sorted(ranks_sel) != [1, 2, 3]:
-        errors.append("着順は 1・2・3 が1つずつ必要です")
+        fmt = lambda s: f"{s} {seat_info[s]['name']}"
+        mkey = f"{ss['input_round']}_{'|'.join(names_sel)}"
+        first = st.segmented_control(
+            "🥇 1着", SEATS, format_func=fmt, key=f"rank1_{mkey}",
+        )
+        remain = [s for s in SEATS if s != first]
+        second = st.segmented_control(
+            "🥈 2着", remain if first else SEATS, format_func=fmt,
+            key=f"rank2_{mkey}_{first}", disabled=first is None,
+        )
+        if first and second:
+            third = [s for s in SEATS if s not in (first, second)][0]
+            ranks = {first: 1, second: 2, third: 3}
+            st.markdown(f"🥉 3着: **{fmt(third)}**")
 
-    if errors:
-        for e in errors:
-            st.error(f"⚠️ {e}")
+    can_save = members_ready and len(ranks) == 3
 
-    can_save = len(errors) == 0
+    # --- 日時 (通常は保存した時刻。後から付けるときだけ指定) ---
+    with st.expander("🕒 日時・備考（後から付けるときだけ）"):
+        use_custom_dt = st.checkbox("日時を指定する", key="input_use_custom_dt")
+        col_dt, col_time = st.columns(2)
+        with col_dt:
+            input_date = st.date_input("日付", value=now_jst().date(), key="input_date",
+                                       disabled=not use_custom_dt)
+        with col_time:
+            input_time = st.time_input("時刻", value=now_jst().time().replace(second=0, microsecond=0),
+                                       key="input_time", disabled=not use_custom_dt)
+        memo = st.text_input("備考", value="", key="input_memo")
 
-    # --- 保存ボタン (2種類) ---
+    # --- 保存ボタン ---
     col_save1, col_save2 = st.columns(2)
     with col_save1:
         save_continue = st.button(
-            "💾 保存して次の局へ", type="primary",
+            "💾 保存（同じメンバーで次へ）", type="primary",
             disabled=not can_save, use_container_width=True,
-            help="同じメンバーのまま次の局を入力できます"
         )
     with col_save2:
-        save_only = st.button(
-            "✅ 保存のみ",
-            disabled=not can_save, use_container_width=True
+        save_reset = st.button(
+            "✅ 保存して空席に戻す",
+            disabled=not can_save, use_container_width=True,
         )
 
-    if save_continue or save_only:
-        dt_str = f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M:%S')}"
-        row = {
-            "GameNo": int(game_no), "TableNo": int(table_no), "SetNo": int(set_no),
-            "日時": dt_str, "備考": memo,
-            "Aさん": seat_types["A"]["name"], "Aタイプ": seat_types["A"]["type"], "A着順": int(ranks["A"]),
-            "Bさん": seat_types["B"]["name"], "Bタイプ": seat_types["B"]["type"], "B着順": int(ranks["B"]),
-            "Cさん": seat_types["C"]["name"], "Cタイプ": seat_types["C"]["type"], "C着順": int(ranks["C"]),
-        }
-        with st.spinner("保存中..."):
-            ok, err = append_score_row(row)
-        if ok:
-            st.success(f"✅ 保存しました (GameNo {game_no})")
-            if save_continue:
-                # メンバーを着席したまま保持、GameNoだけ進める
-                for seat in ["A", "B", "C"]:
-                    ss["seated"][seat] = seat_types[seat]["name"]
-                # 着順選択だけリセット
-                for seat in ["A", "B", "C"]:
-                    if f"rank_{seat}" in ss:
-                        del ss[f"rank_{seat}"]
+    if (save_continue or save_reset) and can_save:
+        if use_custom_dt:
+            dt_str = f"{input_date.strftime('%Y-%m-%d')} {input_time.strftime('%H:%M:%S')}"
+        else:
+            dt_str = now_jst().strftime("%Y-%m-%d %H:%M:%S")
+
+        signature = (int(table_no), int(set_no), tuple(names_sel), tuple(ranks[s] for s in SEATS))
+        last = ss.get("input_last_saved")
+        if last and last[0] == signature and time.time() - last[1] < 15:
+            # ボタンの二度押し対策
+            st.warning("同じ内容を保存したばかりなので、二重登録を防ぐため保存しませんでした。")
+        else:
+            row = {
+                "TableNo": int(table_no), "SetNo": int(set_no),
+                "日時": dt_str, "備考": memo,
+            }
+            for s in SEATS:
+                row[f"{s}さん"] = seat_info[s]["name"]
+                row[f"{s}タイプ"] = seat_info[s]["type"]
+                row[f"{s}着順"] = int(ranks[s])
+            with st.spinner("保存中..."):
+                ok, saved_no, err = append_score_row(row)
+            if ok:
+                ss["input_last_saved"] = (signature, time.time())
+                order = sorted(SEATS, key=lambda s: ranks[s])
+                result = " → ".join(seat_info[s]["name"] for s in order)
+                ss["input_flash"] = f"✅ {int(table_no)}卓に保存しました：{result}"
+                ss["input_round"] += 1
+                ss["input_pending_reset"] = "seats" if save_reset else "memo"
                 st.rerun()
             else:
-                # 全リセット
-                ss["seated"] = {"A": None, "B": None, "C": None}
-                for seat in ["A", "B", "C"]:
-                    for k in [f"sel_name_{seat}", f"rank_{seat}"]:
-                        if k in ss:
-                            del ss[k]
-                st.balloons()
-                st.rerun()
-        else:
-            st.error(f"❌ 保存に失敗しました: {err}")
+                st.error(f"❌ 保存に失敗しました（もう一度押してください）: {err}")
 
-    # --- 着席クリアボタン ---
-    if any(ss["seated"].get(s) for s in ["A", "B", "C"]):
-        seated_names = "・".join([ss["seated"][s] for s in ["A", "B", "C"] if ss["seated"].get(s)])
-        st.markdown(
-            f'<div class="seated-banner">🪑 着席中: <strong>{seated_names}</strong>（連続入力モード）</div>',
-            unsafe_allow_html=True
-        )
-        if st.button("🔄 全員を空席にする", use_container_width=True):
-            ss["seated"] = {"A": None, "B": None, "C": None}
-            for seat in ["A", "B", "C"]:
-                for k in [f"sel_name_{seat}", f"rank_{seat}"]:
-                    if k in ss:
-                        del ss[k]
-            st.rerun()
+    if any(names_sel):
+        st.button("🔄 全員を空席にする", use_container_width=True, on_click=_clear_seats)
+
+    # --- この卓の今日の記録 (入力の確認用) ---
+    today = get_today_logical_date()
+    df_today = get_games_by_date(df_all, today)
+    if not df_today.empty:
+        df_tbl = df_today[df_today["TableNo"] == int(table_no)]
+        if not df_tbl.empty:
+            st.markdown(f"### 📋 {int(table_no)}卓の今日の記録（{len(df_tbl)}局）")
+            _render_table(df_tbl.reset_index(drop=True))
+
 
 
 # ==========================================
@@ -739,13 +865,13 @@ def _render_day_summary(df_day):
             nm = str(row.get(f"{seat}さん", "")).strip()
             if nm:
                 all_players.add(nm)
-    st.markdown(f"""
+    st.markdown(_html(f"""
     <div style="margin-bottom:0.5rem;">
         <span class="summary-badge">🀄 対局数: <strong>{total_games}</strong></span>
         <span class="summary-badge">🎲 卓数: <strong>{total_tables}</strong></span>
         <span class="summary-badge">👥 参加者: <strong>{len(all_players)}</strong>人</span>
     </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 
 # ==========================================
