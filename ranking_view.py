@@ -7,6 +7,7 @@
   3. 📆 過去の着順表    - 日付を選んで過去の着順表を表示
 """
 
+import bisect
 import re
 import time
 import streamlit as st
@@ -47,7 +48,7 @@ CUSTOM_CSS = """
     --bg-card: #232739;
     --border: rgba(255,255,255,0.10);
     --text-primary: #f5f5f7;
-    --text-muted: #8b90a5;
+    --text-muted: #b8bdd0;   /* 補足文字。背景(#1a1d2e)とのコントラスト比 約9 */
     --accent: #f0c040;
     --accent2: #5b9cf6;
     --green: #4caf87;
@@ -73,6 +74,8 @@ button[role="tab"] {
     font-weight: 700 !important;
     padding: 0.6rem 1rem !important;
     margin-right: 4px !important;
+    /* 背景だけ遅れて切り替わると、一瞬「白文字×金背景」になって読めないので、アニメーションを切る */
+    transition: none !important;
 }
 button[role="tab"] * { color: inherit !important; }
 button[role="tab"][aria-selected="true"] {
@@ -134,7 +137,41 @@ button[data-testid="stBaseButton-segmented_controlActive"] * { color: #000000 !i
     border-radius: var(--radius) !important;
     color: var(--text-primary) !important;
 }
-.stCaption, [data-testid="stCaptionContainer"] { color: var(--text-muted) !important; }
+/* 補足文字 (st.caption)。Streamlit 既定は暗く半透明で背景に溶けるので、明るく不透明にする */
+.stCaption, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
+    color: var(--text-muted) !important; opacity: 1 !important;
+}
+
+/* お知らせ枠 (st.info / success / warning / error)。既定の文字色は背景と同系色で読みにくいので、明るい色にする */
+[data-testid="stAlertContentInfo"], [data-testid="stAlertContentInfo"] * { color: #b9dcff !important; }
+[data-testid="stAlertContentSuccess"], [data-testid="stAlertContentSuccess"] * { color: #b4f0cc !important; }
+[data-testid="stAlertContentWarning"], [data-testid="stAlertContentWarning"] * { color: #ffe7a3 !important; }
+[data-testid="stAlertContentError"], [data-testid="stAlertContentError"] * { color: #ffc9c9 !important; }
+
+/* 入力欄の見出し (卓番・日付 など)。使えない状態でも読めるようにする */
+[data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] * {
+    color: var(--text-primary) !important; opacity: 1 !important;
+}
+
+/* 使えない状態の入力欄の中身 (日付・時刻など) */
+input:disabled, textarea:disabled {
+    color: #c5c8d4 !important; -webkit-text-fill-color: #c5c8d4 !important; opacity: 1 !important;
+}
+
+/* 使えない状態のボタン: 読める明るさを保ちつつ、点線枠と灰色で「まだ押せない」と分かるようにする */
+.stButton > button:disabled,
+.stButton > button[kind="primary"]:disabled {
+    background: #2a2e42 !important;
+    color: #c5c8d4 !important;
+    border: 1px dashed rgba(255,255,255,0.35) !important;
+    box-shadow: none !important; transform: none !important; cursor: not-allowed !important;
+}
+.stButton > button:disabled * { color: #c5c8d4 !important; }
+button[data-testid^="stBaseButton-segmented_control"]:disabled {
+    color: #c5c8d4 !important; border-style: dashed !important; opacity: 1 !important;
+}
+button[data-testid^="stBaseButton-segmented_control"]:disabled * { color: #c5c8d4 !important; }
+button[data-testid^="stNumberInputStep"]:disabled { color: rgba(255,255,255,0.6) !important; }
 hr { border-color: var(--border) !important; opacity: 0.4 !important; }
 
 /* 席カード */
@@ -200,7 +237,7 @@ hr { border-color: var(--border) !important; opacity: 0.4 !important; }
     padding: 2px 4px;
 }
 .paper-table .col-no {
-    background: #ede8da; font-weight: 700; width: 28px; color: #777;
+    background: #ede8da; font-weight: 700; width: 28px; color: #4a4a4a;
     font-size: 0.68rem;
 }
 .paper-table .seat-head-A { background: #d4e4f7; width: 33%; }
@@ -213,7 +250,7 @@ hr { border-color: var(--border) !important; opacity: 0.4 !important; }
     line-height: 1.2;
 }
 .paper-table .name-type {
-    font-size: 0.6rem; color: #8a7a55; margin-left: 2px;
+    font-size: 0.6rem; color: #4f3f14; margin-left: 2px;
     background: #efe8d2; padding: 0 3px; border-radius: 3px;
     vertical-align: middle;
 }
@@ -224,6 +261,20 @@ hr { border-color: var(--border) !important; opacity: 0.4 !important; }
     padding: 3px 4px;
 }
 .paper-table .empty-cell { color: #ccc; }
+/* ゲーム代の区切り行 */
+.paper-table .fee-row td {
+    background: #fff4d6; text-align: left; padding: 5px 8px;
+    border-top: 2px dashed #b8860b; border-bottom: 3px double #b8860b;
+}
+.paper-table .fee-head { font-size: 0.85rem; font-weight: 800; color: #3a2a00; }
+.paper-table .fee-total { color: #c0392b; font-size: 1.05rem; }
+.paper-table .fee-games { font-size: 0.72rem; color: #5a4a22; font-weight: 700; margin-left: 2px; }
+.paper-table .fee-status {
+    float: right; font-size: 0.7rem; font-weight: 800; padding: 1px 6px; border-radius: 4px;
+}
+.paper-table .fee-status.done { background: #d4f0e0; color: #1e6b45; }
+.paper-table .fee-status.open { background: #fde2c8; color: #a0471a; }
+.paper-table .fee-detail { font-size: 0.74rem; color: #4a3d20; line-height: 1.45; margin-top: 2px; }
 
 .paper-title {
     font-weight: 900; font-size: 0.92rem; color: #2a2a2a;
@@ -231,6 +282,20 @@ hr { border-color: var(--border) !important; opacity: 0.4 !important; }
     border: 1px solid #c2bba5; border-bottom: none;
     display: inline-block; margin-top: 0.5rem;
 }
+
+/* 成績入力ページのゲーム代欄 */
+.fee-box {
+    background: linear-gradient(135deg, rgba(240,192,64,0.14) 0%, rgba(240,192,64,0.04) 100%);
+    border: 1px solid rgba(240,192,64,0.45); border-radius: var(--radius);
+    padding: 0.7rem 1rem; margin-bottom: 0.6rem;
+}
+.fee-box-title { font-size: 0.95rem; margin-bottom: 0.35rem; }
+.fee-box-total { color: var(--accent); font-size: 1.3rem; }
+.fee-line {
+    display: flex; justify-content: space-between; gap: 0.5rem;
+    font-size: 0.88rem; padding: 0.15rem 0; border-bottom: 1px dotted rgba(255,255,255,0.12);
+}
+.fee-rule { font-size: 0.72rem; color: #ddd6be; margin-top: 0.4rem; }
 
 /* 着席中バナー */
 .seated-banner {
@@ -251,6 +316,13 @@ st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 # ==========================================
 SHEET_SCORE = "score"
 SHEET_MEMBER = "members"
+# ゲーム代の集金記録 (着順表の区切り)。1行 = 1回の集金。
+# LastGameNo = その集金に含めた最後の対局の GameNo。卓ごとに、前回の集金の次の局からここまでが1区切り。
+SHEET_FEE = "fee_collections"
+FEE_COLS = ["日時", "TableNo", "LastGameNo", "枚数", "内訳"]
+
+# ゲーム代: トップを取った人が、自分のタイプに応じた枚数を払う (メインアプリの GAME_FEE_TABLE と同じ値)
+GAME_FEE_TABLE = {"A客": 3, "B客": 4, "AS": 1, "BS": 1}
 
 EXPECTED_COLS = [
     "GameNo", "TableNo", "SetNo", "日時", "備考",
@@ -469,6 +541,114 @@ def append_score_row(row_dict):
     except Exception as e:
         return False, None, str(e)
 
+def _is_sheet_missing(err):
+    msg = str(err)
+    return "WorksheetNotFound" in msg or "not found" in msg.lower()
+
+
+def _clean_fee_df(df):
+    """集金記録を整形 (列をそろえ、数値化)"""
+    if df is None or df.empty:
+        return pd.DataFrame(columns=FEE_COLS)
+    df = df.copy()
+    df.columns = df.columns.astype(str).str.strip()
+    for c in FEE_COLS:
+        if c not in df.columns:
+            df[c] = ""
+    df = df[FEE_COLS]
+    df["TableNo"] = pd.to_numeric(df["TableNo"], errors="coerce")
+    df["LastGameNo"] = pd.to_numeric(df["LastGameNo"], errors="coerce")
+    df = df.dropna(subset=["TableNo", "LastGameNo"])
+    df["TableNo"] = df["TableNo"].astype(int)
+    df["LastGameNo"] = df["LastGameNo"].astype(int)
+    df["枚数"] = pd.to_numeric(df["枚数"], errors="coerce").fillna(0).astype(int)
+    df["日時"] = df["日時"].fillna("").astype(str)
+    df["内訳"] = df["内訳"].fillna("").astype(str)
+    return df.reset_index(drop=True)
+
+
+def load_fee_collections():
+    """集金記録 (表示用、60秒キャッシュ)。シートがまだ無ければ空。"""
+    return _clean_fee_df(_fetch_sheet(get_conn(), SHEET_FEE))
+
+
+def _read_fee_fresh(conn):
+    """保存直前用に集金記録を最新で読む。シートが無いだけなら空を返し、それ以外の失敗は例外。"""
+    try:
+        return _clean_fee_df(_fetch_sheet_fresh(conn, SHEET_FEE))
+    except Exception as e:
+        if _is_sheet_missing(e):
+            return _clean_fee_df(None)
+        raise
+
+
+def _write_fee(conn, df):
+    """集金記録を上書き保存。シートが無ければ作成する。"""
+    out = df[FEE_COLS].copy()
+    try:
+        conn.update(worksheet=SHEET_FEE, data=out)
+    except Exception as e:
+        if not _is_sheet_missing(e):
+            raise
+        try:
+            conn.create(worksheet=SHEET_FEE, data=out)
+        except Exception as e2:
+            raise RuntimeError(
+                f"'{SHEET_FEE}' シートが見つからず、自動作成にも失敗しました。"
+                f"スプレッドシートに列 [{', '.join(FEE_COLS)}] を持つ '{SHEET_FEE}' シートを作ってください。({e2})"
+            )
+    _fetch_sheet.clear()
+
+
+def collect_game_fee(table_no):
+    """
+    指定卓のゲーム代を集める (= 着順表に区切りを入れる)。
+    他の端末の入力を取りこぼさないよう、成績も集金記録も最新を読み直してから計算・保存する。
+    Returns: (ok, message, fee_info or None)
+    """
+    conn = get_conn()
+    try:
+        _fetch_sheet.clear()
+        df_score = process_score_df(_fetch_sheet_fresh(conn, SHEET_SCORE))
+        if df_score is None:
+            return False, "成績シートの列名が想定と異なります", None
+        fees = _read_fee_fresh(conn)
+        df_open = get_open_section_games(df_score, fees, table_no, get_today_logical_date())
+        if df_open.empty:
+            return False, "前回の集金のあとの対局がありません", None
+        info = calc_game_fee(df_open)
+        new_row = {
+            "日時": now_jst().strftime("%Y-%m-%d %H:%M:%S"),
+            "TableNo": int(table_no),
+            "LastGameNo": int(df_open["GameNo"].max()),
+            "枚数": info["total"],
+            "内訳": fee_breakdown_text(info),
+        }
+        _write_fee(conn, pd.concat([fees, pd.DataFrame([new_row])], ignore_index=True))
+        return True, None, info
+    except Exception as e:
+        return False, str(e), None
+
+
+def undo_last_fee_collection(table_no, target_date):
+    """指定卓の、指定日の最後の集金 (区切り) を取り消す。対局データには触らない。"""
+    conn = get_conn()
+    try:
+        _fetch_sheet.clear()
+        df_score = process_score_df(_fetch_sheet_fresh(conn, SHEET_SCORE))
+        fees = _read_fee_fresh(conn)
+        day_nos = set(df_score.loc[(df_score["論理日付"] == target_date)
+                                   & (df_score["TableNo"] == int(table_no)), "GameNo"])
+        cand = fees[(fees["TableNo"] == int(table_no)) & fees["LastGameNo"].isin(day_nos)]
+        if cand.empty:
+            return False, "取り消せる集金がありません"
+        drop_idx = cand["LastGameNo"].idxmax()
+        _write_fee(conn, fees.drop(index=drop_idx))
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+
 # ==========================================
 # 4. 日付・集計ヘルパー
 # ==========================================
@@ -487,6 +667,60 @@ def get_games_by_date(df, target_date):
         df_day = df_day.sort_values(sort_keys).reset_index(drop=True)
     return df_day
 
+def calc_game_fee(df_games):
+    """
+    対局群のゲーム代を計算する。トップ (1着) を取った人が、自分のタイプの枚数を払う。
+    Returns: {"games": 対局数, "lines": [(タイプ, トップ回数, 1回の枚数, 小計)], "total": 合計枚数, "unknown": タイプ不明のトップ回数}
+    """
+    tops = {t: 0 for t in TYPE_BUTTON_ORDER}
+    unknown = 0
+    for _, row in df_games.iterrows():
+        for seat in ["A", "B", "C"]:
+            try:
+                rk = int(float(row.get(f"{seat}着順", 0)))
+            except (TypeError, ValueError):
+                rk = 0
+            if rk != 1:
+                continue
+            t = _normalize_play_type(row.get(f"{seat}タイプ", ""))
+            if t in tops:
+                tops[t] += 1
+            else:
+                unknown += 1
+    lines = [(t, tops[t], GAME_FEE_TABLE[t], tops[t] * GAME_FEE_TABLE[t])
+             for t in TYPE_BUTTON_ORDER if tops[t] > 0]
+    return {"games": len(df_games), "lines": lines,
+            "total": sum(l[3] for l in lines), "unknown": unknown}
+
+
+def fee_breakdown_text(info, sep="、"):
+    """例: 'A客トップ 2回×3枚=6枚、Aスタッフトップ 1回×1枚=1枚'"""
+    parts = [f"{TYPE_LABELS[t]}トップ {n}回×{unit}枚={sub}枚" for t, n, unit, sub in info["lines"]]
+    if info.get("unknown"):
+        parts.append(f"タイプ不明のトップ {info['unknown']}回（0枚で計算）")
+    return sep.join(parts)
+
+
+def get_fee_cuts(fees, table_no):
+    """指定卓の区切り (集金) を LastGameNo の昇順で返す"""
+    if fees is None or fees.empty:
+        return []
+    f = fees[fees["TableNo"] == int(table_no)].sort_values("LastGameNo")
+    return f.to_dict("records")
+
+
+def get_open_section_games(df_score, fees, table_no, target_date):
+    """指定卓・指定日の対局のうち、まだゲーム代を集めていないもの (最後の区切りより後)"""
+    df_day = get_games_by_date(df_score, target_date)
+    if df_day.empty:
+        return df_day
+    df_tbl = df_day[df_day["TableNo"] == int(table_no)]
+    cuts = get_fee_cuts(fees, table_no)
+    if cuts:
+        df_tbl = df_tbl[df_tbl["GameNo"] > cuts[-1]["LastGameNo"]]
+    return df_tbl.sort_values("GameNo").reset_index(drop=True)
+
+
 def get_next_game_no(df):
     if df is None or df.empty or "GameNo" not in df.columns:
         return 1
@@ -504,11 +738,12 @@ def get_available_dates(df):
 # ==========================================
 # 5. 紙の着順表を描画する (写真の形式を再現)
 # ==========================================
-def render_paper_sheet(df_day, target_date):
+def render_paper_sheet(df_day, target_date, fees=None):
     """
     指定日の対局を「紙の着順表」風に表示する。
     卓ごとに、各局の実際の着席メンバーを正確に表示。
     メンバーが変わったタイミングで名前行を挿入する。
+    ゲーム代を集めたところで区切り、区切りごとにゲーム代の枚数と内訳を出す。
     """
     if df_day.empty:
         st.info("この日の対局データはありません。")
@@ -520,25 +755,50 @@ def render_paper_sheet(df_day, target_date):
         df_tbl = df_day[df_day["TableNo"] == table_no].copy()
         if df_tbl.empty:
             continue
-        sort_keys = [k for k in ["SetNo", "GameNo"] if k in df_tbl.columns]
-        if sort_keys:
-            df_tbl = df_tbl.sort_values(sort_keys).reset_index(drop=True)
-
         st.markdown(f'<div class="paper-title">🎲 {int(table_no)}卓</div>', unsafe_allow_html=True)
-        _render_table(df_tbl)
+        _render_table(df_tbl, get_fee_cuts(fees, table_no))
 
 
-def _render_table(df_tbl):
+def _fee_row_html(info, cut):
+    """区切りの最後に入れる「ゲーム代」の行"""
+    if cut is not None:
+        t = str(cut.get("日時", ""))
+        hhmm = t[11:16] if len(t) >= 16 else ""
+        status = f'<span class="fee-status done">✅ 集金済 {hhmm}</span>'
+    else:
+        status = '<span class="fee-status open">⏳ 未集金（ここまでの分）</span>'
+    detail = "".join(
+        f'<div>{TYPE_LABELS[t]}のトップ <b>{n}回</b> × {unit}枚 = <b>{sub}枚</b></div>'
+        for t, n, unit, sub in info["lines"]
+    )
+    if info.get("unknown"):
+        detail += f'<div>タイプ不明のトップ {info["unknown"]}回（0枚で計算）</div>'
+    return (
+        '<tr class="fee-row"><td colspan="4">'
+        f'<div class="fee-head">💰 ゲーム代 <b class="fee-total">{info["total"]}枚</b>'
+        f'<span class="fee-games">（{info["games"]}局）</span>{status}</div>'
+        f'<div class="fee-detail">{detail}</div>'
+        '</td></tr>'
+    )
+
+
+def _render_table(df_tbl, cuts=None):
     """
     1卓分の着順表を描画。
     各局の実際のメンバーを表示し、メンバーが変わったら名前行を差し込む。
     名前抜けを防ぐため、局ごとに実データを参照する。
+    cuts (集金の区切り) があれば、区切りごとにゲーム代の行を入れる。
     """
-    # タイプ別の打数集計 (卓全体)
-    type_counts = {"A客": 0, "AS": 0, "B客": 0, "BS": 0}
+    cuts = cuts or []
+    cut_nos = [int(c["LastGameNo"]) for c in cuts]
+
+    df_tbl = df_tbl.copy()
+    # 区切り番号: この局より前にある区切りの数 (GameNo が区切りの LastGameNo 以下なら、その区切りに入る)
+    df_tbl["_sec"] = [bisect.bisect_left(cut_nos, int(g)) for g in df_tbl["GameNo"]]
+    sort_keys = ["_sec"] + [k for k in ["SetNo", "GameNo"] if k in df_tbl.columns]
+    df_tbl = df_tbl.sort_values(sort_keys).reset_index(drop=True)
 
     html = '<div class="paper-wrap"><table class="paper-table">'
-    # ヘッダー
     html += '<thead><tr>'
     html += '<th class="col-no">局</th>'
     html += '<th class="seat-head-A">A席</th>'
@@ -546,66 +806,57 @@ def _render_table(df_tbl):
     html += '<th class="seat-head-C">C席</th>'
     html += '</tr></thead><tbody>'
 
-    prev_members = None  # 直前の (A名, B名, C名)
-
-    for game_idx, (_, row) in enumerate(df_tbl.iterrows(), start=1):
-        # この局の各席の名前・タイプ・着順を取得
-        cur_names = {}
-        cur_types = {}
-        cur_ranks = {}
-        for seat in ["A", "B", "C"]:
-            nm = str(row.get(f"{seat}さん", "")).strip()
-            tp = str(row.get(f"{seat}タイプ", "")).strip()
-            try:
-                rk = int(float(row.get(f"{seat}着順", 0)))
-            except:
-                rk = 0
-            cur_names[seat] = nm
-            cur_types[seat] = tp
-            cur_ranks[seat] = rk
-            # タイプ別打数集計
-            if rk in [1, 2, 3] and tp in type_counts:
-                type_counts[tp] += 1
-
-        members = (cur_names["A"], cur_names["B"], cur_names["C"])
-
-        # メンバーが前局と変わった (または最初) なら名前行を挿入
-        if members != prev_members:
-            html += '<tr class="name-row">'
-            html += '<td class="col-no"></td>'
+    totals = {"done": 0, "open": 0}
+    game_idx = 0
+    for sec, df_sec in df_tbl.groupby("_sec", sort=True):
+        prev_members = None  # 区切りのあとは名前行を出し直す
+        for _, row in df_sec.iterrows():
+            game_idx += 1
+            cur_names, cur_types, cur_ranks = {}, {}, {}
             for seat in ["A", "B", "C"]:
-                nm = cur_names[seat] if cur_names[seat] else "-"
-                tp = cur_types[seat]
-                type_disp = f'<span class="name-type">{tp}</span>' if tp else ""
-                html += f'<td>{nm}{type_disp}</td>'
+                cur_names[seat] = str(row.get(f"{seat}さん", "")).strip()
+                cur_types[seat] = str(row.get(f"{seat}タイプ", "")).strip()
+                try:
+                    cur_ranks[seat] = int(float(row.get(f"{seat}着順", 0)))
+                except (TypeError, ValueError):
+                    cur_ranks[seat] = 0
+
+            members = (cur_names["A"], cur_names["B"], cur_names["C"])
+            # メンバーが前局と変わった (または区切りの最初) なら名前行を挿入
+            if members != prev_members:
+                html += '<tr class="name-row"><td class="col-no"></td>'
+                for seat in ["A", "B", "C"]:
+                    nm = cur_names[seat] or "-"
+                    tp = cur_types[seat]
+                    type_disp = f'<span class="name-type">{tp}</span>' if tp else ""
+                    html += f'<td>{nm}{type_disp}</td>'
+                html += '</tr>'
+                prev_members = members
+
+            # 着順行 (局番号はその日・その卓での連番。内部用の GameNo は出さない)
+            html += f'<tr><td class="col-no">{game_idx}</td>'
+            for seat in ["A", "B", "C"]:
+                rk = cur_ranks[seat]
+                if rk == 1:
+                    html += '<td class="rank-cell rank1">1</td>'
+                elif rk in [2, 3]:
+                    html += f'<td class="rank-cell">{rk}</td>'
+                else:
+                    html += '<td class="empty-cell">·</td>'
             html += '</tr>'
-            prev_members = members
 
-        # 着順行 (局番号はその日・その卓での連番。内部用の GameNo は出さない)
-        html += '<tr>'
-        html += f'<td class="col-no">{game_idx}</td>'
-        for seat in ["A", "B", "C"]:
-            rk = cur_ranks[seat]
-            if rk == 1:
-                html += '<td class="rank-cell rank1">1</td>'
-            elif rk in [2, 3]:
-                html += f'<td class="rank-cell">{rk}</td>'
-            else:
-                html += '<td class="empty-cell">·</td>'
-        html += '</tr>'
+        info = calc_game_fee(df_sec)
+        cut = cuts[sec] if sec < len(cuts) else None
+        totals["done" if cut is not None else "open"] += info["total"]
+        html += _fee_row_html(info, cut)
 
-    # ゲーム代枚数行 (タイプ別打数)
-    total_games = len(df_tbl)
-    html += '<tr class="gamecount-row">'
-    html += '<td class="col-no">代</td>'
-    html += '<td colspan="3" style="text-align:left;padding-left:8px;">'
-    parts = []
-    for t in ["A客", "AS", "B客", "BS"]:
-        if type_counts[t] > 0:
-            parts.append(f'{t} <strong>{type_counts[t]}</strong>')
-    html += "　".join(parts) if parts else f'計 {total_games} 戦'
-    html += '</td>'
-    html += '</tr>'
+    # この日の合計
+    total = totals["done"] + totals["open"]
+    html += '<tr class="gamecount-row"><td class="col-no">計</td>'
+    html += f'<td colspan="3" style="text-align:left;padding-left:8px;">この日のゲーム代 合計 <strong>{total}枚</strong>'
+    if totals["open"]:
+        html += f'（集金済 {totals["done"]}枚・未集金 {totals["open"]}枚）'
+    html += '</td></tr>'
 
     html += '</tbody></table></div>'
     st.markdown(html, unsafe_allow_html=True)
@@ -781,15 +1032,88 @@ def page_input():
     if any(names_sel):
         st.button("🔄 全員を空席にする", use_container_width=True, on_click=_clear_seats)
 
-    # --- この卓の今日の記録 (入力の確認用) ---
+    # --- ゲーム代 (集めると着順表に区切りが入る) ---
     today = get_today_logical_date()
+    fees = load_fee_collections()
+    render_fee_collect_section(df_all, fees, int(table_no), today)
+
+    # --- この卓の今日の記録 (入力の確認用) ---
     df_today = get_games_by_date(df_all, today)
     if not df_today.empty:
         df_tbl = df_today[df_today["TableNo"] == int(table_no)]
         if not df_tbl.empty:
             st.markdown(f"### 📋 {int(table_no)}卓の今日の記録（{len(df_tbl)}局）")
-            _render_table(df_tbl.reset_index(drop=True))
+            _render_table(df_tbl.reset_index(drop=True), get_fee_cuts(fees, table_no))
 
+
+FEE_RULE_TEXT = "ゲーム代はトップ（1着）を取った人が払います。1回につき " + "・".join(
+    f"{TYPE_LABELS[t]} {GAME_FEE_TABLE[t]}枚" for t in TYPE_BUTTON_ORDER)
+
+
+def render_fee_collect_section(df_all, fees, table_no, today):
+    """成績入力ページの「ゲーム代を集める」欄"""
+    ss = st.session_state
+    st.markdown(f"### 💰 {table_no}卓のゲーム代")
+    df_open = get_open_section_games(df_all, fees, table_no, today)
+
+    if df_open.empty:
+        st.caption("前回ゲーム代を集めたあとの対局は、まだありません。")
+    else:
+        info = calc_game_fee(df_open)
+        lines = "".join(
+            f'<div class="fee-line"><span>{TYPE_LABELS[t]}のトップ</span>'
+            f'<span><b>{n}回</b> × {unit}枚 = <b>{sub}枚</b></span></div>'
+            for t, n, unit, sub in info["lines"]
+        )
+        if info["unknown"]:
+            lines += (f'<div class="fee-line"><span>タイプ不明のトップ</span>'
+                      f'<span><b>{info["unknown"]}回</b>（0枚で計算）</span></div>')
+        st.markdown(_html(f"""
+            <div class="fee-box">
+              <div class="fee-box-title">前回の集金から <b>{info["games"]}局</b>：ゲーム代 <b class="fee-box-total">{info["total"]}枚</b></div>
+              {lines}
+              <div class="fee-rule">{FEE_RULE_TEXT}</div>
+            </div>
+        """), unsafe_allow_html=True)
+
+        if ss.get("fee_confirm_table") == table_no:
+            st.warning(f"{table_no}卓の {info['games']}局分、ゲーム代 {info['total']}枚 を集めて、着順表に区切りを入れます。よろしいですか？")
+            c1, c2 = st.columns(2)
+            with c1:
+                do_collect = st.button("💰 集める", type="primary", use_container_width=True, key="fee_do")
+            with c2:
+                if st.button("やめる", use_container_width=True, key="fee_cancel"):
+                    ss.pop("fee_confirm_table", None)
+                    st.rerun()
+            if do_collect:
+                with st.spinner("保存中..."):
+                    ok, err, done = collect_game_fee(table_no)
+                ss.pop("fee_confirm_table", None)
+                if ok:
+                    ss["input_flash"] = (f"💰 {table_no}卓のゲーム代 {done['total']}枚 を集めました"
+                                         f"（{done['games']}局分：{fee_breakdown_text(done)}）")
+                    st.rerun()
+                else:
+                    st.error(f"❌ 集金を記録できませんでした: {err}")
+        else:
+            if st.button(f"💰 ゲーム代を集める（{info['total']}枚）", use_container_width=True, key="fee_start"):
+                ss["fee_confirm_table"] = table_no
+                st.rerun()
+
+    # 今日この卓で集金していれば、直前の集金を取り消せる
+    df_today = get_games_by_date(df_all, today)
+    day_nos = set(df_today.loc[df_today["TableNo"] == table_no, "GameNo"]) if not df_today.empty else set()
+    has_cut_today = any(int(c["LastGameNo"]) in day_nos for c in get_fee_cuts(fees, table_no))
+    if has_cut_today:
+        if st.button("↩️ 直前の集金を取り消す（区切りを消す）", key="fee_undo",
+                     help="押し間違えたときに。対局の記録は消えません。"):
+            with st.spinner("保存中..."):
+                ok, err = undo_last_fee_collection(table_no, today)
+            if ok:
+                ss["input_flash"] = f"↩️ {table_no}卓の直前の集金を取り消しました"
+                st.rerun()
+            else:
+                st.error(f"❌ 取り消せませんでした: {err}")
 
 
 # ==========================================
@@ -812,7 +1136,7 @@ def page_today():
         return
 
     _render_day_summary(df_day)
-    render_paper_sheet(df_day, today)
+    render_paper_sheet(df_day, today, load_fee_collections())
 
     if st.button("🔄 データを再読み込み", use_container_width=True):
         _fetch_sheet.clear()
@@ -852,7 +1176,7 @@ def page_past():
 
     st.markdown(f"### 🗓️ {date_labels[sel_idx]} の着順表")
     _render_day_summary(df_day)
-    render_paper_sheet(df_day, selected_date)
+    render_paper_sheet(df_day, selected_date, load_fee_collections())
 
 
 def _render_day_summary(df_day):
