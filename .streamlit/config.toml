@@ -1,0 +1,24 @@
+[theme]
+# ぱいん成績管理 ダークテーマ
+# このファイルを .streamlit/config.toml として配置すると
+# Streamlit 本体のウィジェット文字色が確実に明るくなります
+
+base = "dark"
+
+# 背景 (アプリ全体)
+backgroundColor = "#1a1d2e"
+
+# ウィジェット(セレクトボックス・入力欄)の背景
+secondaryBackgroundColor = "#2f3550"
+
+# 文字色 — これがセレクトボックスの選択値にも適用される
+textColor = "#ffffff"
+
+# アクセントカラー (金)
+primaryColor = "#f0c040"
+
+font = "sans serif"
+
+[server]
+# アップロード上限など必要に応じて
+maxUploadSize = 50

@@ -1,0 +1,10 @@
+# スプレッドシートの接続情報 (秘密情報。絶対にコミットしない)
+.streamlit/secrets.toml
+
+# Python のキャッシュ
+__pycache__/
+*.pyc
+
+# このPCだけの設定
+.claude/
+.DS_Store
