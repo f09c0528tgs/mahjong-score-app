@@ -10,8 +10,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | ファイル | 役割 | 使う人 |
 |---|---|---|
-| `pine_score_manager_v2.py` | 閲覧・分析用のメインアプリ（約9,000行）。成績の入力機能は持たない | お客さん・スタッフ |
-| `pine_input_and_today.py` | 成績入力＋着順表の専用アプリ（約780行） | 入力担当スタッフ |
+| `main.py` | 閲覧・分析用のメインアプリ（約9,000行）。成績の入力機能は持たない | お客さん・スタッフ |
+| `ranking_view.py` | 成績入力＋着順表の専用アプリ（約1,400行） | 入力担当スタッフ |
+
+ファイル名は GitHub (`f09c0528tgs/mahjong-score-app`、ブランチ `main`) と同じ。このフォルダの `origin` がそのリポジトリで、push すると公開中のアプリにすぐ反映される可能性がある。依存パッケージは `requirements.txt`。
 
 どちらかを直すときは、もう一方に同じロジック（`EXPECTED_COLS`、論理日付、タイプ判定など）が重複していないか必ず確認すること。
 
@@ -20,8 +22,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 pip install streamlit pandas altair st-gsheets-connection
 
-streamlit run pine_score_manager_v2.py     # メインアプリ
-streamlit run pine_input_and_today.py      # 入力アプリ
+streamlit run main.py           # メインアプリ
+streamlit run ranking_view.py      # 入力アプリ
 ```
 
 Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` の `[connections.gsheets]` に書く（`st.connection("gsheets", type=GSheetsConnection)` が参照する）。リポジトリには入っていないので、無いと読み込みに失敗する。
@@ -79,7 +81,7 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - 段位は**累積pt方式**（リセット無し）。`DAN_TABLE` の閾値と `DAN_POINTS_1/2/3`（+30 / -3 / -15）で決まる。
 - 調整の目安: **2000戦で平均着順1.95を切る人が八段以上になること**。定数を触ったらこの基準で確認する。
 
-## メインアプリ `pine_score_manager_v2.py`
+## メインアプリ `main.py`
 
 ファイルは番号付きのセクションに分かれている：CSS → データ管理関数 → レーティング/段位 → 共通 UI → 各 `page_*()` → メインルーティング。
 
@@ -105,7 +107,7 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - スマホ (幅640px以下) 向けの調整は CSS 末尾の「UI改善 (2026-11)」にまとめてある: 上部ナビは横1列で横スクロール、ホームのメニューは2列、`st.metric` を並べた列は2列、`.stats-table` は文字単位で折り返さず横スクロール。タッチ端末で押した後もボタンが光ったままになる (hover が残る) のは `@media (hover: none)` で消している。
 - 利益管理ページの保存パスワード（`"7777"`）がコードに直接書かれている。
 
-## 入力アプリ `pine_input_and_today.py`
+## 入力アプリ `ranking_view.py`
 
 手書きの着順表を模した3タブ構成（`main()` 内の `st.tabs`）：
 

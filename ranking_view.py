@@ -611,7 +611,7 @@ _ZEN2HAN = str.maketrans("ＡＢＣＳａｂｃｓ０１２３４５６７８９
 def _normalize_play_type(tp):
     """
     タイプ表記のゆれを吸収して A客 / AS / B客 / BS のいずれかに正規化する。該当しなければ None。
-    メインアプリ (pine_score_manager_v2.py) の同名関数と同じルール。片方を直したらもう片方も直すこと。
+    メインアプリ (main.py) の同名関数と同じルール。片方を直したらもう片方も直すこと。
     """
     if tp is None:
         return None
