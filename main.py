@@ -30,31 +30,31 @@ hide_style = """
 
     /* ========== カラーパレット ========== */
     :root {
-        --bg-base:       #0f1117;
-        --bg-card:       #1a1d2e;
-        --bg-card2:      #222537;
-        --bg-input:      #1e2132;
-        --accent:        #f0c040;
-        --accent-bright: #ffd560;
-        --accent2:       #e07b39;
-        --accent-soft:   rgba(240,192,64,0.12);
-        --accent2-soft:  rgba(224,123,57,0.12);
-        --green:         #4caf87;
-        --green-soft:    rgba(76,175,135,0.12);
-        --red:           #e05c5c;
-        --red-soft:      rgba(224,92,92,0.12);
-        --blue:          #5b9cf6;
-        --blue-soft:     rgba(91,156,246,0.12);
-        --purple:        #b372e0;
-        --purple-soft:   rgba(179,114,224,0.12);
-        --text-primary:  #e8e8f0;
-        --text-muted:    #8890a8;
-        --text-dim:      #5a6175;
-        --border:        rgba(255,255,255,0.07);
-        --border-strong: rgba(255,255,255,0.14);
-        --border-accent: rgba(240,192,64,0.3);
-        --shadow:        0 4px 24px rgba(0,0,0,0.4);
-        --shadow-lg:     0 8px 32px rgba(0,0,0,0.5);
+        --bg-base:       #e9e4e2;
+        --bg-card:       #f1edec;
+        --bg-card2:      #f8f6f5;
+        --bg-input:      #f8f6f5;
+        --accent:        #6e5236;
+        --accent-bright: #8a6642;
+        --accent2:       #8f4718;
+        --accent-soft:   rgba(138,102,66,0.12);
+        --accent2-soft:  rgba(168,86,31,0.12);
+        --green:         #24633f;
+        --green-soft:    rgba(47,122,82,0.12);
+        --red:           #9a2f2f;
+        --red-soft:      rgba(178,59,59,0.12);
+        --blue:          #274f85;
+        --blue-soft:     rgba(47,95,158,0.12);
+        --purple:        #653d80;
+        --purple-soft:   rgba(122,74,154,0.12);
+        --text-primary:  #2b2422;
+        --text-muted:    #62574f;
+        --text-dim:      #6d625c;
+        --border:        rgba(60,40,30,0.13);
+        --border-strong: rgba(60,40,30,0.22);
+        --border-accent: rgba(138,102,66,0.3);
+        --shadow:        0 4px 24px rgba(60,40,30,0.14);
+        --shadow-lg:     0 8px 32px rgba(60,40,30,0.175);
         --radius:        12px;
         --radius-sm:     8px;
         --radius-lg:     16px;
@@ -107,13 +107,13 @@ hide_style = """
     }
     .stButton > button[kind="primary"] {
         background: linear-gradient(135deg, var(--accent) 0%, var(--accent-bright) 100%) !important;
-        color: #0f1117 !important;
+        color: #ffffff !important;
         border-color: var(--accent) !important;
         font-weight: 800 !important;
-        box-shadow: 0 2px 12px rgba(240,192,64,0.3) !important;
+        box-shadow: 0 2px 12px rgba(138,102,66,0.3) !important;
     }
     .stButton > button[kind="primary"]:hover {
-        box-shadow: 0 4px 20px rgba(240,192,64,0.5) !important;
+        box-shadow: 0 4px 20px rgba(138,102,66,0.5) !important;
         transform: translateY(-1px) !important;
     }
 
@@ -124,9 +124,9 @@ hide_style = """
     .stNumberInput > div > div > input,
     .stDateInput > div > div > input,
     .stTextArea > div > div > textarea {
-        background-color: #2f3550 !important;
-        color: #ffffff !important;
-        border: 1px solid rgba(255,255,255,0.22) !important;
+        background-color: #f8f6f5 !important;
+        color: var(--text-primary) !important;
+        border: 1px solid rgba(60,40,30,0.22) !important;
         border-radius: var(--radius-sm) !important;
         font-family: 'Noto Sans JP', sans-serif !important;
         font-weight: 600 !important;
@@ -141,8 +141,8 @@ hide_style = """
     div[data-baseweb="select"] > div,
     div[data-baseweb="select"] [data-baseweb="input"],
     div[data-baseweb="input"] > div {
-        background-color: #2f3550 !important;
-        border-color: rgba(255,255,255,0.22) !important;
+        background-color: #f8f6f5 !important;
+        border-color: rgba(60,40,30,0.22) !important;
     }
 
     /* --- 選択済みの値・入力文字を白に (背景同化を完全に防ぐ) --- */
@@ -154,8 +154,8 @@ hide_style = """
     div[data-baseweb="select"] input,
     .stSelectbox div[data-baseweb="select"] div,
     .stMultiSelect div[data-baseweb="select"] div {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
     }
     /* 選択済み値を太めにして視認性UP */
     div[data-baseweb="select"] > div > div:first-child {
@@ -164,8 +164,8 @@ hide_style = """
     }
     /* selectbox 内で入力中(検索)の文字 */
     [data-baseweb="select"] input {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
         caret-color: var(--accent) !important;
     }
     /* text/number/date/textarea の入力文字 */
@@ -173,8 +173,8 @@ hide_style = """
     .stNumberInput input,
     .stDateInput input,
     .stTextArea textarea {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
         caret-color: var(--accent) !important;
         font-weight: 600 !important;
     }
@@ -183,8 +183,8 @@ hide_style = """
     .stNumberInput input::placeholder,
     .stTextArea textarea::placeholder,
     [data-baseweb="select"] input::placeholder {
-        color: #b0b6c8 !important;
-        -webkit-text-fill-color: #b0b6c8 !important;
+        color: #6d625c !important;
+        -webkit-text-fill-color: #6d625c !important;
         opacity: 1 !important;
         font-weight: 400 !important;
     }
@@ -195,8 +195,8 @@ hide_style = """
     div[data-baseweb="popover"] > div,
     div[data-baseweb="menu"],
     ul[role="listbox"] {
-        background-color: #2f3550 !important;
-        border: 1px solid rgba(255,255,255,0.2) !important;
+        background-color: #f8f6f5 !important;
+        border: 1px solid rgba(60,40,30,0.2) !important;
     }
     [data-baseweb="popover"] [role="option"],
     [data-baseweb="menu"] li,
@@ -204,36 +204,36 @@ hide_style = """
     [data-baseweb="popover"] li,
     ul[role="listbox"] li,
     ul[role="listbox"] li * {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
         background-color: transparent !important;
         font-weight: 600 !important;
     }
     [data-baseweb="popover"] [role="option"]:hover,
     [data-baseweb="menu"] li:hover,
     ul[role="listbox"] li:hover {
-        background-color: rgba(240,192,64,0.25) !important;
+        background-color: rgba(138,102,66,0.25) !important;
     }
     [data-baseweb="popover"] [role="option"]:hover *,
     [data-baseweb="menu"] li:hover *,
     ul[role="listbox"] li:hover * {
-        color: var(--accent-bright, #ffd97a) !important;
-        -webkit-text-fill-color: var(--accent-bright, #ffd97a) !important;
+        color: var(--accent-bright, #6e5236) !important;
+        -webkit-text-fill-color: var(--accent-bright, #6e5236) !important;
     }
     /* 選択中の候補 */
     [data-baseweb="menu"] li[aria-selected="true"],
     ul[role="listbox"] li[aria-selected="true"] {
-        background-color: rgba(240,192,64,0.3) !important;
+        background-color: rgba(138,102,66,0.3) !important;
     }
     [data-baseweb="menu"] li[aria-selected="true"] *,
     ul[role="listbox"] li[aria-selected="true"] * {
-        color: #ffd97a !important;
-        -webkit-text-fill-color: #ffd97a !important;
+        color: #6e5236 !important;
+        -webkit-text-fill-color: #6e5236 !important;
     }
 
     /* --- multiselect のタグ(選択済みチップ) --- */
     [data-baseweb="tag"] {
-        background-color: rgba(240,192,64,0.2) !important;
+        background-color: rgba(138,102,66,0.2) !important;
     }
     [data-baseweb="tag"] span,
     [data-baseweb="tag"] div {
@@ -256,7 +256,7 @@ hide_style = """
     .stRadio > label,
     .stCheckbox > label,
     [data-testid="stWidgetLabel"] {
-        color: #b8bed0 !important;
+        color: #5a504a !important;
         font-size: 0.85rem !important;
         font-weight: 600 !important;
         letter-spacing: 0.03em !important;
@@ -311,7 +311,7 @@ hide_style = """
         background: var(--accent-soft) !important;
         border-color: var(--accent) !important;
         font-weight: 800 !important;
-        box-shadow: 0 0 0 2px rgba(240,192,64,0.2) !important;
+        box-shadow: 0 0 0 2px rgba(138,102,66,0.2) !important;
     }
     label[data-baseweb="radio"]:has(input:checked),
     label[data-baseweb="radio"]:has(input:checked) *,
@@ -369,13 +369,13 @@ hide_style = """
     .stTabs [data-baseweb="tab"],
     .stTabs [role="tab"],
     .stTabs button[role="tab"] {
-        background: #2f3550 !important;
+        background: #f8f6f5 !important;
         border-radius: var(--radius-sm) !important;
         font-family: 'Noto Sans JP', sans-serif !important;
         font-size: 0.9rem !important;
         font-weight: 700 !important;
         padding: 0.55rem 1.1rem !important;
-        border: 1.5px solid rgba(255,255,255,0.25) !important;
+        border: 1.5px solid rgba(60,40,30,0.25) !important;
         transition: all 0.15s ease !important;
         white-space: nowrap !important;
         flex-shrink: 0 !important;
@@ -398,7 +398,7 @@ hide_style = """
     .stTabs [data-baseweb="tab"] [data-testid="stMarkdownContainer"] *,
     .stTabs [role="tab"] [data-testid="stMarkdownContainer"],
     .stTabs [role="tab"] [data-testid="stMarkdownContainer"] * {
-        color: #ffffff !important;
+        color: var(--text-primary) !important;
         opacity: 1 !important;
         font-weight: 700 !important;
     }
@@ -406,13 +406,13 @@ hide_style = """
     /* タブ本体そのものの文字色も指定 (直接テキストが入っているケース) */
     .stTabs [data-baseweb="tab"],
     .stTabs [role="tab"] {
-        color: #ffffff !important;
+        color: var(--text-primary) !important;
     }
 
     /* ========== ホバー時 ========== */
     .stTabs [data-baseweb="tab"]:hover,
     .stTabs [role="tab"]:hover {
-        background: rgba(240,192,64,0.2) !important;
+        background: rgba(138,102,66,0.2) !important;
         border-color: var(--accent) !important;
     }
     .stTabs [data-baseweb="tab"]:hover *,
@@ -426,8 +426,8 @@ hide_style = """
         background: var(--accent) !important;
         border-color: var(--accent) !important;
         font-weight: 900 !important;
-        box-shadow: 0 3px 12px rgba(240,192,64,0.5) !important;
-        color: #0f1117 !important;
+        box-shadow: 0 3px 12px rgba(138,102,66,0.5) !important;
+        color: #ffffff !important;
     }
     .stTabs [data-baseweb="tab"][aria-selected="true"] *,
     .stTabs [role="tab"][aria-selected="true"] *,
@@ -437,7 +437,7 @@ hide_style = """
     .stTabs [role="tab"][aria-selected="true"] p,
     .stTabs [role="tab"][aria-selected="true"] div,
     .stTabs [role="tab"][aria-selected="true"] span {
-        color: #0f1117 !important;
+        color: #ffffff !important;
         font-weight: 900 !important;
     }
 
@@ -503,12 +503,12 @@ hide_style = """
         border-bottom: 1px solid var(--border) !important;
         padding: 0.55rem 0.8rem !important;
         font-size: 0.88rem !important;
-        color: #e8e8f0 !important;
+        color: #2b2422 !important;
     }
     /* データフレーム内部(canvas/glide-grid)のテキストも明るく */
     [data-testid="stDataFrame"] [role="gridcell"],
     [data-testid="stDataFrame"] [role="columnheader"] {
-        color: #e8e8f0 !important;
+        color: #2b2422 !important;
     }
     [data-testid="stDataFrame"] tr:hover td {
         background: var(--accent-soft) !important;
@@ -563,7 +563,7 @@ hide_style = """
     /* ========== キャプション ========== */
     .stCaption, [data-testid="stCaptionContainer"],
     [data-testid="stCaptionContainer"] p {
-        color: #a8afc4 !important;
+        color: #62574f !important;
         font-size: 0.82rem !important;
     }
 
@@ -595,7 +595,7 @@ hide_style = """
         letter-spacing: 0.05em;
     }
     .score-sheet .set-header {
-        background: linear-gradient(90deg, rgba(240,192,64,0.15) 0%, transparent 100%);
+        background: linear-gradient(90deg, rgba(138,102,66,0.15) 0%, transparent 100%);
         text-align: left;
         padding-left: 14px;
         font-weight: 700;
@@ -611,10 +611,10 @@ hide_style = """
         width: 22px;
         text-align: center;
     }
-    .cell-top { background: rgba(240,192,64,0.07) !important; }
+    .cell-top { background: rgba(138,102,66,0.07) !important; }
     .rank-special {
         background: var(--accent);
-        color: #0f1117;
+        color: #ffffff;
         border-radius: 50%;
         width: 22px;
         height: 22px;
@@ -625,7 +625,7 @@ hide_style = """
         justify-content: center;
     }
     .score-sheet .summary-row td {
-        background: rgba(240,192,64,0.08);
+        background: rgba(138,102,66,0.08);
         font-weight: 700;
         border-top: 2px solid var(--border-accent);
         color: var(--accent);
@@ -750,11 +750,11 @@ hide_style = """
         padding: 1.6rem 1.5rem 1.4rem;
         margin-bottom: 1rem;
         background: linear-gradient(135deg,
-            rgba(240,192,64,0.12) 0%,
-            rgba(91,156,246,0.10) 50%,
-            rgba(160,108,213,0.10) 100%);
-        border: 1px solid rgba(240,192,64,0.25);
-        box-shadow: 0 10px 40px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.05);
+            rgba(138,102,66,0.12) 0%,
+            rgba(47,95,158,0.10) 50%,
+            rgba(110,66,144,0.10) 100%);
+        border: 1px solid rgba(138,102,66,0.25);
+        box-shadow: 0 10px 40px rgba(60,40,30,0.105), inset 0 1px 0 rgba(60,40,30,0.05);
     }
     .hero-bg-decoration {
         position: absolute;
@@ -804,9 +804,9 @@ hide_style = """
         object-fit: cover;
         background: #fff;
         padding: 4px;
-        box-shadow: 0 0 0 3px rgba(240,192,64,0.5),
-                    0 4px 24px rgba(240,192,64,0.35),
-                    0 2px 12px rgba(0,0,0,0.4);
+        box-shadow: 0 0 0 3px rgba(138,102,66,0.5),
+                    0 4px 24px rgba(138,102,66,0.35),
+                    0 2px 12px rgba(60,40,30,0.14);
         animation: logoFloat 4s ease-in-out infinite;
     }
     @keyframes logoFloat {
@@ -816,8 +816,8 @@ hide_style = """
     .hero-badge {
         display: inline-block;
         padding: 0.3rem 0.9rem;
-        background: rgba(240,192,64,0.15);
-        border: 1px solid rgba(240,192,64,0.35);
+        background: rgba(138,102,66,0.15);
+        border: 1px solid rgba(138,102,66,0.35);
         border-radius: 999px;
         font-size: 0.7rem;
         font-weight: 800;
@@ -829,14 +829,14 @@ hide_style = """
         font-family: 'Zen Kaku Gothic New', sans-serif;
         font-size: 2.4rem;
         font-weight: 900;
-        background: linear-gradient(135deg, var(--accent) 0%, #ffd97a 50%, var(--accent2) 100%);
+        background: linear-gradient(135deg, var(--accent) 0%, #6e5236 50%, var(--accent2) 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
         letter-spacing: 0.06em;
         line-height: 1.15;
         margin-bottom: 0;
-        text-shadow: 0 2px 20px rgba(240,192,64,0.3);
+        text-shadow: 0 2px 20px rgba(138,102,66,0.3);
     }
 
     /* ========== メニューボタン (カラー別グラデーション) ========== */
@@ -846,8 +846,8 @@ hide_style = """
         position: relative !important;
         min-height: 62px !important;
         padding: 1rem 1.2rem 1rem 1.5rem !important;
-        background: linear-gradient(135deg, rgba(35,39,57,0.95) 0%, rgba(47,53,80,0.85) 100%) !important;
-        border: 1px solid rgba(255,255,255,0.08) !important;
+        background: linear-gradient(135deg, rgba(248,246,245,0.95) 0%, rgba(241,237,236,0.85) 100%) !important;
+        border: 1px solid rgba(60,40,30,0.08) !important;
         border-radius: 14px !important;
         color: var(--text-primary) !important;
         font-family: 'Zen Kaku Gothic New', sans-serif !important;
@@ -858,7 +858,7 @@ hide_style = """
         line-height: 1.3 !important;
         overflow: hidden !important;
         transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+        box-shadow: 0 2px 8px rgba(60,40,30,0.07), inset 0 1px 0 rgba(60,40,30,0.04) !important;
     }
     /* 左サイドの色付きアクセントバー */
     [class*="st-key-menu-"] .stButton > button::before {
@@ -886,9 +886,9 @@ hide_style = """
     }
     [class*="st-key-menu-"] .stButton > button:hover {
         transform: translateY(-3px) !important;
-        border-color: rgba(255,255,255,0.15) !important;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.4),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(60,40,30,0.15) !important;
+        box-shadow: 0 10px 30px rgba(60,40,30,0.14),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
     [class*="st-key-menu-"] .stButton > button:hover::before {
         width: 7px;
@@ -908,86 +908,86 @@ hide_style = """
     /* === カラーバリエーション === */
     /* 青系: 個人成績 */
     [class*="st-key-menu-blue-"] .stButton > button::before {
-        background: linear-gradient(180deg, #6ca9ff 0%, #4183db 100%);
+        background: linear-gradient(180deg, #3b6fb0 0%, #22477a 100%);
     }
     [class*="st-key-menu-blue-"] .stButton > button::after {
-        background: radial-gradient(circle, #5b9cf6 0%, transparent 70%);
+        background: radial-gradient(circle, #274f85 0%, transparent 70%);
     }
     [class*="st-key-menu-blue-"] .stButton > button:hover {
-        border-color: rgba(91,156,246,0.4) !important;
-        box-shadow: 0 10px 30px rgba(91,156,246,0.25),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(47,95,158,0.4) !important;
+        box-shadow: 0 10px 30px rgba(47,95,158,0.25),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
 
     /* 緑系: データ参照 */
     [class*="st-key-menu-green-"] .stButton > button::before {
-        background: linear-gradient(180deg, #5fc99b 0%, #38956d 100%);
+        background: linear-gradient(180deg, #3d8c62 0%, #1e5236 100%);
     }
     [class*="st-key-menu-green-"] .stButton > button::after {
-        background: radial-gradient(circle, #4caf87 0%, transparent 70%);
+        background: radial-gradient(circle, #24633f 0%, transparent 70%);
     }
     [class*="st-key-menu-green-"] .stButton > button:hover {
-        border-color: rgba(76,175,135,0.4) !important;
-        box-shadow: 0 10px 30px rgba(76,175,135,0.25),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(47,122,82,0.4) !important;
+        box-shadow: 0 10px 30px rgba(47,122,82,0.25),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
 
     /* 金系: ランキング */
     [class*="st-key-menu-gold-"] .stButton > button::before {
-        background: linear-gradient(180deg, #ffd57a 0%, #e0a828 100%);
+        background: linear-gradient(180deg, #6e5236 0%, #5f462e 100%);
     }
     [class*="st-key-menu-gold-"] .stButton > button::after {
-        background: radial-gradient(circle, #f0c040 0%, transparent 70%);
+        background: radial-gradient(circle, #6e5236 0%, transparent 70%);
     }
     [class*="st-key-menu-gold-"] .stButton > button:hover {
-        border-color: rgba(240,192,64,0.5) !important;
-        box-shadow: 0 10px 30px rgba(240,192,64,0.3),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(138,102,66,0.5) !important;
+        box-shadow: 0 10px 30px rgba(138,102,66,0.3),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
 
     /* 橙系: 月間成績 */
     [class*="st-key-menu-orange-"] .stButton > button::before {
-        background: linear-gradient(180deg, #ff9b5e 0%, #c96422 100%);
+        background: linear-gradient(180deg, #c06a2c 0%, #7a3c14 100%);
     }
     [class*="st-key-menu-orange-"] .stButton > button::after {
-        background: radial-gradient(circle, #e07b39 0%, transparent 70%);
+        background: radial-gradient(circle, #8f4718 0%, transparent 70%);
     }
     [class*="st-key-menu-orange-"] .stButton > button:hover {
-        border-color: rgba(224,123,57,0.4) !important;
-        box-shadow: 0 10px 30px rgba(224,123,57,0.25),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(168,86,31,0.4) !important;
+        box-shadow: 0 10px 30px rgba(168,86,31,0.25),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
 
     /* 紫系: 2人対戦 */
     [class*="st-key-menu-purple-"] .stButton > button::before {
-        background: linear-gradient(180deg, #bd8af0 0%, #8a4fc4 100%);
+        background: linear-gradient(180deg, #8a5aaa 0%, #50316d 100%);
     }
     [class*="st-key-menu-purple-"] .stButton > button::after {
-        background: radial-gradient(circle, #a06cd5 0%, transparent 70%);
+        background: radial-gradient(circle, #6e4290 0%, transparent 70%);
     }
     [class*="st-key-menu-purple-"] .stButton > button:hover {
-        border-color: rgba(160,108,213,0.4) !important;
-        box-shadow: 0 10px 30px rgba(160,108,213,0.25),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(110,66,144,0.4) !important;
+        box-shadow: 0 10px 30px rgba(110,66,144,0.25),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
 
     /* ピンク系: 3人対戦 */
     [class*="st-key-menu-pink-"] .stButton > button::before {
-        background: linear-gradient(180deg, #f078a5 0%, #c04477 100%);
+        background: linear-gradient(180deg, #b03d6a 0%, #8a2c50 100%);
     }
     [class*="st-key-menu-pink-"] .stButton > button::after {
-        background: radial-gradient(circle, #d95a8c 0%, transparent 70%);
+        background: radial-gradient(circle, #a3365f 0%, transparent 70%);
     }
     [class*="st-key-menu-pink-"] .stButton > button:hover {
-        border-color: rgba(217,90,140,0.4) !important;
-        box-shadow: 0 10px 30px rgba(217,90,140,0.25),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(163,54,95,0.4) !important;
+        box-shadow: 0 10px 30px rgba(163,54,95,0.25),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
 
     /* ========== ランキングPT 情報パネル ========== */
     .rankpt-info-panel {
-        background: linear-gradient(135deg, rgba(35,39,57,0.9) 0%, rgba(47,53,80,0.7) 100%);
-        border: 1px solid rgba(240,192,64,0.2);
+        background: linear-gradient(135deg, rgba(248,246,245,0.9) 0%, rgba(241,237,236,0.7) 100%);
+        border: 1px solid rgba(138,102,66,0.2);
         border-radius: 14px;
         padding: 1rem 1.2rem;
         margin-bottom: 0.8rem;
@@ -1007,8 +1007,8 @@ hide_style = """
     .rankpt-item {
         display: inline-flex;
         align-items: center;
-        background: rgba(255,255,255,0.05);
-        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(60,40,30,0.05);
+        border: 1px solid rgba(60,40,30,0.1);
         border-radius: 8px;
         padding: 0.32rem 0.6rem;
         font-size: 0.76rem;
@@ -1020,7 +1020,7 @@ hide_style = """
         height: 1px;
         background: linear-gradient(90deg,
             transparent 0%,
-            rgba(240,192,64,0.25) 50%,
+            rgba(138,102,66,0.25) 50%,
             transparent 100%);
         margin: 0.9rem 0;
     }
@@ -1033,8 +1033,8 @@ hide_style = """
         display: inline-flex;
         align-items: center;
         gap: 0.3rem;
-        background: rgba(0,0,0,0.25);
-        border: 1px solid rgba(255,255,255,0.08);
+        background: rgba(60,40,30,0.087);
+        border: 1px solid rgba(60,40,30,0.08);
         border-radius: 999px;
         padding: 0.3rem 0.7rem;
         font-size: 0.75rem;
@@ -1047,20 +1047,20 @@ hide_style = """
         font-family: 'Zen Kaku Gothic New', sans-serif;
     }
     .rankpt-pt.pt-gold {
-        border-color: rgba(240,192,64,0.4);
-        background: rgba(240,192,64,0.08);
+        border-color: rgba(138,102,66,0.4);
+        background: rgba(138,102,66,0.08);
     }
     .rankpt-pt.pt-gold strong { color: var(--accent); }
     .rankpt-pt.pt-silver {
-        border-color: rgba(200,205,220,0.3);
-        background: rgba(200,205,220,0.06);
+        border-color: rgba(110,110,120,0.3);
+        background: rgba(110,110,120,0.06);
     }
-    .rankpt-pt.pt-silver strong { color: #c8cddc; }
+    .rankpt-pt.pt-silver strong { color: #5a504a; }
     .rankpt-pt.pt-bronze {
-        border-color: rgba(224,123,57,0.3);
-        background: rgba(224,123,57,0.06);
+        border-color: rgba(168,86,31,0.3);
+        background: rgba(168,86,31,0.06);
     }
-    .rankpt-pt.pt-bronze strong { color: #e07b39; }
+    .rankpt-pt.pt-bronze strong { color: #8f4718; }
 
     /* ========== ランキングPT 内訳 (expander内) ========== */
     .rankpt-breakdown {
@@ -1075,8 +1075,8 @@ hide_style = """
         gap: 0.6rem;
         padding: 0.5rem 0.75rem;
         border-radius: 10px;
-        border: 1px solid rgba(255,255,255,0.06);
-        background: rgba(255,255,255,0.02);
+        border: 1px solid rgba(60,40,30,0.06);
+        background: rgba(60,40,30,0.02);
         position: relative;
         overflow: hidden;
         transition: transform 0.15s;
@@ -1129,38 +1129,38 @@ hide_style = """
     }
     /* === Tier別カラー === */
     .rankpt-bd-row.tier-gold {
-        background: linear-gradient(90deg, rgba(240,192,64,0.14) 0%, rgba(240,192,64,0.03) 100%);
-        border-color: rgba(240,192,64,0.3);
+        background: linear-gradient(90deg, rgba(138,102,66,0.14) 0%, rgba(138,102,66,0.03) 100%);
+        border-color: rgba(138,102,66,0.3);
     }
     .rankpt-bd-row.tier-gold::before { background: var(--accent); }
     .rankpt-bd-row.tier-gold .rankpt-bd-rankbadge {
-        color: #1a1d2e; background: var(--accent);
+        color: #ffffff; background: var(--accent);
     }
     .rankpt-bd-row.tier-gold .rankpt-bd-pt { color: var(--accent); }
 
     .rankpt-bd-row.tier-silver {
-        background: linear-gradient(90deg, rgba(200,205,220,0.1) 0%, rgba(200,205,220,0.02) 100%);
-        border-color: rgba(200,205,220,0.22);
+        background: linear-gradient(90deg, rgba(110,110,120,0.1) 0%, rgba(110,110,120,0.02) 100%);
+        border-color: rgba(110,110,120,0.22);
     }
-    .rankpt-bd-row.tier-silver::before { background: #c8cddc; }
+    .rankpt-bd-row.tier-silver::before { background: #5a504a; }
     .rankpt-bd-row.tier-silver .rankpt-bd-rankbadge {
-        color: #1a1d2e; background: #c8cddc;
+        color: #ffffff; background: #5a504a;
     }
-    .rankpt-bd-row.tier-silver .rankpt-bd-pt { color: #c8cddc; }
+    .rankpt-bd-row.tier-silver .rankpt-bd-pt { color: #5a504a; }
 
     .rankpt-bd-row.tier-bronze {
-        background: linear-gradient(90deg, rgba(224,123,57,0.12) 0%, rgba(224,123,57,0.02) 100%);
-        border-color: rgba(224,123,57,0.25);
+        background: linear-gradient(90deg, rgba(168,86,31,0.12) 0%, rgba(168,86,31,0.02) 100%);
+        border-color: rgba(168,86,31,0.25);
     }
-    .rankpt-bd-row.tier-bronze::before { background: #e07b39; }
+    .rankpt-bd-row.tier-bronze::before { background: #8f4718; }
     .rankpt-bd-row.tier-bronze .rankpt-bd-rankbadge {
-        color: #fff; background: #e07b39;
+        color: #fff; background: #8f4718;
     }
-    .rankpt-bd-row.tier-bronze .rankpt-bd-pt { color: #e07b39; }
+    .rankpt-bd-row.tier-bronze .rankpt-bd-pt { color: #8f4718; }
 
-    .rankpt-bd-row.tier-plain::before { background: rgba(255,255,255,0.15); }
+    .rankpt-bd-row.tier-plain::before { background: rgba(60,40,30,0.15); }
     .rankpt-bd-row.tier-plain .rankpt-bd-rankbadge {
-        color: var(--text-muted); background: rgba(255,255,255,0.06);
+        color: var(--text-muted); background: rgba(60,40,30,0.06);
     }
     .rankpt-bd-row.tier-plain .rankpt-bd-pt { color: var(--text-muted); }
 
@@ -1171,8 +1171,8 @@ hide_style = """
         align-items: center;
         margin-top: 0.5rem;
         padding: 0.6rem 0.85rem;
-        background: linear-gradient(135deg, rgba(240,192,64,0.14) 0%, rgba(240,192,64,0.05) 100%);
-        border: 1px solid rgba(240,192,64,0.3);
+        background: linear-gradient(135deg, rgba(138,102,66,0.14) 0%, rgba(138,102,66,0.05) 100%);
+        border: 1px solid rgba(138,102,66,0.3);
         border-radius: 10px;
     }
     .rankpt-bd-total-label {
@@ -1191,7 +1191,6 @@ hide_style = """
         font-size: 0.8rem;
         margin-left: 0.15rem;
         color: var(--accent);
-        opacity: 0.7;
     }
 
     /* ========== expander (ランキングPT用) の装飾 ========== */
@@ -1201,19 +1200,19 @@ hide_style = """
         margin-bottom: 0.5rem !important;
     }
     div[data-testid="stExpander"] details {
-        background: linear-gradient(135deg, rgba(35,39,57,0.95) 0%, rgba(47,53,80,0.8) 100%) !important;
-        border: 1px solid rgba(255,255,255,0.09) !important;
+        background: linear-gradient(135deg, rgba(248,246,245,0.95) 0%, rgba(241,237,236,0.8) 100%) !important;
+        border: 1px solid rgba(60,40,30,0.09) !important;
         border-radius: 12px !important;
         overflow: hidden !important;
         transition: all 0.2s !important;
     }
     div[data-testid="stExpander"] details:hover {
-        border-color: rgba(240,192,64,0.35) !important;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.3) !important;
+        border-color: rgba(138,102,66,0.35) !important;
+        box-shadow: 0 4px 16px rgba(60,40,30,0.105) !important;
     }
     div[data-testid="stExpander"] details[open] {
-        border-color: rgba(240,192,64,0.3) !important;
-        box-shadow: 0 6px 24px rgba(0,0,0,0.35) !important;
+        border-color: rgba(138,102,66,0.3) !important;
+        box-shadow: 0 6px 24px rgba(60,40,30,0.122) !important;
     }
     div[data-testid="stExpander"] summary {
         padding: 0.75rem 1rem !important;
@@ -1224,25 +1223,25 @@ hide_style = """
         transition: background 0.2s !important;
     }
     div[data-testid="stExpander"] summary:hover {
-        background: rgba(240,192,64,0.06) !important;
+        background: rgba(138,102,66,0.06) !important;
         color: var(--accent) !important;
     }
     div[data-testid="stExpander"] details[open] summary {
-        border-bottom: 1px solid rgba(255,255,255,0.08) !important;
-        background: rgba(240,192,64,0.04) !important;
+        border-bottom: 1px solid rgba(60,40,30,0.08) !important;
+        background: rgba(138,102,66,0.04) !important;
     }
 
     /* ティール系: 過去の着順表 */
     [class*="st-key-menu-teal-"] .stButton > button::before {
-        background: linear-gradient(180deg, #4dd0c7 0%, #2a9d94 100%);
+        background: linear-gradient(180deg, #1f7f78 0%, #1b6b65 100%);
     }
     [class*="st-key-menu-teal-"] .stButton > button::after {
-        background: radial-gradient(circle, #3bbdb3 0%, transparent 70%);
+        background: radial-gradient(circle, #237e77 0%, transparent 70%);
     }
     [class*="st-key-menu-teal-"] .stButton > button:hover {
-        border-color: rgba(59,189,179,0.4) !important;
-        box-shadow: 0 10px 30px rgba(59,189,179,0.25),
-                    inset 0 1px 0 rgba(255,255,255,0.08) !important;
+        border-color: rgba(31,127,120,0.4) !important;
+        box-shadow: 0 10px 30px rgba(31,127,120,0.25),
+                    inset 0 1px 0 rgba(60,40,30,0.08) !important;
     }
 
     /* ========== ホームフッター ========== */
@@ -1255,13 +1254,13 @@ hide_style = """
         height: 1px;
         background: linear-gradient(90deg,
             transparent 0%,
-            rgba(240,192,64,0.3) 50%,
+            rgba(138,102,66,0.3) 50%,
             transparent 100%);
         margin-bottom: 0.8rem;
     }
     .home-footer-text {
         font-size: 0.7rem;
-        color: rgba(255,255,255,0.25);
+        color: var(--text-muted);
         letter-spacing: 0.18em;
         font-weight: 600;
     }
@@ -1293,11 +1292,11 @@ hide_style = """
         width: 36px;
         height: 36px;
         background: var(--accent);
-        color: #0f1117;
+        color: #ffffff;
         font-weight: 900;
         font-size: 1.1rem;
         border-radius: 50%;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        box-shadow: 0 2px 6px rgba(60,40,30,0.105);
         flex-shrink: 0;
     }
     .seat-badge.a { background: var(--blue); color: white; }
@@ -1312,7 +1311,7 @@ hide_style = """
 
     /* ========== 改善: 入力ステータスバー ========== */
     .input-status-bar {
-        background: linear-gradient(135deg, var(--bg-card) 0%, rgba(240,192,64,0.05) 100%);
+        background: linear-gradient(135deg, var(--bg-card) 0%, rgba(138,102,66,0.05) 100%);
         border: 1px solid var(--border-accent);
         border-radius: var(--radius);
         padding: 0.85rem 1.2rem;
@@ -1338,7 +1337,7 @@ hide_style = """
 
     /* ========== 改善: 保存成功通知 (トースト風) ========== */
     .toast-success {
-        background: linear-gradient(135deg, var(--green-soft) 0%, rgba(76,175,135,0.18) 100%);
+        background: linear-gradient(135deg, var(--green-soft) 0%, rgba(47,122,82,0.18) 100%);
         border: 1px solid var(--green);
         border-radius: var(--radius);
         padding: 1rem 1.3rem;
@@ -1349,7 +1348,7 @@ hide_style = """
         display: flex;
         align-items: center;
         gap: 0.7rem;
-        box-shadow: 0 4px 16px rgba(76,175,135,0.2);
+        box-shadow: 0 4px 16px rgba(47,122,82,0.2);
         animation: slideDown 0.3s ease-out;
     }
     @keyframes slideDown {
@@ -1404,7 +1403,7 @@ hide_style = """
         color: var(--text-muted);
         font-weight: 600;
         letter-spacing: 0.05em;
-        background: rgba(255,255,255,0.04);
+        background: rgba(60,40,30,0.04);
         padding: 1px 6px;
         border-radius: 3px;
     }
@@ -1492,7 +1491,7 @@ hide_style = """
         padding: 0.3rem;
         overflow-x: auto;
         margin: 0 0 0.9rem;
-        box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+        box-shadow: 0 3px 12px rgba(60,40,30,0.105);
     }
     .paper-table {
         border-collapse: collapse;
@@ -1518,7 +1517,7 @@ hide_style = """
     }
     .paper-table .col-no {
         background: #ede8da; font-weight: 700; width: 30px;
-        color: #777 !important; font-size: 0.7rem;
+        color: #4a4a4a !important; font-size: 0.7rem;
     }
     .paper-table .seat-head-A { background: #d4e4f7; width: 33%; }
     .paper-table .seat-head-B { background: #f7e0cc; width: 33%; }
@@ -1528,7 +1527,7 @@ hide_style = """
         border-top: 2px solid #8a8268; padding: 3px 4px; line-height: 1.2;
     }
     .paper-table .name-type {
-        font-size: 0.62rem; color: #8a7a55 !important; margin-left: 3px;
+        font-size: 0.62rem; color: #4f3f14 !important; margin-left: 3px; white-space: nowrap;
         background: #efe8d2; padding: 0 3px; border-radius: 3px;
     }
     .paper-table .rank1 { color: #c0392b !important; font-weight: 900; }
@@ -1568,15 +1567,15 @@ hide_style = """
     html body div[data-baseweb="select"] div,
     html body div[data-baseweb="select"] span,
     html body div[data-baseweb="select"] input {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
         opacity: 1 !important;
     }
     /* 選択済み値をさらに強調 */
     html body div[data-baseweb="select"] > div > div,
     html body div[data-testid="stSelectbox"] > div > div > div {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
         font-weight: 700 !important;
         opacity: 1 !important;
     }
@@ -1589,8 +1588,8 @@ hide_style = """
     html body .stNumberInput input,
     html body .stDateInput input,
     html body .stTextArea textarea {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
         opacity: 1 !important;
     }
     /* ドロップダウン候補 (body直下にポータル描画される) */
@@ -1602,16 +1601,16 @@ hide_style = """
     html body ul[role="listbox"] li,
     html body ul[role="listbox"] li div,
     html body ul[role="listbox"] li span {
-        color: #ffffff !important;
-        -webkit-text-fill-color: #ffffff !important;
+        color: var(--text-primary) !important;
+        -webkit-text-fill-color: var(--text-primary) !important;
         opacity: 1 !important;
     }
     /* disabled 状態でも読めるように */
     html body div[data-baseweb="select"] [aria-disabled="true"],
     html body input:disabled,
     html body textarea:disabled {
-        color: #c8cddc !important;
-        -webkit-text-fill-color: #c8cddc !important;
+        color: #5a504a !important;
+        -webkit-text-fill-color: #5a504a !important;
         opacity: 1 !important;
     }
 
@@ -1659,8 +1658,8 @@ hide_style = """
         }
         [class*="st-key-menu-"] .stButton > button:hover {
             transform: none !important;
-            background: linear-gradient(135deg, rgba(35,39,57,0.95) 0%, rgba(47,53,80,0.85) 100%) !important;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.04) !important;
+            background: linear-gradient(135deg, rgba(248,246,245,0.95) 0%, rgba(241,237,236,0.85) 100%) !important;
+            box-shadow: 0 2px 8px rgba(60,40,30,0.07), inset 0 1px 0 rgba(60,40,30,0.04) !important;
         }
         div[data-testid="stExpander"] summary:hover {
             background: transparent !important;
@@ -1734,6 +1733,122 @@ hide_style = """
             min-width: calc(50% - 0.5rem) !important;
         }
     }
+
+    /* ========== デザイン統一 (2026-11-20): 入力アプリと同じ「平らなキー」 ==========
+       温かいベージュの背景・フラットな白いキー・こげ茶のアクセント。
+       config.toml もライト (ベージュ) にしたが、念のため部品の色はここで固定する。 */
+    html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+        background: var(--bg-base) !important;
+    }
+    .stApp, .stApp p, .stApp li, [data-testid="stMarkdownContainer"] { color: var(--text-primary); }
+    /* ボタン: 平らなキー (help 付きボタンにも当たるよう子孫セレクタで) */
+    .stButton button {
+        background: var(--bg-card2) !important;
+        color: var(--text-primary) !important;
+        border: 1px solid transparent !important;
+        border-radius: 12px !important;
+        box-shadow: 0 1px 0 rgba(60,40,30,0.06) !important;
+        transition: background 0.1s !important;
+        transform: none !important;
+    }
+    .stButton button * { color: inherit !important; }
+    .stButton button:hover { background: #ffffff !important; border-color: var(--border-strong) !important; color: var(--text-primary) !important; }
+    .stButton button[kind="primary"] {
+        background: #6e5236 !important; color: #ffffff !important; border-color: #6e5236 !important;
+        box-shadow: none !important;
+    }
+    .stButton button[kind="primary"]:hover { background: #5f462e !important; color: #ffffff !important; }
+    .stButton button:disabled {
+        background: #d9d0ca !important; color: #4f4540 !important; border: 1px dashed #a89b93 !important;
+    }
+    @media (hover: none) {
+        .stButton button:hover { background: var(--bg-card2) !important; border-color: transparent !important; }
+        .stButton button[kind="primary"]:hover { background: #6e5236 !important; }
+    }
+    /* タブ: 平らなピル */
+    .stTabs [data-baseweb="tab-list"] { gap: 6px !important; border-bottom: none !important; }
+    .stTabs [data-baseweb="tab-highlight"], .stTabs [data-baseweb="tab-border"] { display: none !important; }
+    .stTabs [role="tab"] {
+        background: var(--bg-card2) !important; border: 1px solid var(--border-strong) !important;
+        border-radius: 999px !important; box-shadow: none !important; transition: none !important;
+    }
+    .stTabs [role="tab"], .stTabs [role="tab"] * { color: var(--text-primary) !important; }
+    .stTabs [role="tab"][aria-selected="true"] { background: #6e5236 !important; border-color: #6e5236 !important; }
+    .stTabs [role="tab"][aria-selected="true"], .stTabs [role="tab"][aria-selected="true"] * { color: #ffffff !important; }
+    /* 入力欄・セレクト */
+    div[data-baseweb="select"] > div, div[data-baseweb="input"], div[data-baseweb="base-input"],
+    div[data-baseweb="input"] > div, div[data-baseweb="textarea"], textarea,
+    .stSelectbox > div > div, .stTextInput > div > div > input, .stNumberInput > div > div > input,
+    .stDateInput > div > div > input, .stTextArea > div > div > textarea {
+        background-color: var(--bg-card2) !important;
+        border-color: var(--border-strong) !important;
+        color: var(--text-primary) !important;
+    }
+    html body div[data-baseweb="select"] *, html body .stTextInput input, html body .stNumberInput input,
+    html body .stDateInput input, html body .stTextArea textarea, html body [data-baseweb="select"] input {
+        color: var(--text-primary) !important; -webkit-text-fill-color: var(--text-primary) !important;
+    }
+    html body input::placeholder, html body textarea::placeholder {
+        color: #6d625c !important; -webkit-text-fill-color: #6d625c !important; opacity: 1 !important;
+    }
+    html body input:disabled, html body textarea:disabled, html body div[data-baseweb="select"] [aria-disabled="true"] {
+        color: #5a504a !important; -webkit-text-fill-color: #5a504a !important;
+    }
+    button[data-testid^="stNumberInputStep"] { background: var(--bg-card) !important; color: var(--text-primary) !important; }
+    button[data-testid^="stNumberInputStep"] svg { color: inherit !important; fill: currentColor !important; }
+    /* プルダウンの候補一覧・カレンダー */
+    html body div[data-baseweb="popover"], html body div[data-baseweb="popover"] > div,
+    html body div[data-baseweb="menu"], html body ul[role="listbox"] {
+        background-color: #fbf9f8 !important; border-color: var(--border-strong) !important;
+    }
+    html body div[data-baseweb="popover"] li, html body div[data-baseweb="popover"] li *,
+    html body div[data-baseweb="popover"] [role="option"], html body div[data-baseweb="popover"] [role="option"] *,
+    html body ul[role="listbox"] li, html body ul[role="listbox"] li * {
+        color: var(--text-primary) !important; -webkit-text-fill-color: var(--text-primary) !important;
+    }
+    html body ul[role="listbox"] li:hover, html body ul[role="listbox"] li[aria-selected="true"],
+    html body [data-baseweb="menu"] li:hover, html body [data-baseweb="menu"] li[aria-selected="true"] {
+        background-color: #efe4d8 !important;
+    }
+    [data-baseweb="calendar"], [data-baseweb="calendar"] > div { background: #fbf9f8 !important; }
+    [data-baseweb="calendar"] * { color: var(--text-primary) !important; }
+    /* ラベル・補足文字 */
+    [data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] * { color: var(--text-muted) !important; opacity: 1 !important; }
+    .stCaption, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * { color: var(--text-muted) !important; opacity: 1 !important; }
+    /* お知らせ枠: 淡い色の背景 × 濃い文字 */
+    [data-testid="stAlertContainer"] { opacity: 1 !important; border: 1px solid var(--border) !important; }
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"])    { background: #e4ebf2 !important; }
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { background: #e3eee5 !important; }
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { background: #f5ead2 !important; }
+    [data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"])   { background: #f5e0dd !important; }
+    [data-testid="stAlertContentInfo"], [data-testid="stAlertContentInfo"] * { color: #1f3a55 !important; }
+    [data-testid="stAlertContentSuccess"], [data-testid="stAlertContentSuccess"] * { color: #1c4a31 !important; }
+    [data-testid="stAlertContentWarning"], [data-testid="stAlertContentWarning"] * { color: #573f0c !important; }
+    [data-testid="stAlertContentError"], [data-testid="stAlertContentError"] * { color: #74221c !important; }
+    /* 折りたたみ */
+    [data-testid="stExpander"] details { background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: 12px !important; }
+    [data-testid="stExpander"] summary, [data-testid="stExpander"] summary * { color: var(--text-primary) !important; fill: var(--text-primary) !important; }
+    /* 数値カード (st.metric) */
+    [data-testid="stMetric"] { background: var(--bg-card2); border-radius: 12px; }
+    [data-testid="stMetricValue"], [data-testid="stMetricValue"] * { color: var(--text-primary) !important; }
+    [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * { color: var(--text-muted) !important; }
+    /* 上部ナビの「いまのページ」 */
+    .nav-current { background: #6e5236 !important; border-color: #6e5236 !important; color: #ffffff !important; }
+    .nav-current * { color: #ffffff !important; }
+    .hero-badge { color: #5f462e !important; background: rgba(110,82,54,0.10) !important; }
+    /* フォームの送信ボタン (st.form_submit_button) も同じ平らなキーに */
+    [data-testid="stFormSubmitButton"] button, button[data-testid^="stBaseButton-secondaryFormSubmit"] {
+        background: var(--bg-card2) !important; color: var(--text-primary) !important;
+        border: 1px solid var(--border-strong) !important; border-radius: 12px !important;
+    }
+    [data-testid="stFormSubmitButton"] button[kind="primaryFormSubmit"], button[data-testid^="stBaseButton-primary"] {
+        background: #6e5236 !important; color: #ffffff !important; border-color: #6e5236 !important;
+    }
+    [data-testid="stFormSubmitButton"] button *, button[data-testid^="stBaseButton-primary"] * { color: inherit !important; }
+    /* st.metric の増減 (Streamlit 既定の緑・赤は明るい背景で薄いので濃く) */
+    [data-testid="stMetricDelta"], [data-testid="stMetricDelta"] * { color: #1b5e33 !important; }
+    [data-testid="stMetricDelta"]:has([data-testid="stMetricDeltaIcon-Down"]),
+    [data-testid="stMetricDelta"]:has([data-testid="stMetricDeltaIcon-Down"]) * { color: #8a2626 !important; }
     </style>
 """
 st.markdown(hide_style, unsafe_allow_html=True)
@@ -2783,26 +2898,26 @@ RATING_CORRECTION_CAP = 5.0
 # 「その閾値以上の累積ptがあればその段位」
 DAN_TABLE = [
     # (段位名,   累積pt閾値, 表示色)
-    ("新人",     -99999,  "#8890a8"),  # 最下位 (負の累積ptでも新人)
-    ("9級",       -100,  "#8890a8"),
-    ("8級",          0,  "#8890a8"),  # 累積0pt以上で8級
-    ("7級",        100,  "#a8a8b8"),
-    ("6級",        250,  "#a8a8b8"),
-    ("5級",        450,  "#c0c0c8"),
-    ("4級",        700,  "#c0c0c8"),
-    ("3級",       1000,  "#d0d0d8"),
-    ("2級",       1400,  "#d0d0d8"),
-    ("1級",       1800,  "#e8e8f0"),
-    ("初段",      2300,  "#5b9cf6"),   # 有段者
-    ("二段",      3000,  "#5b9cf6"),
-    ("三段",      3800,  "#4caf87"),
-    ("四段",      4700,  "#4caf87"),
-    ("五段",      5700,  "#f0c040"),
-    ("六段",      6800,  "#f0c040"),
-    ("七段",      8100,  "#e07b39"),
-    ("八段",      9500,  "#e07b39"),   # 平均1.95のプレイヤー2000戦で10560pt → 八段
-    ("九段",     11500,  "#e05c5c"),
-    ("十段",     14000,  "#b372e0"),   # 最上位
+    ("新人",     -99999,  "#62574f"),  # 最下位 (負の累積ptでも新人)
+    ("9級",       -100,  "#62574f"),
+    ("8級",          0,  "#62574f"),  # 累積0pt以上で8級
+    ("7級",        100,  "#5a504a"),
+    ("6級",        250,  "#5a504a"),
+    ("5級",        450,  "#5a504a"),
+    ("4級",        700,  "#5a504a"),
+    ("3級",       1000,  "#5a504a"),
+    ("2級",       1400,  "#5a504a"),
+    ("1級",       1800,  "#2b2422"),
+    ("初段",      2300,  "#274f85"),   # 有段者
+    ("二段",      3000,  "#274f85"),
+    ("三段",      3800,  "#24633f"),
+    ("四段",      4700,  "#24633f"),
+    ("五段",      5700,  "#6e5236"),
+    ("六段",      6800,  "#6e5236"),
+    ("七段",      8100,  "#8f4718"),
+    ("八段",      9500,  "#8f4718"),   # 平均1.95のプレイヤー2000戦で10560pt → 八段
+    ("九段",     11500,  "#9a2f2f"),
+    ("十段",     14000,  "#653d80"),   # 最上位
 ]
 
 # 着順ptは全段位共通 (段位別ではなくシンプルに)
@@ -4327,7 +4442,7 @@ def render_paper_sheet(df):
         <table class="score-sheet">
             <thead>
                 <tr class="set-header">
-                    <td colspan="6">📄 第 {int(set_no)} セット &nbsp;<span style="font-size:12px;color:#8890a8;font-weight:400;">卓 {int(table_no)}</span></td>
+                    <td colspan="6">📄 第 {int(set_no)} セット &nbsp;<span style="font-size:12px;color:#62574f;font-weight:400;">卓 {int(table_no)}</span></td>
                 </tr>
                 <tr>
                     <th style="width:5%">No</th>
@@ -4365,32 +4480,32 @@ def render_paper_sheet(df):
                 else:
                     char_map = {"1": "①", "2": "②", "3": "③"}
                     d_char = char_map.get(rank_val, rank_val)
-                    color = "#f0c040" if is_1st else ("#8890a8" if rank_val == "3" else "#e8e8f0")
+                    color = "#6e5236" if is_1st else ("#62574f" if rank_val == "3" else "#2b2422")
                     rank_span = f'<span class="rank-num" style="color:{color};">{d_char}</span>'
 
                 p_name = row[f"{p_char}さん"]
                 p_type = row[f"{p_char}タイプ"]
-                type_colors = {"A客": "#5b9cf6", "B客": "#e07b39", "AS": "#4caf87", "BS": "#e05c5c"}
-                type_color = type_colors.get(p_type, "#8890a8")
+                type_colors = {"A客": "#274f85", "B客": "#8f4718", "AS": "#24633f", "BS": "#9a2f2f"}
+                type_color = type_colors.get(p_type, "#62574f")
 
                 if p_name == last_names[p_char]:
                     display_text = ""
                 else:
-                    display_text = f"{p_name}<span style='font-size:10px;color:{type_color};margin-left:4px;background:rgba(0,0,0,0.2);padding:1px 5px;border-radius:3px;'>{p_type}</span>"
+                    display_text = f"{p_name}<span style='font-size:10px;color:{type_color};margin-left:4px;background:rgba(60,40,30,0.07);padding:1px 5px;border-radius:3px;'>{p_type}</span>"
                     last_names[p_char] = p_name
 
                 cell_content = f'<div style="display:flex;justify-content:space-between;align-items:center;padding:0 4px;"><span>{display_text}</span>{rank_span}</div>'
                 ranks_html_list.append(f'<td{td_class}>{cell_content}</td>')
 
             note_txt = row["備考"] if row["備考"] else ""
-            note_color = "#e05c5c" if note_txt else "transparent"
-            html += f'<tr><td style="color:#8890a8;font-size:12px;">{row["DailyNo"]}</td><td style="color:#8890a8;font-size:12px;">{time_str}</td>{ranks_html_list[0]}{ranks_html_list[1]}{ranks_html_list[2]}<td style="color:{note_color};font-size:11px;font-weight:700;">{note_txt}</td></tr>'
+            note_color = "#9a2f2f" if note_txt else "transparent"
+            html += f'<tr><td style="color:#62574f;font-size:12px;">{row["DailyNo"]}</td><td style="color:#62574f;font-size:12px;">{time_str}</td>{ranks_html_list[0]}{ranks_html_list[1]}{ranks_html_list[2]}<td style="color:{note_color};font-size:11px;font-weight:700;">{note_txt}</td></tr>'
 
-        fee_color = "#4caf87" if fee >= 0 else "#e05c5c"
+        fee_color = "#24633f" if fee >= 0 else "#9a2f2f"
         html += f'''<tr class="summary-row">
-            <td colspan="2" style="text-align:right;color:#8890a8;font-size:12px;">合計</td>
+            <td colspan="2" style="text-align:right;color:#62574f;font-size:12px;">合計</td>
             <td>ゲーム代: <span style="font-size:18px;color:{fee_color};">{fee}</span> 枚</td>
-            <td colspan="3" style="font-size:11px;text-align:left;color:#8890a8;">
+            <td colspan="3" style="font-size:11px;text-align:left;color:#62574f;">
                 A客:{stats["A客"]} / B客:{stats["B客"]} / AS:{stats["AS"]} / BS:{stats["BS"]}
             </td>
         </tr></tbody></table>'''
@@ -4497,7 +4612,7 @@ def render_rating_card(name, rating_info):
                 <span style="font-size:1.1rem;color:var(--text-primary);font-weight:700;">{games}</span> 戦
             </div>
         </div>
-        <div style="background:rgba(255,255,255,0.04);border-radius:6px;height:8px;overflow:hidden;">
+        <div style="background:rgba(60,40,30,0.04);border-radius:6px;height:8px;overflow:hidden;">
             <div style="width:{progress}%;height:100%;background:linear-gradient(90deg, {dan_color} 0%, {dan_color}aa 100%);"></div>
         </div>
         <div style="display:flex;justify-content:space-between;margin-top:5px;font-size:0.75rem;color:var(--text-muted);">
@@ -4624,7 +4739,7 @@ def render_recent_rating_history(player_name, last_n=10):
         elif h["段位変化"] < 0:
             dan_html = f'⬇{dan_html}'
 
-        row_bg = "rgba(76,175,135,0.05)" if delta > 0 else "rgba(224,92,92,0.05)" if delta < 0 else "transparent"
+        row_bg = "rgba(47,122,82,0.05)" if delta > 0 else "rgba(178,59,59,0.05)" if delta < 0 else "transparent"
 
         html += f'''<tr style="background:{row_bg};">
             <td style="text-align:center;color:var(--text-muted);font-size:0.8rem;">{i+1}</td>
@@ -4656,17 +4771,17 @@ def render_pending_bar(location_key=""):
 
     # 件数に応じて警告レベルを変える
     if cnt >= 20:
-        bg_grad = "linear-gradient(135deg, rgba(224,92,92,0.18) 0%, rgba(224,123,57,0.15) 100%)"
+        bg_grad = "linear-gradient(135deg, rgba(178,59,59,0.18) 0%, rgba(168,86,31,0.15) 100%)"
         border_col = "var(--red)"
         text_col = "var(--red)"
         icon = "⚠️"
     elif cnt >= 10:
-        bg_grad = "linear-gradient(135deg, rgba(224,123,57,0.18) 0%, rgba(240,192,64,0.12) 100%)"
+        bg_grad = "linear-gradient(135deg, rgba(168,86,31,0.18) 0%, rgba(138,102,66,0.12) 100%)"
         border_col = "var(--accent2)"
         text_col = "var(--accent2)"
         icon = "📌"
     else:
-        bg_grad = "linear-gradient(135deg, rgba(91,156,246,0.15) 0%, rgba(240,192,64,0.1) 100%)"
+        bg_grad = "linear-gradient(135deg, rgba(47,95,158,0.15) 0%, rgba(138,102,66,0.1) 100%)"
         border_col = "var(--blue)"
         text_col = "var(--blue)"
         icon = "💾"
@@ -4982,7 +5097,7 @@ def page_personal():
                               else "var(--text-primary)" if pos == 2
                               else "var(--red)" if pos == 3
                               else "var(--text-muted)")
-                row_bg = "rgba(240,192,64,0.08)" if pos == 1 else "transparent"
+                row_bg = "rgba(138,102,66,0.08)" if pos == 1 else "transparent"
                 html += f'''<tr style="background:{row_bg};">
                     <td style="text-align:center;font-weight:900;color:{rank_color};font-size:1.1rem;">
                         {medal} {pos}位
@@ -5160,17 +5275,17 @@ def page_personal():
         </div>
         <div style="display:flex;height:38px;border-radius:8px;overflow:hidden;
                     border:1px solid var(--border);font-weight:800;font-size:0.8rem;">
-            <div style="width:{max(r1_pct,0.1)}%;background:linear-gradient(135deg,#f0c040,#e0a828);
-                        display:flex;align-items:center;justify-content:center;color:#1a1d2e;
+            <div style="width:{max(r1_pct,0.1)}%;background:linear-gradient(135deg,#6e5236,#5f462e);
+                        display:flex;align-items:center;justify-content:center;color:#ffffff;
                         min-width:{'40px' if r1_pct > 0 else '0'};white-space:nowrap;overflow:hidden;">
                 {f'🥇{r1_pct:.2f}%' if r1_pct >= 14 else (f'{r1_pct:.1f}%' if r1_pct >= 8 else '')}
             </div>
-            <div style="width:{max(r2_pct,0.1)}%;background:linear-gradient(135deg,#5b9cf6,#4183db);
+            <div style="width:{max(r2_pct,0.1)}%;background:linear-gradient(135deg,#274f85,#22477a);
                         display:flex;align-items:center;justify-content:center;color:#fff;
                         min-width:{'40px' if r2_pct > 0 else '0'};white-space:nowrap;overflow:hidden;">
                 {f'🥈{r2_pct:.2f}%' if r2_pct >= 14 else (f'{r2_pct:.1f}%' if r2_pct >= 8 else '')}
             </div>
-            <div style="width:{max(r3_pct,0.1)}%;background:linear-gradient(135deg,#e05c5c,#c04444);
+            <div style="width:{max(r3_pct,0.1)}%;background:linear-gradient(135deg,#9a2f2f,#842828);
                         display:flex;align-items:center;justify-content:center;color:#fff;
                         min-width:{'40px' if r3_pct > 0 else '0'};white-space:nowrap;overflow:hidden;">
                 {f'🥉{r3_pct:.2f}%' if r3_pct >= 14 else (f'{r3_pct:.1f}%' if r3_pct >= 8 else '')}
@@ -5179,11 +5294,11 @@ def page_personal():
         <div style="display:flex;gap:1rem;margin-top:0.4rem;font-size:0.78rem;
                     color:var(--text-muted);flex-wrap:wrap;">
             <span>🥇 1着 <strong style="color:var(--accent);">{r1_pct:.2f}%</strong>
-                <span style="opacity:0.7;">({c1_cnt}回)</span></span>
-            <span>🥈 2着 <strong style="color:#5b9cf6;">{r2_pct:.2f}%</strong>
-                <span style="opacity:0.7;">({c2_cnt}回)</span></span>
-            <span>🥉 3着 <strong style="color:#e05c5c;">{r3_pct:.2f}%</strong>
-                <span style="opacity:0.7;">({c3_cnt}回)</span></span>
+                <span style="font-weight:400;">({c1_cnt}回)</span></span>
+            <span>🥈 2着 <strong style="color:#274f85;">{r2_pct:.2f}%</strong>
+                <span style="font-weight:400;">({c2_cnt}回)</span></span>
+            <span>🥉 3着 <strong style="color:#9a2f2f;">{r3_pct:.2f}%</strong>
+                <span style="font-weight:400;">({c3_cnt}回)</span></span>
         </div>
     </div>
     """
@@ -5302,17 +5417,17 @@ def page_personal():
                 </div>
                 <div style="display:flex;height:34px;border-radius:8px;overflow:hidden;
                             border:1px solid var(--border);font-weight:800;font-size:0.78rem;">
-                    <div style="width:{max(sa,0.1)}%;background:linear-gradient(135deg,#5b9cf6,#4183db);
+                    <div style="width:{max(sa,0.1)}%;background:linear-gradient(135deg,#274f85,#22477a);
                                 display:flex;align-items:center;justify-content:center;color:#fff;
                                 white-space:nowrap;overflow:hidden;">
                         {f'A席 {sa:.2f}%' if sa >= 14 else (f'{sa:.0f}%' if sa >= 7 else '')}
                     </div>
-                    <div style="width:{max(sb,0.1)}%;background:linear-gradient(135deg,#e07b39,#c96422);
+                    <div style="width:{max(sb,0.1)}%;background:linear-gradient(135deg,#8f4718,#7a3c14);
                                 display:flex;align-items:center;justify-content:center;color:#fff;
                                 white-space:nowrap;overflow:hidden;">
                         {f'B席 {sb:.2f}%' if sb >= 14 else (f'{sb:.0f}%' if sb >= 7 else '')}
                     </div>
-                    <div style="width:{max(sc,0.1)}%;background:linear-gradient(135deg,#4caf87,#38956d);
+                    <div style="width:{max(sc,0.1)}%;background:linear-gradient(135deg,#24633f,#1e5236);
                                 display:flex;align-items:center;justify-content:center;color:#fff;
                                 white-space:nowrap;overflow:hidden;">
                         {f'C席 {sc:.2f}%' if sc >= 14 else (f'{sc:.0f}%' if sc >= 7 else '')}
@@ -5320,12 +5435,12 @@ def page_personal():
                 </div>
                 <div style="display:flex;gap:1rem;margin-top:0.4rem;font-size:0.78rem;
                             color:var(--text-muted);flex-wrap:wrap;">
-                    <span>🟦 A席 <strong style="color:#5b9cf6;">{sa:.2f}%</strong>
-                        <span style="opacity:0.7;">({len(player_seat_ranks['A'])}戦)</span></span>
-                    <span>🟧 B席 <strong style="color:#e07b39;">{sb:.2f}%</strong>
-                        <span style="opacity:0.7;">({len(player_seat_ranks['B'])}戦)</span></span>
-                    <span>🟩 C席 <strong style="color:#4caf87;">{sc:.2f}%</strong>
-                        <span style="opacity:0.7;">({len(player_seat_ranks['C'])}戦)</span></span>
+                    <span>🟦 A席 <strong style="color:#274f85;">{sa:.2f}%</strong>
+                        <span style="font-weight:400;">({len(player_seat_ranks['A'])}戦)</span></span>
+                    <span>🟧 B席 <strong style="color:#8f4718;">{sb:.2f}%</strong>
+                        <span style="font-weight:400;">({len(player_seat_ranks['B'])}戦)</span></span>
+                    <span>🟩 C席 <strong style="color:#24633f;">{sc:.2f}%</strong>
+                        <span style="font-weight:400;">({len(player_seat_ranks['C'])}戦)</span></span>
                 </div>
             </div>
             """
@@ -5467,15 +5582,15 @@ def page_personal():
                 _bars = _base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                     y=alt.Y("収支pt:Q", title="月別収支 (pt)"),
                     color=alt.condition(alt.datum.収支pt >= 0,
-                                        alt.value("#4caf87"), alt.value("#e05c5c")),
+                                        alt.value("#24633f"), alt.value("#9a2f2f")),
                     tooltip=["年月", "収支pt", "累計"])
-                _line = _base.mark_line(color="#f0c040", strokeWidth=2.5, point=True).encode(
+                _line = _base.mark_line(color="#6e5236", strokeWidth=2.5, point=True).encode(
                     y=alt.Y("累計:Q", title="累計 (pt)"), tooltip=["年月", "累計"])
                 _ch = alt.layer(_bars, _line).resolve_scale(y="independent").properties(
-                    height=280).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(
-                    gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+                    height=280).configure_view(strokeWidth=0, fill="#f1edec").configure_axis(
+                    gridColor="#e2dbd6", labelColor="#5a504a", titleColor="#5a504a")
                 st.altair_chart(_ch, use_container_width=True)
-                st.caption("🟩 プラスの月 / 🟥 マイナスの月 / 🟡 累計の推移")
+                st.caption("🟩 プラスの月 / 🟥 マイナスの月 / 🟤 累計の推移")
             _show = _dg.copy()
             _show["収支pt"] = _show["収支pt"].map(lambda v: f"{int(v):+,}")
             _show["累計"] = _show["累計"].map(lambda v: f"{int(v):+,}")
@@ -5504,17 +5619,17 @@ def page_personal():
                 f"移動平均({window}戦)": ma.round(3),
             })
             base = alt.Chart(df_tr).encode(x=alt.X("戦:Q", title="直近からの経過"))
-            pts = base.mark_circle(size=45, color="#f0c040", opacity=0.55).encode(
+            pts = base.mark_circle(size=45, color="#6e5236", opacity=0.55).encode(
                 y=alt.Y("着順:Q", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"),
                 tooltip=["戦", "着順"])
-            line = base.mark_line(color="#5b9cf6", strokeWidth=2.5).encode(
+            line = base.mark_line(color="#274f85", strokeWidth=2.5).encode(
                 y=alt.Y(f"移動平均({window}戦):Q"),
                 tooltip=["戦", f"移動平均({window}戦)"])
             ch = alt.layer(pts, line).properties(height=280).configure_view(
-                strokeWidth=0, fill="#1a1d2e").configure_axis(
-                gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+                strokeWidth=0, fill="#f1edec").configure_axis(
+                gridColor="#e2dbd6", labelColor="#5a504a", titleColor="#5a504a")
             st.altair_chart(ch, use_container_width=True)
-            st.caption("🟡 各対局の着順  /  🔵 移動平均 (下にあるほど好調)")
+            st.caption("🟤 各対局の着順  /  🔵 移動平均 (下にあるほど好調)")
 
             # 前半 vs 後半の比較
             half = len(seq_ranks) // 2
@@ -5980,13 +6095,13 @@ def _page_shop_analytics(df):
         "👥 プレイヤー稼働", "🔥 繁忙日ランキング",
     ])
 
-    def _bar_chart(df_plot, x_col, y_col, x_title, y_title, color="#f0c040"):
+    def _bar_chart(df_plot, x_col, y_col, x_title, y_title, color="#6e5236"):
         ch = alt.Chart(df_plot).mark_bar(color=color, cornerRadiusTopLeft=4, cornerRadiusTopRight=4).encode(
             x=alt.X(f"{x_col}:N", title=x_title, sort=None),
             y=alt.Y(f"{y_col}:Q", title=y_title),
             tooltip=list(df_plot.columns),
-        ).properties(height=260).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(
-            gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+        ).properties(height=260).configure_view(strokeWidth=0, fill="#f1edec").configure_axis(
+            gridColor="#e2dbd6", labelColor="#5a504a", titleColor="#5a504a")
         st.altair_chart(ch, use_container_width=True)
 
     # ---------- 月別稼働 ----------
@@ -6022,7 +6137,7 @@ def _page_shop_analytics(df):
             agg = agg.sort_values("hour_order")
             agg["時間帯"] = agg["hour"].apply(lambda h: f"{h:02d}時台")
             plot = agg[["時間帯", "半荘数"]]
-            _bar_chart(plot, "時間帯", "半荘数", "時間帯", "半荘数", color="#5b9cf6")
+            _bar_chart(plot, "時間帯", "半荘数", "時間帯", "半荘数", color="#274f85")
 
             # 昼夜の比較
             day_n = len(gh[gh["hour"].between(9, 20)]) / 3
@@ -6059,7 +6174,7 @@ def _page_shop_analytics(df):
             agg["1日平均"] = (agg["半荘数"] / agg["稼働日数"]).round(1)
             agg["曜日"] = agg["weekday"].map(lambda i: wn[i])
             agg = agg.sort_values("weekday")
-            _bar_chart(agg[["曜日", "半荘数"]], "曜日", "半荘数", "曜日", "半荘数", color="#4caf87")
+            _bar_chart(agg[["曜日", "半荘数"]], "曜日", "半荘数", "曜日", "半荘数", color="#24633f")
             st.dataframe(agg[["曜日", "半荘数", "稼働日数", "1日平均", "参加者数"]],
                          hide_index=True, use_container_width=True)
             best = agg.loc[agg["1日平均"].idxmax()]
@@ -6078,7 +6193,7 @@ def _page_shop_analytics(df):
             total = agg["打数"].sum()
             agg["比率"] = (agg["打数"] / total * 100).round(2)
             agg = agg.sort_values("打数", ascending=False)
-            _bar_chart(agg[["タイプ", "打数"]], "タイプ", "打数", "タイプ", "打数", color="#e07b39")
+            _bar_chart(agg[["タイプ", "打数"]], "タイプ", "打数", "タイプ", "打数", color="#8f4718")
             st.dataframe(
                 agg[["タイプ", "打数", "比率", "人数", "平均着順"]].assign(
                     比率=lambda x: x["比率"].map('{:.2f}%'.format),
@@ -6117,7 +6232,7 @@ def _page_shop_analytics(df):
             agg["1日平均"] = (agg["半荘数"] / agg["稼働日数"]).round(1)
             agg = agg.sort_values("半荘数", ascending=False)
             agg["卓番"] = agg["卓番"].astype(int).astype(str) + "卓"
-            _bar_chart(agg[["卓番", "半荘数"]], "卓番", "半荘数", "卓", "半荘数", color="#a06cd5")
+            _bar_chart(agg[["卓番", "半荘数"]], "卓番", "半荘数", "卓", "半荘数", color="#6e4290")
             st.dataframe(agg, hide_index=True, use_container_width=True)
         else:
             st.info("卓情報がありません")
@@ -6315,7 +6430,7 @@ def _page_history_versus_2(df):
             val = matrix[i][j]
             if i == j:
                 cell_color = "var(--text-muted)"  # 同着はあり得ないが念のため
-                bg = "rgba(255,255,255,0.02)"
+                bg = "rgba(60,40,30,0.02)"
             elif i < j:
                 cell_color = "var(--green)"
                 bg = "var(--green-soft)"
@@ -6874,8 +6989,8 @@ def _page_history_overview(df):
                     x=alt.X("戦数", axis=alt.Axis(tickMinStep=1), title="直近ゲーム"),
                 )
                 line_main = base.mark_line(
-                    point=alt.OverlayMarkDef(color="#f0c040", size=80),
-                    color="#f0c040", strokeWidth=2
+                    point=alt.OverlayMarkDef(color="#6e5236", size=80),
+                    color="#6e5236", strokeWidth=2
                 ).encode(
                     y=alt.Y("着順", scale=alt.Scale(domain=[3.3, 0.7]), title="着順"),
                     tooltip=["戦数", "着順"]
@@ -6883,7 +6998,7 @@ def _page_history_overview(df):
                 chart = line_main
                 if "移動平均(5戦)" in df_trend.columns:
                     line_avg = base.mark_line(
-                        color="#5b9cf6", strokeWidth=1.5, strokeDash=[5, 3]
+                        color="#274f85", strokeWidth=1.5, strokeDash=[5, 3]
                     ).encode(
                         y=alt.Y("移動平均(5戦)"),
                         tooltip=["戦数", alt.Tooltip("移動平均(5戦)", format=".3f")]
@@ -6891,13 +7006,13 @@ def _page_history_overview(df):
                     chart = alt.layer(line_main, line_avg)
 
                 chart = chart.properties(height=280).configure_view(
-                    strokeWidth=0, fill="#1a1d2e"
+                    strokeWidth=0, fill="#f1edec"
                 ).configure_axis(
-                    gridColor="#2a2d3e", labelColor="#8890a8", titleColor="#8890a8"
+                    gridColor="#e2dbd6", labelColor="#62574f", titleColor="#62574f"
                 )
                 st.altair_chart(chart, use_container_width=True)
                 if "移動平均(5戦)" in df_trend.columns:
-                    st.caption("🟡 着順  /  🔵 5戦移動平均")
+                    st.caption("🟤 着順  /  🔵 5戦移動平均")
             with c_dates:
                 section_title("📅", "稼働日")
                 date_list = sorted(list(played_dates), reverse=True)
@@ -7148,15 +7263,15 @@ def page_profit_pt():
                     bars = base.mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
                         y=alt.Y("収支pt:Q", title="月別収支 (pt)"),
                         color=alt.condition(alt.datum.収支pt >= 0,
-                                            alt.value("#4caf87"), alt.value("#e05c5c")),
+                                            alt.value("#24633f"), alt.value("#9a2f2f")),
                         tooltip=["年月", "収支pt", "累計"])
-                    line = base.mark_line(color="#f0c040", strokeWidth=2.5, point=True).encode(
+                    line = base.mark_line(color="#6e5236", strokeWidth=2.5, point=True).encode(
                         y=alt.Y("累計:Q", title="累計 (pt)"), tooltip=["年月", "累計"])
                     ch = alt.layer(bars, line).resolve_scale(y="independent").properties(
-                        height=300).configure_view(strokeWidth=0, fill="#1a1d2e").configure_axis(
-                        gridColor="#2a2d3e", labelColor="#b8bed0", titleColor="#b8bed0")
+                        height=300).configure_view(strokeWidth=0, fill="#f1edec").configure_axis(
+                        gridColor="#e2dbd6", labelColor="#5a504a", titleColor="#5a504a")
                     st.altair_chart(ch, use_container_width=True)
-                    st.caption("🟩 プラスの月 / 🟥 マイナスの月 / 🟡 累計の推移")
+                    st.caption("🟩 プラスの月 / 🟥 マイナスの月 / 🟤 累計の推移")
 
     # ============ 収支ランキング ============
     with tab_rank:

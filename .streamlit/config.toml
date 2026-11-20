@@ -1,21 +1,20 @@
 [theme]
-# ぱいん成績管理 ダークテーマ
-# このファイルを .streamlit/config.toml として配置すると
-# Streamlit 本体のウィジェット文字色が確実に明るくなります
+# ぱいん成績管理: 「平らなキー」(温かいベージュ × フラットな白いキー × こげ茶) のライトテーマ
+# メインアプリ・入力アプリ共通。どちらのアプリも、部品の色は CSS でも固定している。
 
-base = "dark"
+base = "light"
 
 # 背景 (アプリ全体)
-backgroundColor = "#1a1d2e"
+backgroundColor = "#e9e4e2"
 
-# ウィジェット(セレクトボックス・入力欄)の背景
-secondaryBackgroundColor = "#2f3550"
+# ウィジェット(セレクトボックス・入力欄・表)の背景
+secondaryBackgroundColor = "#f8f6f5"
 
-# 文字色 — これがセレクトボックスの選択値にも適用される
-textColor = "#ffffff"
+# 文字色
+textColor = "#2b2422"
 
-# アクセントカラー (金)
-primaryColor = "#f0c040"
+# アクセントカラー (こげ茶)
+primaryColor = "#6e5236"
 
 font = "sans serif"
 

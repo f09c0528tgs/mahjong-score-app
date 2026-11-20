@@ -28,9 +28,10 @@ streamlit run ranking_view.py      # 入力アプリ
 
 Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` の `[connections.gsheets]` に書く（`st.connection("gsheets", type=GSheetsConnection)` が参照する）。リポジトリには入っていないので、無いと読み込みに失敗する。
 
-入力アプリの CSS は、config.toml のテーマ（ダーク/ライト）に関係なく同じ見た目になるよう、部品の色をすべて固定している（下の「入力アプリ」の「デザイン」を参照）。
+**デザインは2本とも「平らなキー」**（温かいベージュの背景・フラットな白いキー・こげ茶のアクセント。2026-11-20〜）。`.streamlit/config.toml` は両アプリ共通のライトテーマ（背景 `#e9e4e2`、文字 `#2b2422`、アクセント `#6e5236`）。どちらのアプリも、部品の色はテーマに関係なく CSS でも固定している（config が効かない環境でも同じ見た目になるように）。
 
-`.streamlit/config.toml` はダークテーマの指定。`textColor = "#ffffff"` と `secondaryBackgroundColor = "#2f3550"` は、セレクトボックスの選択済みの文字が背景と同化して読めなくなる問題への対処なので、安易に変えないこと。
+- 文字と背景のコントラスト比は 4.5 以上を目安にする。明るい背景では、以前の金色 `#f0c040` のような明るいアクセントは読めない（約1.6）。アクセント色はメインアプリの `:root`（`--accent #6e5236` / `--green #24633f` / `--red #9a2f2f` / `--blue #274f85` など）の濃さ以上にすること。
+- 色付きの背景（こげ茶のボタン・バッジ等）の上の文字は白。メダル色（`.preview-rank`）と紙の着順表（`.paper-table`）の色は別扱い。
 
 ## 共有データ（ワークシート）
 
@@ -102,7 +103,8 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 ### UI の注意点
 - カード類は `st.markdown(..., unsafe_allow_html=True)` で HTML を直接組み立てている。
 - **HTML を `st.markdown` に渡すときは必ず `_html()` を通すこと。** 行頭に4つ以上の空白が入った HTML は Markdown にコードブロックと解釈され、タグがそのまま画面に出る。`_html()` は改行とインデントを除去する。過去に役満回数タブでこのバグが出ている。
-- グラフは Altair。
+- グラフは Altair。背景・目盛りの色は `configure_view(fill="#f1edec")` / `configure_axis(gridColor="#e2dbd6", labelColor="#5a504a")` に合わせる（暗い色を戻さないこと）。
+- 配色の上書きは `hide_style` の末尾「デザイン統一 (2026-11-20)」にまとめてある（ボタン・タブ・入力欄・プルダウン・お知らせ枠・`st.metric` など）。ボタンの CSS は `.stButton button`（子孫）で書く。`st.form_submit_button` は `.stButton` ではなく `[data-testid="stFormSubmitButton"]` なので別に指定している。
 - **`st.markdown('<div class="...">')` で Streamlit の部品を囲むことはできない**（div はその場で閉じられ、部品は外に出る。空の要素ができて余白だけ増える）。部品に CSS を当てたいときは `st.container(key="...")` で囲み、Streamlit が付ける `st-key-<key>` クラスを目印にする（上部ナビ `st-key-topnav`、ホームのメニュー `st-key-home_menu` / `st-key-menu-<色>-<ページ>`）。
 - Streamlit 1.5x では `.main .block-container` が効かない。ページ全体の余白は `[data-testid="stMainBlockContainer"]` に当てる。
 - スマホ (幅640px以下) 向けの調整は CSS 末尾の「UI改善 (2026-11)」にまとめてある: 上部ナビは横1列で横スクロール、ホームのメニューは2列、`st.metric` を並べた列は2列、`.stats-table` は文字単位で折り返さず横スクロール。タッチ端末で押した後もボタンが光ったままになる (hover が残る) のは `@media (hover: none)` で消している。
@@ -120,7 +122,7 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - 名前を選ぶとタイプが自動で選ばれる（`resolve_player_type()`）。優先順は `members` シートのタイプ → その人の前回の対局のタイプ（`get_last_played_types()`）→ 名前から推測（`_guess_type_from_name()`）。画面の表示名は A客 / B客 / Aスタッフ / Bスタッフ だが、保存する値は `A客`/`B客`/`AS`/`BS` のまま。
 - 入力アプリにも `_normalize_play_type()` があり、メインアプリの同名関数と同じルール。片方を直したらもう片方も直すこと。
 - **ゲーム代を集める**（`render_fee_collect_section()` → `collect_game_fee()`）: 押すと `fee_collections` に1行追記し、着順表がそこで区切られる。区切りは**卓ごと**で、「前回の集金の次の局〜今回の `LastGameNo`」が1区切り（`get_fee_cuts()` / `_render_table()` の `_sec`）。区切りごとにトップ回数×`GAME_FEE_TABLE` で枚数と内訳を出す（`calc_game_fee()`）。表示は毎回対局データから計算し直し、シートの「枚数」「内訳」は記録用。`GAME_FEE_TABLE` はメインアプリと同じ値を重複して持っているので、変えるときは両方直すこと。
-- **デザイン (2026-11-20〜)**: 「平らなキー」— 温かいベージュの背景・フラットな白いキー・こげ茶のアクセント（`CUSTOM_CSS` 先頭の `:root` の色）。config.toml はメインアプリと共通のダークなので、**画面に出る部品の色はテーマに関係なくすべて CSS で固定**している（入力欄・プルダウンの候補一覧・カレンダー・お知らせ枠・折りたたみなど）。ライトテーマでもダークテーマでも読めることを確認すること。
+- **デザイン (2026-11-20〜)**: 「平らなキー」— 温かいベージュの背景・フラットな白いキー・こげ茶のアクセント（`CUSTOM_CSS` 先頭の `:root` の色）。config.toml はメインアプリと共通（ライト）だが、**画面に出る部品の色はテーマに関係なくすべて CSS で固定**している（入力欄・プルダウンの候補一覧・カレンダー・お知らせ枠・折りたたみなど）。ライトテーマでもダークテーマでも読めることを確認すること。
 - **文字色**: 文字と背景のコントラスト比 4.5 以上を目安にする。タブの背景切り替えアニメーションは一瞬読めなくなるので切ってある。
 - **成績を付ける画面の構成**: 上のカード（卓・セット・何局目・未集金）と選手チップ（`_chips_html()`、着順が決まるとトップをこげ茶で強調）は、`st.empty()` で場所だけ取っておき、名前・着順が決まったあと最後に中身を描く。
 - **操作ボタンは画面の下に固定**（`st.container(key="action_bar")`、[クリア][保存して次へ][保存して空席に]）。Streamlit は `st.container` を同じ高さの `stLayoutWrapper` で包むので、`position: sticky` はその外側（`[data-testid="stLayoutWrapper"]:has(> .st-key-action_bar)`）に付けている。中の要素に付けても固定されない。
