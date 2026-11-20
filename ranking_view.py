@@ -275,6 +275,26 @@ hr { border-color: var(--border) !important; }
     width: 8px; height: 8px; border-radius: 50%; background: var(--brown-ring);
 }
 
+/* ---------- 卓 (2卓以上のとき) ---------- */
+.stApp .tbl-tag, .stApp .tbl-tag * { color: #ffffff !important; }
+.tbl-tag {
+    display: inline-block; color: #ffffff; font-weight: 800; font-size: 0.8rem;
+    padding: 0.1rem 0.55rem; border-radius: 999px; line-height: 1.5; white-space: nowrap;
+}
+.table-now { display: flex; align-items: center; gap: 0.4rem; height: 100%; padding-top: 1.9rem; }
+.table-now span { font-size: 0.85rem; color: var(--text-muted); font-weight: 700; }
+.sum-others { margin-top: 0.3rem; font-size: 0.72rem; color: var(--text-muted); }
+.sum-others .tbl-tag { font-size: 0.68rem; padding: 0 0.45rem; }
+.bar-target { display: flex; align-items: center; gap: 0.4rem; margin-bottom: 0.35rem;
+              font-size: 0.78rem; color: var(--text-muted); font-weight: 700; }
+.bar-target span:last-child { color: var(--text-muted); }
+.st-key-table_pick_area button[data-testid^="stBaseButton-segmented_control"] { min-height: 44px !important; }
+.tbl-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-bottom: 0.6rem; }
+.tbl-card { background: var(--key); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem 0.7rem; }
+.tbl-card-name { font-weight: 800; font-size: 0.9rem; color: var(--text-primary); }
+.tbl-card-num { font-family: var(--mono); font-size: 1.3rem; font-weight: 700; color: var(--text-primary); }
+.tbl-card-sub { font-size: 0.72rem; color: var(--text-muted); }
+
 /* 小さな見出し (モックの「うえの の素点  3ケタで自動送り」) */
 .step-label { display: flex; justify-content: space-between; align-items: baseline; margin: 0.35rem 0 0.1rem; }
 .step-label b { font-size: 0.9rem; color: var(--text-primary); }
@@ -983,7 +1003,8 @@ def render_paper_sheet(df_day, target_date, fees=None):
         df_tbl = df_day[df_day["TableNo"] == table_no].copy()
         if df_tbl.empty:
             continue
-        st.markdown(f'<div class="paper-title">{int(table_no)}卓</div>', unsafe_allow_html=True)
+        st.markdown(_html(f'<div class="paper-title" style="border-top: 4px solid {table_color(table_no)};">'
+                          f'{table_mark(table_no)} {int(table_no)}卓</div>'), unsafe_allow_html=True)
         _render_table(df_tbl, get_fee_cuts(fees, table_no))
 
 
@@ -1023,8 +1044,9 @@ def _render_table(df_tbl, cuts=None):
     df_tbl = df_tbl.copy()
     # 区切り番号: この局より前にある区切りの数 (GameNo が区切りの LastGameNo 以下なら、その区切りに入る)
     df_tbl["_sec"] = [bisect.bisect_left(cut_nos, int(g)) for g in df_tbl["GameNo"]]
-    sort_keys = ["_sec"] + [k for k in ["SetNo", "GameNo"] if k in df_tbl.columns]
-    df_tbl = df_tbl.sort_values(sort_keys).reset_index(drop=True)
+    # 同じ区切り・同じセットの中は時刻順 (後から日時を指定して入れた局も正しい位置に)。同じ時刻なら入力順 (GameNo)
+    sort_keys = ["_sec"] + [k for k in ["SetNo", "日時Obj", "GameNo"] if k in df_tbl.columns]
+    df_tbl = df_tbl.sort_values(sort_keys, kind="stable").reset_index(drop=True)
 
     html = '<div class="paper-wrap"><table class="paper-table">'
     html += '<thead><tr>'
@@ -1081,7 +1103,7 @@ def _render_table(df_tbl, cuts=None):
     # この日の合計
     total = totals["done"] + totals["open"]
     html += '<tr class="gamecount-row"><td class="col-no">計</td>'
-    html += f'<td colspan="3" style="text-align:left;padding-left:8px;">この日のゲーム代 合計 <strong>{total}枚</strong>'
+    html += f'<td colspan="3" style="text-align:left;padding-left:8px;">この卓のゲーム代 合計 <strong>{total}枚</strong>'
     if totals["open"]:
         html += f'（集金済 {totals["done"]}枚・未集金 {totals["open"]}枚）'
     html += '</td></tr>'
@@ -1097,14 +1119,46 @@ SEATS = ["A", "B", "C"]
 SEAT_LABELS = {"A": "A席", "B": "B席", "C": "C席"}
 TYPE_SHORT = {"A客": "A客", "B客": "B客", "AS": "AS", "BS": "BS"}
 
+# 卓ごとの色 (2卓以上立ったとき、どの卓に入力しているか一目で分かるように)。
+# 印の色と、カード・着順表の見出しの色をそろえている。文字色(白)とのコントラスト比 4.5 以上。
+TABLE_MARKS = ["🔵", "🟠", "🟢", "🟣", "🔴", "🟤", "⚫", "🟡"]
+TABLE_COLORS = ["#3f6597", "#a85a1f", "#2f7449", "#7c4593", "#a83a3a", "#6b4a2f", "#3d3d3d", "#8a6d00"]
 
-def _clear_seats():
+
+def table_mark(t):
+    return TABLE_MARKS[(int(t) - 1) % len(TABLE_MARKS)]
+
+
+def table_color(t):
+    return TABLE_COLORS[(int(t) - 1) % len(TABLE_COLORS)]
+
+
+def table_tag_html(t, extra=""):
+    return f'<span class="tbl-tag" style="background:{table_color(t)}">{int(t)}卓{extra}</span>'
+
+
+def _seat_key(table_no, seat):
+    """名前欄のキー。卓ごとに別にして、卓を切り替えても各卓のメンバーを覚えておく"""
+    return f"sel_name_{int(table_no)}_{seat}"
+
+
+def _table_mem(table_no):
     """
-    全員を空席にする (ボタンの on_click、またはウィジェットを描く前に呼ぶ)。
+    卓ごとの入力内容 (名前・セット・手で変えたタイプ) の控え。
+    Streamlit は画面に出ていない入力欄の値を捨てるので、別の卓に切り替えて戻ってきたときに、ここから戻す。
+    """
+    mem = st.session_state.setdefault("table_mem", {})
+    return mem.setdefault(int(table_no), {"names": {}, "set": None, "types": {}})
+
+
+def _clear_seats(table_no):
+    """
+    その卓を全員空席にする (ボタンの on_click、またはウィジェットを描く前に呼ぶ)。
     キーを del するだけだとブラウザ側の表示が残るので、値を None に明示的にセットする。
     """
     for seat in SEATS:
-        st.session_state[f"sel_name_{seat}"] = None
+        st.session_state[_seat_key(table_no, seat)] = None
+    _table_mem(table_no)["names"] = {}
     st.session_state["input_round"] = st.session_state.get("input_round", 0) + 1
 
 
@@ -1139,6 +1193,28 @@ def _chips_html(seat_info, ranks):
     return html + "</div>"
 
 
+def get_table_status(df_today, fees, today):
+    """
+    今日の卓ごとの状況。{卓番: {"games": 局数, "last_set": 最後のセット, "open_fee": 未集金枚数,
+    "last_members": 最後の局の3人, "last_time": 最後の局の時刻}}
+    """
+    status = {}
+    if df_today is None or df_today.empty:
+        return status
+    for t, g in df_today.groupby("TableNo"):
+        g = g.sort_values(["日時Obj", "GameNo"])
+        last = g.iloc[-1]
+        df_open = get_open_section_games(df_today, fees, int(t), today)
+        status[int(t)] = {
+            "games": len(g),
+            "last_set": int(last["SetNo"]) if str(last["SetNo"]).strip() else 1,
+            "open_fee": calc_game_fee(df_open)["total"] if not df_open.empty else 0,
+            "last_members": {str(last[f"{s}さん"]).strip() for s in SEATS} - {""},
+            "last_time": last["日時Obj"],
+        }
+    return status
+
+
 def page_input():
     with st.spinner("データ読込中..."):
         df_all = load_score_data()
@@ -1150,16 +1226,20 @@ def page_input():
         return
 
     ss = st.session_state
-    ss.setdefault("input_table_no", 1)
-    ss.setdefault("input_set_no", 1)
     ss.setdefault("input_round", 0)   # 保存のたびに+1 → 着順ボタンをリセット
+    ss.setdefault("cur_table", 1)
+
+    today = get_today_logical_date()
+    fees = load_fee_collections()
+    df_today = get_games_by_date(df_all, today)
+    tstat = get_table_status(df_today, fees, today)
 
     # 保存後のリセット (ウィジェットを描く前でないと値を書き換えられないので、ここで行う)
     pending = ss.pop("input_pending_reset", None)
     if pending:
         ss["input_memo"] = ""
-        if pending == "seats":
-            _clear_seats()
+        if pending.get("seats"):
+            _clear_seats(pending["table"])
 
     # 直前の保存結果 (rerun後に表示する)
     flash = ss.pop("input_flash", None)
@@ -1170,38 +1250,90 @@ def page_input():
     sum_slot = st.empty()
     chips_slot = st.empty()
 
-    # --- 卓・セット (スマホでも横に並べる。CSS は .st-key-table_set) ---
-    with st.container(key="table_set"):
-        col_b, col_c = st.columns(2)
-        with col_b:
-            table_no = st.number_input("卓番", min_value=1, step=1, key="input_table_no")
-        with col_c:
-            set_no = st.number_input("セット", min_value=1, step=1, key="input_set_no")
+    # --- 卓を選ぶ (今日立っている卓 + 新しい卓) ---
+    active_tables = sorted(set(tstat) | {int(ss["cur_table"])})
+    new_table = max(active_tables) + 1
+    options = active_tables + [new_table]
 
-    # --- メンバー ---
+    def _table_label(t):
+        if t == new_table:
+            return f"＋ {t}卓"
+        n = tstat.get(t, {}).get("games", 0)
+        return f"{table_mark(t)} {t}卓 {n}局" if n else f"{table_mark(t)} {t}卓"
+
+    running = len(tstat)
+    _step_label("卓", f"今日 {running}卓 立っています" if running >= 2 else "2卓以上立ったら、ここで切り替えます")
+    with st.container(key="table_pick_area"):
+        picked_table = st.segmented_control(
+            "入力する卓", options, default=int(ss["cur_table"]), format_func=_table_label,
+            key="table_pick", label_visibility="collapsed",
+        )
+    table_no = int(picked_table) if picked_table is not None else int(ss["cur_table"])
+    ss["cur_table"] = table_no
+    color = table_color(table_no)
+
+    tmem = _table_mem(table_no)
+
+    # --- セット (卓ごと。初めて開いたときは、その卓の今日最後のセット) ---
+    set_key = f"input_set_no_{table_no}"
+    if set_key not in ss:
+        ss[set_key] = tmem["set"] or tstat.get(table_no, {}).get("last_set", 1)
+    with st.container(key="table_set"):
+        col_s, col_info = st.columns(2)
+        with col_s:
+            set_no = st.number_input("セット", min_value=1, step=1, key=set_key)
+            tmem["set"] = int(set_no)
+        with col_info:
+            st.markdown(_html(f'<div class="table-now">{table_tag_html(table_no)}'
+                              f'<span>に入力します</span></div>'), unsafe_allow_html=True)
+
+    # --- メンバー (卓ごとに覚えておく) ---
     _step_label("メンバー", "文字を打つと絞り込めます")
     seat_info = {}
     for seat in SEATS:
+        k = _seat_key(table_no, seat)
+        if k not in ss and tmem["names"].get(seat) in member_names:
+            ss[k] = tmem["names"][seat]      # 別の卓から戻ってきたとき
         sel_name = st.selectbox(
             SEAT_LABELS[seat], member_names, index=None,
-            placeholder="名前を選択", key=f"sel_name_{seat}",
+            placeholder="名前を選択", key=k,
         )
+        tmem["names"][seat] = sel_name
         sel_type = None
         if sel_name:
             auto_type, source = resolve_player_type(sel_name, member_type, last_types)
             # 名前ごとに別キーにすることで、名前を変えたらタイプも自動で切り替わる
+            tkey = f"sel_type_{table_no}_{seat}_{sel_name}"
+            if tkey not in ss and (seat, sel_name) in tmem["types"]:
+                ss[tkey] = tmem["types"][(seat, sel_name)]   # 手で変えたタイプも戻す
             picked = st.segmented_control(
                 f"{seat}席のタイプ", TYPE_BUTTON_ORDER, default=auto_type,
                 format_func=lambda t: TYPE_LABELS[t],
-                key=f"sel_type_{seat}_{sel_name}", label_visibility="collapsed",
+                key=tkey, label_visibility="collapsed",
             )
             sel_type = picked or auto_type
+            if sel_type != auto_type:
+                tmem["types"][(seat, sel_name)] = sel_type
+            else:
+                tmem["types"].pop((seat, sel_name), None)
             note = source if sel_type == auto_type else "手動で変更"
             st.caption(f"タイプ: {TYPE_LABELS[sel_type]}（{note}）")
         seat_info[seat] = {"name": sel_name, "type": sel_type}
 
     names_sel = [seat_info[s]["name"] for s in SEATS]
     members_ready = all(names_sel) and len(set(names_sel)) == 3
+
+    # --- 他の卓にも入っている人がいないか (卓の選び間違い防止) ---
+    elsewhere = []
+    for nm in [n for n in names_sel if n]:
+        for t, info in tstat.items():
+            if t != table_no and nm in info["last_members"]:
+                elsewhere.append(f"{nm}さんは {t}卓の最後の局（{info['last_time'].strftime('%H:%M')}）にも入っています")
+        for t in active_tables:
+            if t != table_no and nm in set(_table_mem(t)["names"].values()):
+                elsewhere.append(f"{nm}さんは {t}卓の入力欄にも入っています")
+    if elsewhere:
+        st.warning("入力する卓が合っているか確認してください。\n\n" + "\n\n".join(dict.fromkeys(elsewhere)))
 
     # --- 着順 (1着→2着をタップ、3着は自動) ---
     ranks = {}
@@ -1214,7 +1346,7 @@ def page_input():
             st.error("同じ人が複数の席にいます")
         else:
             fmt = lambda s: seat_info[s]["name"]
-            mkey = f"{ss['input_round']}_{'|'.join(names_sel)}"
+            mkey = f"{table_no}_{ss['input_round']}_{'|'.join(names_sel)}"
             first_now = ss.get(f"rank1_{mkey}")
             hint = "1着をタップ" if not first_now else "2着をタップ（3着は自動）"
             _step_label("着順", hint)
@@ -1245,11 +1377,15 @@ def page_input():
         memo = st.text_input("備考", value="", key="input_memo")
 
     # --- 操作ボタン (画面の下に固定。CSS は .st-key-action_bar) ---
+    games_here = tstat.get(table_no, {}).get("games", 0)
     with st.container(key="action_bar"):
+        st.markdown(_html(f'<div class="bar-target">入力先 {table_tag_html(table_no)}'
+                          f'<span>セット{int(set_no)}・{games_here + 1}局目</span></div>'),
+                    unsafe_allow_html=True)
         c_clear, c_next, c_end = st.columns([1, 1.45, 1.45])
         with c_clear:
-            st.button("クリア", use_container_width=True, on_click=_clear_seats,
-                      disabled=not any(names_sel), help="全員を空席に戻します", key="btn_clear")
+            st.button("クリア", use_container_width=True, on_click=_clear_seats, args=(table_no,),
+                      disabled=not any(names_sel), help="この卓を全員空席に戻します", key="btn_clear")
         with c_next:
             save_continue = st.button("保存して次へ", type="primary", disabled=not can_save,
                                       use_container_width=True, key="btn_save_next",
@@ -1257,7 +1393,7 @@ def page_input():
         with c_end:
             save_reset = st.button("保存して空席に", disabled=not can_save,
                                    use_container_width=True, key="btn_save_reset",
-                                   help="保存して、メンバーを空席に戻します")
+                                   help="保存して、この卓を空席に戻します")
 
     if (save_continue or save_reset) and can_save:
         if use_custom_dt:
@@ -1285,30 +1421,35 @@ def page_input():
                 ss["input_last_saved"] = (signature, time.time())
                 order = sorted(SEATS, key=lambda s: ranks[s])
                 result = " → ".join(seat_info[s]["name"] for s in order)
-                ss["input_flash"] = f"{int(table_no)}卓に保存しました：{result}"
+                ss["input_flash"] = f"{table_mark(table_no)} {int(table_no)}卓に保存しました：{result}"
                 ss["input_round"] += 1
-                ss["input_pending_reset"] = "seats" if save_reset else "memo"
+                ss["input_pending_reset"] = {"table": int(table_no), "seats": bool(save_reset)}
                 st.rerun()
             else:
                 st.error(f"保存に失敗しました（もう一度押してください）: {err}")
 
     # --- ゲーム代 (集めると着順表に区切りが入る) ---
-    today = get_today_logical_date()
-    fees = load_fee_collections()
     open_fee = render_fee_collect_section(df_all, fees, int(table_no), today)
 
     # --- この卓の今日の記録 (入力の確認用) ---
-    df_today = get_games_by_date(df_all, today)
     df_tbl = df_today[df_today["TableNo"] == int(table_no)] if not df_today.empty else df_today
     if not df_tbl.empty:
-        _step_label(f"{int(table_no)}卓の今日の記録", f"{len(df_tbl)}局")
+        _step_label(f"{table_mark(table_no)} {int(table_no)}卓の今日の記録", f"{len(df_tbl)}局")
         _render_table(df_tbl.reset_index(drop=True), get_fee_cuts(fees, table_no))
 
     # --- 上のカード・選手チップの中身 (ここまでで分かった内容で描く) ---
     fee_txt = f"未集金 {open_fee}枚" if open_fee else "未集金なし"
+    others = [t for t in sorted(tstat) if t != table_no]
+    others_html = ""
+    if others:
+        others_html = '<div class="sum-others">ほかの卓: ' + " ".join(
+            table_tag_html(t, f" {tstat[t]['games']}局") for t in others) + "</div>"
     sum_slot.markdown(_html(f"""
-        <div class="sum-card">
-          <span class="sum-label">{int(table_no)}卓・セット{int(set_no)}</span>
+        <div class="sum-card" style="border-left: 6px solid {color};">
+          <div>
+            <span class="sum-label">{table_tag_html(table_no)} セット{int(set_no)}</span>
+            {others_html}
+          </div>
           <span class="sum-value">{len(df_tbl) + 1}局目 <small>/ {fee_txt}</small></span>
         </div>
     """), unsafe_allow_html=True)
@@ -1408,8 +1549,20 @@ def page_today():
             st.rerun()
         return
 
+    fees = load_fee_collections()
     _render_day_summary(df_day)
-    render_paper_sheet(df_day, today, load_fee_collections())
+    tstat = get_table_status(df_day, fees, today)
+    if len(tstat) >= 2:
+        _step_label("卓ごとの状況", f"{len(tstat)}卓")
+        cards = "".join(
+            f'<div class="tbl-card" style="border-top: 4px solid {table_color(t)};">'
+            f'<div class="tbl-card-name">{table_mark(t)} {t}卓</div>'
+            f'<div class="tbl-card-num">{v["games"]}局</div>'
+            f'<div class="tbl-card-sub">{"未集金 " + str(v["open_fee"]) + "枚" if v["open_fee"] else "未集金なし"}'
+            f' ・最後 {v["last_time"].strftime("%H:%M")}</div></div>'
+            for t, v in sorted(tstat.items()))
+        st.markdown(_html(f'<div class="tbl-cards">{cards}</div>'), unsafe_allow_html=True)
+    render_paper_sheet(df_day, today, fees)
 
     if st.button("データを再読み込み", use_container_width=True):
         clear_cache()

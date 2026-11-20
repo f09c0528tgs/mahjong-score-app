@@ -72,6 +72,7 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - 同率スコアは**同率順位**にする。`assign_competition_rank(df, sort_col, ascending)` を使う（1224式）。
 - 「5連勝以上回数」のような**カウント系はスコア0の人を対象外**にする。
 - **連続記録（最長連勝・最長連続ラス回避など）は単日のみ**。日付をまたいだ連続はカウントしない。
+  - 連続記録は**プレイヤーごと**に「日時 → GameNo」の順で並べて数え、**論理日付が変わったらリセット**する。卓をまたいで交互に入力されても、ほかの卓の局は間に入らない（2026-11 にテストデータで確認済み: 3卓同時・途中で卓を移動・0時またぎ・9時またぎ・後から日時指定で入力）。個人ページ（`page_personal` の `_max_streak` / `_current_streak` / `_after_rate`）も同じルール。
 - ランキングPT: 各項目で 1位10pt / 2位7pt / 3位5pt / 4位3pt / 5位2pt / 6〜10位1pt。集計対象は10項目から「レーティング」「段位」を除いた構成。
 
 ### レーティングと段位
@@ -124,5 +125,7 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - **成績を付ける画面の構成**: 上のカード（卓・セット・何局目・未集金）と選手チップ（`_chips_html()`、着順が決まるとトップをこげ茶で強調）は、`st.empty()` で場所だけ取っておき、名前・着順が決まったあと最後に中身を描く。
 - **操作ボタンは画面の下に固定**（`st.container(key="action_bar")`、[クリア][保存して次へ][保存して空席に]）。Streamlit は `st.container` を同じ高さの `stLayoutWrapper` で包むので、`position: sticky` はその外側（`[data-testid="stLayoutWrapper"]:has(> .st-key-action_bar)`）に付けている。中の要素に付けても固定されない。
 - **ボタンの CSS は `.stButton button`（子孫）で書く**。`help=` を付けたボタンは間にツールチップ用の要素が入るので、`.stButton > button` だと当たらない。
-- **押しやすさ**: タイプ・着順のボタン (`st.segmented_control`) は、離れた平らなキーとして横幅いっぱいに並べている（着順は `st.container(key="rank_area")` 内で高さ64px）。Streamlit はボタン群の内側の div に `max-width: fit-content` を付けるので、`[data-testid="stButtonGroup"] > div` の `max-width: none` を消すと幅いっぱいにならない。卓番・セット、下の操作ボタン、集金の確認ボタンはスマホでも横並び（`.st-key-table_set` / `.st-key-action_bar` / `.st-key-fee_confirm`）。
+- **押しやすさ**: タイプ・着順のボタン (`st.segmented_control`) は、離れた平らなキーとして横幅いっぱいに並べている（着順は `st.container(key="rank_area")` 内で高さ64px）。Streamlit はボタン群の内側の div に `max-width: fit-content` を付けるので、`[data-testid="stButtonGroup"] > div` の `max-width: none` を消すと幅いっぱいにならない。セット、下の操作ボタン、集金の確認ボタンはスマホでも横並び（`.st-key-table_set` / `.st-key-action_bar` / `.st-key-fee_confirm`）。
+- **2卓以上**: 卓は上の切り替えボタン（`st.container(key="table_pick_area")`、今日立っている卓＋「＋次の卓」）で選ぶ。卓ごとに色と印（`TABLE_MARKS` / `TABLE_COLORS`）を決めてあり、上のカード・下の「入力先」・着順表の見出しで同じ色を使う。**名前・セット・手で変えたタイプは卓ごとに覚える**（名前欄のキーは `sel_name_<卓>_<席>`、控えは `_table_mem()`）。Streamlit は画面に出ていない入力欄の値を捨てるので、別の卓から戻ったときは控えから戻している。選んだ人がほかの卓の最後の局（`get_table_status()`）や、ほかの卓の入力欄にもいると警告を出す（保存は止めない）。
+- 卓番が同じ日時の局は GameNo（入力順）で並べる。着順表も区切り→セット→日時→GameNo の順。
 - 入力欄を空に戻すときは、session_state のキーを `del` しないこと（ブラウザ側に古い値が表示されたまま残る）。ウィジェットを描く前に値を `None` / `""` にセットする（`_clear_seats()` と `input_pending_reset` を参照）。

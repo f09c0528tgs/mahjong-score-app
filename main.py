@@ -2076,7 +2076,9 @@ def process_score_df(df):
         df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
-        df = df.sort_values(["論理日付", "TableNo", "日時Obj"])
+        # 同じ日時の局 (セットごとにまとめて同じ時刻で入れた分など) は GameNo (入力順) で並べる
+        _keys = ["論理日付", "TableNo", "日時Obj"] + (["GameNo"] if "GameNo" in df.columns else [])
+        df = df.sort_values(_keys, kind="stable")
         if not df.empty:
             df["DailyNo"] = df.groupby(["論理日付", "TableNo"]).cumcount() + 1
         else:
@@ -5191,19 +5193,25 @@ def page_personal():
     # ranks は時系列順 (df_filtered が既にソート済でない可能性があるので、日時でソート済のものを使う)
     df_sorted = df_filtered.sort_values(["日時Obj", "GameNo"]) if "GameNo" in df_filtered.columns else df_filtered.sort_values("日時Obj")
     seq_ranks = []
+    seq_days = []   # 各局の論理日付 (連続記録は単日のみなので、日が変わったら数え直す)
     for row in _rows(df_sorted):
         for s in ["A", "B", "C"]:
             if row[f"{s}さん"] == selected_player:
                 try:
                     seq_ranks.append(int(float(row[f"{s}着順"])))
+                    seq_days.append(row.get("論理日付"))
                 except:
                     pass
                 break
 
-    # 各種連続記録
+    # 各種連続記録 (ランキングと同じく単日のみ。論理日付が変わったらリセットする)
     def _max_streak(seq, cond):
         mx = cur = 0
-        for r in seq:
+        prev_day = None
+        for r, day in zip(seq, seq_days):
+            if prev_day is not None and day != prev_day:
+                cur = 0
+            prev_day = day
             if cond(r):
                 cur += 1
                 mx = max(mx, cur)
@@ -5212,12 +5220,13 @@ def page_personal():
         return mx
 
     def _current_streak(seq, cond):
+        """最後に打った日の中での、いまの連続数"""
         cur = 0
-        for r in reversed(seq):
-            if cond(r):
-                cur += 1
-            else:
+        last_day = seq_days[-1] if seq_days else None
+        for r, day in zip(reversed(seq), reversed(seq_days)):
+            if day != last_day or not cond(r):
                 break
+            cur += 1
         return cur
 
     max_win = _max_streak(seq_ranks, lambda r: r == 1)
@@ -5227,10 +5236,12 @@ def page_personal():
     cur_lastavoid = _current_streak(seq_ranks, lambda r: r in (1, 2))
     cur_last = _current_streak(seq_ranks, lambda r: r == 3)
 
-    # 連勝確率・連続ラス率 (直後の着順)
+    # 連勝確率・連続ラス率 (直後の着順。ランキングと同じく、同じ日の次の局だけを見る)
     def _after_rate(seq, target):
         d = n = 0
         for i in range(len(seq) - 1):
+            if seq_days[i] != seq_days[i + 1]:
+                continue
             if seq[i] == target:
                 d += 1
                 if seq[i + 1] == target:
