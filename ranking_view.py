@@ -42,373 +42,386 @@ st.set_page_config(
 
 CUSTOM_CSS = """
 <style>
+/* ==========================================================
+   デザイン: 「平らなキー」(温かいベージュ × フラットな白いキー × こげ茶のアクセント)
+   - Streamlit のテーマ (config.toml はメインアプリと共通のダーク) に左右されないよう、
+     画面に出る部品の色はすべてここで固定している。
+   - 文字と背景のコントラスト比は 4.5 以上を目安にする。
+   ========================================================== */
 :root {
-    --bg-main: #1a1d2e;
-    --bg-card: #232739;
-    --border: rgba(255,255,255,0.10);
-    --text-primary: #f5f5f7;
-    --text-muted: #b8bdd0;   /* 補足文字。背景(#1a1d2e)とのコントラスト比 約9 */
-    --accent: #f0c040;
-    --accent2: #5b9cf6;
-    --green: #4caf87;
-    --red: #e05c5c;
-    --orange: #e07b39;
+    --bg-main: #e9e4e2;      /* 画面の背景 */
+    --bg-card: #f1edec;      /* カード */
+    --key: #f8f6f5;          /* 平らなキー */
+    --key-press: #efe9e6;
+    --border: #dcd5d2;
+    --text-primary: #2b2422; /* 本文 (背景とのコントラスト比 約13) */
+    --text-muted: #62574f;   /* 補足 (約5.6) */
+    --brown: #6e5236;        /* 主ボタン「保存して次へ」 */
+    --brown-active: #8a6642; /* 選ばれているキー・チップ */
+    --brown-ring: #caa073;
+    --taupe: #d9d0ca;        /* 控えめなボタン */
+    --accent: #8a6642;
     --radius: 12px;
+    --mono: "SF Mono", "Menlo", "Roboto Mono", "Consolas", monospace;
+}
+html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stMain"] {
+    background: var(--bg-main) !important;
 }
 .stApp {
-    background: linear-gradient(180deg, #1a1d2e 0%, #232739 100%) !important;
     color: var(--text-primary) !important;
-    font-family: "Zen Kaku Gothic New", "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif !important;
+    font-family: "Zen Kaku Gothic New", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", Meiryo, sans-serif !important;
 }
 #MainMenu, header, footer {visibility: hidden;}
 .stDeployButton {display: none;}
-h1, h2, h3 { color: var(--text-primary) !important; font-weight: 900 !important; letter-spacing: 0.02em !important; }
+h1, h2, h3, h4 { color: var(--text-primary) !important; font-weight: 800 !important; letter-spacing: 0.02em !important; }
+.stApp p, .stApp li, .stApp label, .stApp span { color: inherit; }
+[data-testid="stMarkdownContainer"] { color: var(--text-primary); }
 
-/* タブ */
+/* ---------- タブ: 平らな丸いピル ---------- */
+[data-baseweb="tab-list"] { gap: 6px !important; border-bottom: none !important; }
+[data-baseweb="tab-highlight"], [data-baseweb="tab-border"] { display: none !important; }
 button[role="tab"] {
-    background: #2f3550 !important;
-    color: #ffffff !important;
-    border: 1px solid rgba(255,255,255,0.15) !important;
-    border-radius: 10px 10px 0 0 !important;
+    background: var(--key) !important;
+    color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 999px !important;
     font-weight: 700 !important;
-    padding: 0.6rem 1rem !important;
-    margin-right: 4px !important;
-    /* 背景だけ遅れて切り替わると、一瞬「白文字×金背景」になって読めないので、アニメーションを切る */
-    transition: none !important;
+    padding: 0.45rem 1rem !important;
+    transition: none !important;   /* 背景だけ遅れて切り替わると一瞬読めなくなる */
 }
 button[role="tab"] * { color: inherit !important; }
 button[role="tab"][aria-selected="true"] {
-    background: var(--accent) !important;
-    color: #000000 !important;
-    border-color: var(--accent) !important;
+    background: var(--brown) !important;
+    color: #ffffff !important;
+    border-color: var(--brown) !important;
 }
-button[role="tab"][aria-selected="true"] * { color: #000000 !important; }
 
-/* ボタン */
-.stButton > button {
-    background: linear-gradient(135deg, var(--bg-card) 0%, #2f3550 100%) !important;
+/* ---------- ボタン: 平らなキー ---------- */
+.stButton button {
+    background: var(--key) !important;
     color: var(--text-primary) !important;
-    border: 1px solid var(--border) !important;
+    border: 1px solid transparent !important;
     border-radius: var(--radius) !important;
     font-weight: 700 !important;
-    transition: transform 0.15s, box-shadow 0.15s !important;
+    box-shadow: 0 1px 0 rgba(60,40,30,0.06) !important;
+    transition: background 0.1s !important;
+    min-height: 48px !important;
 }
-.stButton > button:hover {
-    transform: translateY(-1px) !important;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
-    border-color: var(--accent) !important;
+.stButton button * { color: inherit !important; }
+.stButton button:hover { background: #ffffff !important; border-color: var(--border) !important; }
+.stButton button:active { background: var(--key-press) !important; }
+.stButton button[kind="primary"] {
+    background: var(--brown) !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
 }
-.stButton > button[kind="primary"] {
-    background: linear-gradient(135deg, var(--accent) 0%, #e0a828 100%) !important;
-    color: #000000 !important;
-    font-weight: 900 !important;
-    border: none !important;
+.stButton button[kind="primary"]:hover { background: #5f462e !important; }
+/* 使えない状態: 読める濃さを保ちつつ、点線枠で「まだ押せない」と分かるように */
+.stButton button:disabled, .stButton button[kind="primary"]:disabled {
+    background: var(--taupe) !important;
+    color: #4f4540 !important;
+    border: 1px dashed #a89b93 !important;
+    box-shadow: none !important; cursor: not-allowed !important;
 }
-.stButton > button[kind="primary"]:hover {
-    box-shadow: 0 6px 20px rgba(240,192,64,0.4) !important;
-}
+.stButton button:disabled * { color: #4f4540 !important; }
 
-/* タイプ・着順のボタン: 選ばれているものを金色で塗りつぶして一目で分かるように */
-button[data-testid="stBaseButton-segmented_controlActive"] {
-    background: var(--accent) !important;
-    border-color: var(--accent) !important;
-    color: #000000 !important;
-    font-weight: 900 !important;
+/* ---------- タイプ・着順のボタン (segmented control) を「離れた平らなキー」に ---------- */
+[data-testid="stElementContainer"]:has(> [data-testid="stButtonGroup"]) { width: 100% !important; }
+[data-testid="stButtonGroup"], [data-testid="stButtonGroup"] > div {
+    width: 100% !important; max-width: none !important; gap: 8px !important; flex-wrap: wrap !important;
 }
-button[data-testid="stBaseButton-segmented_controlActive"] * { color: #000000 !important; }
-
-/* 入力 */
-.stTextInput input, .stNumberInput input, .stSelectbox select,
-.stTextInput > div, .stNumberInput > div, .stSelectbox > div {
-    background: var(--bg-card) !important;
-    color: var(--text-primary) !important;
-    border: 1px solid var(--border) !important;
-    border-radius: 8px !important;
-}
-[data-baseweb="select"] > div {
-    background: var(--bg-card) !important;
-    border-color: var(--border) !important;
-    color: var(--text-primary) !important;
-}
-.stAlert {
-    background: var(--bg-card) !important;
-    border: 1px solid var(--border) !important;
+button[data-testid^="stBaseButton-segmented_control"] {
+    flex: 1 1 auto !important;
+    min-height: 46px !important;
+    padding: 0 0.5rem !important;
     border-radius: var(--radius) !important;
+    margin: 0 !important;
+    font-size: 0.95rem !important;
+    transition: none !important;
+}
+button[data-testid="stBaseButton-segmented_control"] {
+    background: var(--key) !important;
     color: var(--text-primary) !important;
+    border: 1px solid transparent !important;
+    box-shadow: 0 1px 0 rgba(60,40,30,0.06) !important;
 }
-/* 補足文字 (st.caption)。Streamlit 既定は暗く半透明で背景に溶けるので、明るく不透明にする */
-.stCaption, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
-    color: var(--text-muted) !important; opacity: 1 !important;
+button[data-testid="stBaseButton-segmented_control"] * { color: var(--text-primary) !important; }
+button[data-testid="stBaseButton-segmented_controlActive"] {
+    background: var(--brown-active) !important;
+    border: 2px solid var(--brown-ring) !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+}
+button[data-testid="stBaseButton-segmented_controlActive"] * { color: #ffffff !important; }
+button[data-testid^="stBaseButton-segmented_control"]:disabled {
+    background: var(--taupe) !important; border: 1px dashed #a89b93 !important; opacity: 1 !important;
+}
+button[data-testid^="stBaseButton-segmented_control"]:disabled * { color: #4f4540 !important; }
+/* 着順のキーはさらに大きく (テンキーのような押しやすさ) */
+.st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] { min-height: 64px !important; }
+.st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] p {
+    font-size: 1.1rem !important; font-weight: 800 !important;
 }
 
-/* お知らせ枠 (st.info / success / warning / error)。
-   既定の色はテーマ (ライト/ダーク) で変わり、ライトだと「明るい背景×明るい文字」になる。
-   テーマに関係なく、暗い色付き背景×明るい文字に固定する */
-[data-testid="stAlertContainer"] { opacity: 1 !important; }
-[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"])    { background: #1d3550 !important; }
-[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { background: #173d2c !important; }
-[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { background: #4a3c12 !important; }
-[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"])   { background: #4d1f22 !important; }
-[data-testid="stAlertContentInfo"], [data-testid="stAlertContentInfo"] * { color: #b9dcff !important; }
-[data-testid="stAlertContentSuccess"], [data-testid="stAlertContentSuccess"] * { color: #b4f0cc !important; }
-[data-testid="stAlertContentWarning"], [data-testid="stAlertContentWarning"] * { color: #ffe7a3 !important; }
-[data-testid="stAlertContentError"], [data-testid="stAlertContentError"] * { color: #ffc9c9 !important; }
-
-/* ===== テーマ (ライト/ダーク) に左右されないように、入力まわりの色を固定する =====
-   サーバー側で config.toml のダークテーマが効いていない (ライトテーマで動いている) と、
-   Streamlit 既定の「白背景×濃い文字」と、このCSSの「暗い背景×明るい文字」が混ざって読めなくなるため */
+/* ---------- 入力欄 (名前・卓番・日付・備考) ---------- */
 [data-baseweb="select"] > div, [data-baseweb="input"], [data-baseweb="base-input"],
-[data-baseweb="input"] input, [data-baseweb="textarea"], textarea {
-    background: var(--bg-card) !important;
+[data-baseweb="input"] input, [data-baseweb="textarea"], textarea,
+.stNumberInput > div, .stTextInput > div {
+    background: var(--key) !important;
     color: var(--text-primary) !important;
-    border-color: rgba(255,255,255,0.18) !important;
+    border-color: var(--border) !important;
+    border-radius: 10px !important;
 }
 [data-baseweb="select"] *, [data-baseweb="input"] input, textarea {
     color: var(--text-primary) !important;
     -webkit-text-fill-color: var(--text-primary) !important;
 }
-[data-baseweb="select"] svg { fill: var(--text-primary) !important; color: var(--text-primary) !important; }
+[data-baseweb="select"] svg { fill: var(--text-muted) !important; color: var(--text-muted) !important; }
 input::placeholder, textarea::placeholder {
-    color: #a3a8bc !important; -webkit-text-fill-color: #a3a8bc !important; opacity: 1 !important;
+    color: #6d625c !important; -webkit-text-fill-color: #6d625c !important; opacity: 1 !important;
 }
-/* 名前欄の「名前を選択」(プレースホルダ) */
 [data-baseweb="select"] [id$="placeholder"], [data-baseweb="select"] div[aria-hidden="true"] {
-    color: #a3a8bc !important; -webkit-text-fill-color: #a3a8bc !important;
+    color: #6d625c !important; -webkit-text-fill-color: #6d625c !important;
 }
+input:disabled, textarea:disabled {
+    color: #5a504a !important; -webkit-text-fill-color: #5a504a !important; opacity: 1 !important;
+}
+button[data-testid^="stNumberInputStep"] {
+    background: var(--bg-card) !important; color: var(--text-primary) !important; border: none !important;
+}
+button[data-testid^="stNumberInputStep"] svg { color: inherit !important; fill: currentColor !important; }
+button[data-testid^="stNumberInputStep"]:disabled { color: #9a8f88 !important; }
+/* 入力欄の見出し */
+[data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] * {
+    color: var(--text-muted) !important; opacity: 1 !important; font-weight: 700 !important;
+}
+/* プルダウンの候補一覧 (画面の外側に出る部品なので個別に) */
+[data-baseweb="popover"] ul, [data-baseweb="popover"] [role="listbox"], [data-baseweb="menu"] {
+    background: #fbf9f8 !important;
+}
+[data-baseweb="popover"] li, [data-baseweb="popover"] [role="option"] {
+    background: #fbf9f8 !important; color: var(--text-primary) !important;
+}
+[data-baseweb="popover"] li *, [data-baseweb="popover"] [role="option"] * { color: var(--text-primary) !important; }
+[data-baseweb="popover"] li:hover, [data-baseweb="popover"] [role="option"][aria-selected="true"],
+[data-baseweb="popover"] li[aria-selected="true"] { background: #efe4d8 !important; }
+/* カレンダー (日付) */
+[data-baseweb="calendar"], [data-baseweb="calendar"] > div, [data-baseweb="datepicker"] {
+    background: #fbf9f8 !important; color: var(--text-primary) !important;
+}
+[data-baseweb="calendar"] * { color: var(--text-primary) !important; }
+[data-baseweb="calendar"] [aria-selected="true"], [data-baseweb="calendar"] [aria-selected="true"] * {
+    color: #ffffff !important;
+}
+[data-baseweb="calendar"] [aria-selected="true"]::after { background: var(--brown) !important; border-color: var(--brown) !important; }
+
 /* 折りたたみ (日時・備考) */
-[data-testid="stExpander"] details, [data-testid="stExpander"] summary {
-    background: var(--bg-card) !important; color: var(--text-primary) !important;
-    border-color: rgba(255,255,255,0.18) !important;
+[data-testid="stExpander"] details {
+    background: var(--bg-card) !important; border: 1px solid var(--border) !important; border-radius: var(--radius) !important;
 }
+[data-testid="stExpander"] summary { background: transparent !important; color: var(--text-primary) !important; }
 [data-testid="stExpander"] summary *, [data-testid="stExpander"] summary svg {
     color: var(--text-primary) !important; fill: var(--text-primary) !important;
 }
-/* チェックボックス・ラジオの文字 */
 [data-testid="stCheckbox"] *, [data-testid="stRadio"] label * { color: var(--text-primary) !important; }
-/* タイプ・着順のボタン (選ばれていないもの) */
-button[data-testid="stBaseButton-segmented_control"] {
-    background: var(--bg-card) !important;
-    color: var(--text-primary) !important;
-    border-color: rgba(255,255,255,0.25) !important;
-}
-button[data-testid="stBaseButton-segmented_control"] * { color: var(--text-primary) !important; }
-/* 卓番・セットの −/＋ ボタン */
-button[data-testid^="stNumberInputStep"] { background: #2f3550 !important; color: #ffffff !important; }
-button[data-testid^="stNumberInputStep"] svg { color: inherit !important; fill: currentColor !important; }
 
-/* 入力欄の見出し (卓番・日付 など)。使えない状態でも読めるようにする */
-[data-testid="stWidgetLabel"], [data-testid="stWidgetLabel"] * {
-    color: var(--text-primary) !important; opacity: 1 !important;
+/* 補足文字 */
+.stCaption, [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] * {
+    color: var(--text-muted) !important; opacity: 1 !important;
 }
 
-/* 使えない状態の入力欄の中身 (日付・時刻など) */
-input:disabled, textarea:disabled {
-    color: #c5c8d4 !important; -webkit-text-fill-color: #c5c8d4 !important; opacity: 1 !important;
+/* お知らせ枠: 淡い色の背景 × 濃い文字 (テーマに関係なく固定) */
+.stAlert { border-radius: var(--radius) !important; }
+[data-testid="stAlertContainer"] { opacity: 1 !important; border-radius: var(--radius) !important; border: 1px solid var(--border) !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentInfo"])    { background: #e4ebf2 !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentSuccess"]) { background: #e3eee5 !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentWarning"]) { background: #f5ead2 !important; }
+[data-testid="stAlertContainer"]:has([data-testid="stAlertContentError"])   { background: #f5e0dd !important; }
+[data-testid="stAlertContentInfo"], [data-testid="stAlertContentInfo"] * { color: #1f3a55 !important; }
+[data-testid="stAlertContentSuccess"], [data-testid="stAlertContentSuccess"] * { color: #1c4a31 !important; }
+[data-testid="stAlertContentWarning"], [data-testid="stAlertContentWarning"] * { color: #573f0c !important; }
+[data-testid="stAlertContentError"], [data-testid="stAlertContentError"] * { color: #74221c !important; }
+hr { border-color: var(--border) !important; }
+
+/* ---------- 上のカード (モックの「合計」の枠) ---------- */
+.sum-card {
+    display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem;
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 0.7rem 1rem; margin-bottom: 0.6rem;
+}
+.sum-label { font-size: 0.85rem; color: var(--text-muted); font-weight: 700; }
+.sum-value { font-family: var(--mono); font-size: 1.15rem; color: var(--text-primary); font-weight: 600; white-space: nowrap; }
+.sum-value small { font-size: 0.72rem; color: var(--text-muted); }
+
+/* ---------- 選手チップ ---------- */
+.chips { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0.15rem 0 0.5rem; }
+.chip {
+    position: relative; background: var(--key); border-radius: var(--radius);
+    padding: 0.5rem 0.3rem 0.45rem; text-align: center; min-height: 58px;
+    box-shadow: 0 1px 0 rgba(60,40,30,0.06); border: 2px solid transparent;
+}
+.chip-seat { font-size: 0.66rem; color: var(--text-muted); font-weight: 700; letter-spacing: 0.05em; }
+.chip-name { font-size: 0.92rem; font-weight: 800; color: var(--text-primary); line-height: 1.25;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chip-sub { font-family: var(--mono); font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
+.chip.empty .chip-name { color: #6d625c; font-weight: 700; }
+.chip.done { background: #e2dcd9; }
+.chip.active { background: var(--brown-active); border-color: var(--brown-ring); }
+.chip.active .chip-seat, .chip.active .chip-name, .chip.active .chip-sub { color: #ffffff; }
+.chip .chip-check { position: absolute; top: 4px; right: 8px; font-size: 0.75rem; color: var(--text-muted); }
+.chip.active .chip-check { color: #ffffff; }
+.chip.active::before {
+    content: ""; position: absolute; top: -5px; left: 50%; transform: translateX(-50%);
+    width: 8px; height: 8px; border-radius: 50%; background: var(--brown-ring);
 }
 
-/* 使えない状態のボタン: 読める明るさを保ちつつ、点線枠と灰色で「まだ押せない」と分かるようにする */
-.stButton > button:disabled,
-.stButton > button[kind="primary"]:disabled {
-    background: #2a2e42 !important;
-    color: #c5c8d4 !important;
-    border: 1px dashed rgba(255,255,255,0.35) !important;
-    box-shadow: none !important; transform: none !important; cursor: not-allowed !important;
-}
-.stButton > button:disabled * { color: #c5c8d4 !important; }
-button[data-testid^="stBaseButton-segmented_control"]:disabled {
-    color: #c5c8d4 !important; border-style: dashed !important; opacity: 1 !important;
-}
-button[data-testid^="stBaseButton-segmented_control"]:disabled * { color: #c5c8d4 !important; }
-button[data-testid^="stNumberInputStep"]:disabled { color: rgba(255,255,255,0.6) !important; }
-hr { border-color: var(--border) !important; opacity: 0.4 !important; }
+/* 小さな見出し (モックの「うえの の素点  3ケタで自動送り」) */
+.step-label { display: flex; justify-content: space-between; align-items: baseline; margin: 0.35rem 0 0.1rem; }
+.step-label b { font-size: 0.9rem; color: var(--text-primary); }
+.step-label span { font-size: 0.75rem; color: var(--text-muted); }
 
-/* 席カード */
-.seat-card {
-    background: linear-gradient(135deg, var(--bg-card) 0%, #2a2f45 100%);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 0.7rem 1rem;
-    margin-bottom: 0.5rem;
+/* ---------- 下に固定する操作ボタン ---------- */
+/* Streamlit は st.container を同じ高さの stLayoutWrapper で包むので、固定 (sticky) はその外側に付ける */
+[data-testid="stLayoutWrapper"]:has(> .st-key-action_bar) {
+    position: sticky !important; bottom: 0; z-index: 50;
 }
-.seat-card.seat-A { border-left: 4px solid var(--accent2); }
-.seat-card.seat-B { border-left: 4px solid var(--orange); }
-.seat-card.seat-C { border-left: 4px solid var(--green); }
-.seat-label {
-    font-size: 0.8rem; color: var(--text-muted); letter-spacing: 0.06em;
-    font-weight: 700; margin-bottom: 0.3rem;
+.st-key-action_bar {
+    background: var(--bg-main);
+    padding: 0.5rem 0 0.6rem;
+    box-shadow: 0 -8px 12px -8px rgba(60,40,30,0.18);
 }
-.seat-type-badge {
-    display: inline-block; padding: 0.1rem 0.5rem; border-radius: 6px;
-    font-size: 0.7rem; font-weight: 800; margin-left: 0.5rem;
-    background: rgba(240,192,64,0.15); color: var(--accent);
-    border: 1px solid rgba(240,192,64,0.3);
+.st-key-action_bar [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; }
+.st-key-action_bar [data-testid="stColumn"] { min-width: 0 !important; }
+.st-key-action_bar .stButton button { min-height: 52px !important; padding: 0 0.25rem !important; }
+.st-key-action_bar .stButton button p {
+    font-size: 0.9rem !important; line-height: 1.2 !important; white-space: nowrap !important;
 }
 
-/* サマリバッジ */
+/* ---------- サマリバッジ (着順表タブ) ---------- */
 .summary-badge {
     display: inline-flex; align-items: center; gap: 0.4rem;
-    background: var(--bg-card); border: 1px solid var(--border);
-    padding: 0.4rem 0.8rem; border-radius: 999px;
+    background: var(--key); border: 1px solid var(--border);
+    padding: 0.35rem 0.8rem; border-radius: 999px;
     font-size: 0.82rem; color: var(--text-primary); margin: 0.2rem 0.4rem 0.2rem 0;
 }
-.summary-badge strong { color: var(--accent); font-weight: 900; }
+.summary-badge strong { color: var(--brown); font-weight: 900; font-family: var(--mono); }
 
 /* ===== 紙の着順表 (paper-sheet) ===== */
 .paper-wrap {
-    background: #f8f6f0;
-    border-radius: 8px;
-    padding: 0.3rem;
+    background: var(--key);
+    border-radius: var(--radius);
+    padding: 0.35rem;
     overflow-x: auto;
     margin: 0 0 0.8rem;
-    box-shadow: 0 3px 12px rgba(0,0,0,0.3);
+    border: 1px solid var(--border);
 }
 .paper-table {
     border-collapse: collapse;
     width: 100%;
-    max-width: 420px;
+    max-width: 460px;
     font-family: "Zen Kaku Gothic New", sans-serif;
-    background: #fffdf7;
+    background: #fffdf9;
 }
 .paper-table th, .paper-table td {
-    border: 1px solid #c2bba5;
+    border: 1px solid #d8cfc6;
     text-align: center;
-    color: #1a1a1a;
+    color: #1f1a18;
     padding: 1px 4px;
     font-size: 0.82rem;
     line-height: 1.5;
 }
 .paper-table thead th {
-    background: #e8e2d0;
+    background: #ede6df;
     font-weight: 800;
     font-size: 0.72rem;
-    color: #333;
+    color: #3a302b;
     padding: 2px 4px;
 }
 .paper-table .col-no {
-    background: #ede8da; font-weight: 700; width: 28px; color: #4a4a4a;
+    background: #f1ebe5; font-weight: 700; width: 28px; color: #4a403b;
     font-size: 0.68rem;
 }
-.paper-table .seat-head-A { background: #d4e4f7; width: 33%; }
-.paper-table .seat-head-B { background: #f7e0cc; width: 33%; }
-.paper-table .seat-head-C { background: #d4f0e0; width: 33%; }
+.paper-table .seat-head-A, .paper-table .seat-head-B, .paper-table .seat-head-C { width: 33%; }
 .paper-table .name-row td {
-    font-weight: 800; font-size: 0.8rem; background: #fbf8ee;
-    border-top: 2px solid #8a8268;
+    font-weight: 800; font-size: 0.8rem; background: #f7f2ec;
+    border-top: 2px solid #9b8a7a;
     padding: 3px 4px;
     line-height: 1.2;
 }
 .paper-table .name-type {
-    font-size: 0.6rem; color: #4f3f14; margin-left: 2px; white-space: nowrap;
-    background: #efe8d2; padding: 0 3px; border-radius: 3px;
+    font-size: 0.6rem; color: #4f3f2c; margin-left: 2px; white-space: nowrap;
+    background: #ece2d6; padding: 0 3px; border-radius: 3px;
     vertical-align: middle;
 }
-.paper-table .rank1 { color: #c0392b; font-weight: 900; }
-.paper-table .rank-cell { font-weight: 700; font-size: 0.9rem; }
+.paper-table .rank1 { color: #a6362a; font-weight: 900; }
+.paper-table .rank-cell { font-weight: 700; font-size: 0.9rem; font-family: var(--mono); }
 .paper-table .gamecount-row td {
-    background: #f0ebd8; font-weight: 700; font-size: 0.72rem; color: #555;
+    background: #f1ebe5; font-weight: 700; font-size: 0.74rem; color: #4a403b;
     padding: 3px 4px;
 }
-.paper-table .empty-cell { color: #ccc; }
+.paper-table .empty-cell { color: #a99d95; }
 /* ゲーム代の区切り行 */
 .paper-table .fee-row td {
-    background: #fff4d6; text-align: left; padding: 5px 8px;
-    border-top: 2px dashed #b8860b; border-bottom: 3px double #b8860b;
+    background: #f6eee3; text-align: left; padding: 5px 8px;
+    border-top: 2px dashed #a67c52; border-bottom: 3px double #a67c52;
 }
-.paper-table .fee-head { font-size: 0.85rem; font-weight: 800; color: #3a2a00; }
-.paper-table .fee-total { color: #c0392b; font-size: 1.05rem; }
-.paper-table .fee-games { font-size: 0.72rem; color: #5a4a22; font-weight: 700; margin-left: 2px; }
+.paper-table .fee-head { font-size: 0.85rem; font-weight: 800; color: #3b2a1a; }
+.paper-table .fee-total { color: #a6362a; font-size: 1.05rem; font-family: var(--mono); }
+.paper-table .fee-games { font-size: 0.72rem; color: #5a4632; font-weight: 700; margin-left: 2px; }
 .paper-table .fee-status {
     float: right; font-size: 0.7rem; font-weight: 800; padding: 1px 6px; border-radius: 4px;
 }
-.paper-table .fee-status.done { background: #d4f0e0; color: #1e6b45; }
-.paper-table .fee-status.open { background: #fde2c8; color: #a0471a; }
-.paper-table .fee-detail { font-size: 0.74rem; color: #4a3d20; line-height: 1.45; margin-top: 2px; }
+.paper-table .fee-status.done { background: #dcebdf; color: #1d5233; }
+.paper-table .fee-status.open { background: #f7dfc9; color: #8a3c13; }
+.paper-table .fee-detail { font-size: 0.74rem; color: #46382a; line-height: 1.45; margin-top: 2px; }
 
 .paper-title {
-    font-weight: 900; font-size: 0.92rem; color: #2a2a2a;
-    padding: 0.25rem 0.5rem; background: #e8e2d0; border-radius: 6px 6px 0 0;
-    border: 1px solid #c2bba5; border-bottom: none;
+    font-weight: 800; font-size: 0.9rem; color: #2b2422;
+    padding: 0.25rem 0.7rem; background: var(--key); border-radius: 8px 8px 0 0;
+    border: 1px solid var(--border); border-bottom: none;
     display: inline-block; margin-top: 0.5rem;
 }
 
-/* 成績入力ページのゲーム代欄 */
+/* ---------- ゲーム代の欄 ---------- */
 .fee-box {
-    background: linear-gradient(135deg, rgba(240,192,64,0.14) 0%, rgba(240,192,64,0.04) 100%);
-    border: 1px solid rgba(240,192,64,0.45); border-radius: var(--radius);
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
     padding: 0.7rem 1rem; margin-bottom: 0.6rem;
 }
-.fee-box-title { font-size: 0.95rem; margin-bottom: 0.35rem; }
-.fee-box-total { color: var(--accent); font-size: 1.3rem; }
+.fee-box-title { font-size: 0.92rem; margin-bottom: 0.35rem; color: var(--text-primary); }
+.fee-box-total { color: var(--brown); font-size: 1.3rem; font-family: var(--mono); }
 .fee-line {
     display: flex; justify-content: space-between; gap: 0.5rem;
-    font-size: 0.88rem; padding: 0.15rem 0; border-bottom: 1px dotted rgba(255,255,255,0.12);
+    font-size: 0.86rem; padding: 0.2rem 0; border-bottom: 1px dotted var(--border); color: var(--text-primary);
 }
-.fee-rule { font-size: 0.72rem; color: #ddd6be; margin-top: 0.4rem; }
+.fee-line b { font-family: var(--mono); }
+.fee-rule { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.4rem; }
 
-/* 着席中バナー */
-.seated-banner {
-    background: linear-gradient(135deg, rgba(76,175,135,0.15) 0%, rgba(76,175,135,0.05) 100%);
-    border: 1px solid rgba(76,175,135,0.4);
-    border-radius: var(--radius);
-    padding: 0.6rem 1rem;
-    margin-bottom: 0.7rem;
-    font-size: 0.85rem;
-}
-.seated-banner strong { color: var(--green); }
+/* ---------- 余白・見出し ---------- */
+[data-testid="stMainBlockContainer"] { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 560px !important; }
+h1 { font-size: 1.35rem !important; line-height: 1.3 !important; margin: 0.1rem 0 0.4rem !important; padding: 0 !important; }
+h3 { font-size: 1rem !important; line-height: 1.35 !important; margin-top: 0.6rem !important; padding-bottom: 0 !important; color: var(--text-muted) !important; }
+.brand-bar { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.4rem; }
 
-/* ========== UI改善 (2026-11): 片手で速く入力できるように ========== */
-/* Streamlit 1.5x のページ余白 (上の大きな空白を詰める) */
-[data-testid="stMainBlockContainer"] {
-    padding-top: 1rem !important;
-    padding-bottom: 4rem !important;
-}
-/* 見出し: タブ名と同じページ名が2行に折り返さない大きさに */
-h1 { font-size: 1.5rem !important; line-height: 1.3 !important; margin: 0.1rem 0 0.3rem !important; padding: 0 !important; }
-h3 { font-size: 1.15rem !important; line-height: 1.35 !important; margin-top: 0.5rem !important; padding-bottom: 0.1rem !important; }
-
-/* タイプ・着順のボタン: 横幅いっぱいに均等に並べ、指で押しやすい高さに */
-[data-testid="stElementContainer"]:has(> [data-testid="stButtonGroup"]) { width: 100% !important; }
-[data-testid="stButtonGroup"], [data-testid="stButtonGroup"] > div { width: 100% !important; max-width: none !important; }
-button[data-testid^="stBaseButton-segmented_control"] {
-    flex: 1 1 auto !important;
-    padding-left: 0.4rem !important; padding-right: 0.4rem !important;
-    min-height: 44px !important;
-    font-size: 0.95rem !important;
-}
-/* 着順はさらに大きく */
-.st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] {
-    min-height: 54px !important;
-}
-.st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] p {
-    font-size: 1.05rem !important; font-weight: 800 !important;
-}
-
-/* 保存ボタンを押しやすい高さに */
-.stButton > button { min-height: 46px !important; }
-
-/* タッチ操作の端末: 押した後もボタンが浮いたまま・枠が光ったままになる (hover が残る) のを防ぐ */
+/* タッチ端末: 押した後もボタンの色が変わったまま残る (hover が残る) のを防ぐ */
 @media (hover: none) {
-    .stButton > button:hover {
-        transform: none !important;
-        box-shadow: none !important;
-        border-color: var(--border) !important;
-    }
-    .stButton > button[kind="primary"]:hover { border: none !important; }
+    .stButton button:hover { background: var(--key) !important; border-color: transparent !important; }
+    .stButton button[kind="primary"]:hover { background: var(--brown) !important; }
 }
 
 @media (max-width: 640px) {
     [data-testid="stMainBlockContainer"] {
-        padding-top: 0.6rem !important;
-        padding-left: 0.8rem !important;
-        padding-right: 0.8rem !important;
+        padding-top: 0.6rem !important; padding-left: 0.8rem !important; padding-right: 0.8rem !important;
     }
-    [data-testid="stVerticalBlock"] { gap: 0.6rem !important; }
-    h1 { font-size: 1.3rem !important; }
-    /* 卓番・セットは横に並べたまま */
-    .st-key-table_set [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 0.6rem !important; }
-    .st-key-table_set [data-testid="stColumn"] { flex: 1 1 0 !important; width: auto !important; min-width: 0 !important; }
-    /* タブ: 3つが横に収まるように少し小さく */
-    button[role="tab"] { padding: 0.5rem 0.7rem !important; }
+    [data-testid="stVerticalBlock"] { gap: 0.55rem !important; }
+    h1 { font-size: 1.2rem !important; }
+    /* 卓番・セット、下の操作ボタンは横に並べたまま */
+    .st-key-table_set [data-testid="stHorizontalBlock"],
+    .st-key-action_bar [data-testid="stHorizontalBlock"],
+    .st-key-fee_confirm [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; }
+    .st-key-table_set [data-testid="stColumn"],
+    .st-key-action_bar [data-testid="stColumn"],
+    .st-key-fee_confirm [data-testid="stColumn"] { flex: 1 1 0 !important; width: auto !important; min-width: 0 !important; }
+    button[role="tab"] { padding: 0.4rem 0.75rem !important; }
 }
 </style>
 """
@@ -970,7 +983,7 @@ def render_paper_sheet(df_day, target_date, fees=None):
         df_tbl = df_day[df_day["TableNo"] == table_no].copy()
         if df_tbl.empty:
             continue
-        st.markdown(f'<div class="paper-title">🎲 {int(table_no)}卓</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="paper-title">{int(table_no)}卓</div>', unsafe_allow_html=True)
         _render_table(df_tbl, get_fee_cuts(fees, table_no))
 
 
@@ -1081,7 +1094,8 @@ def _render_table(df_tbl, cuts=None):
 # 6. 成績を付けるページ
 # ==========================================
 SEATS = ["A", "B", "C"]
-SEAT_LABELS = {"A": "🟦 A席", "B": "🟧 B席", "C": "🟩 C席"}
+SEAT_LABELS = {"A": "A席", "B": "B席", "C": "C席"}
+TYPE_SHORT = {"A客": "A客", "B客": "B客", "AS": "AS", "BS": "BS"}
 
 
 def _clear_seats():
@@ -1094,9 +1108,38 @@ def _clear_seats():
     st.session_state["input_round"] = st.session_state.get("input_round", 0) + 1
 
 
-def page_input():
-    st.title("📝 成績を付ける")
+def _step_label(left, right=""):
+    """小さな見出し (左に何をするか、右に補足)"""
+    st.markdown(_html(f'<div class="step-label"><b>{left}</b><span>{right}</span></div>'),
+                unsafe_allow_html=True)
 
+
+def _chips_html(seat_info, ranks):
+    """
+    上に並べる選手チップ。
+    - 着順が決まったら「1着」などを表示し、トップの人をこげ茶で強調 (トップがゲーム代を払うので)
+    - まだ着順が無いうちは、次に名前を入れる席をこげ茶で強調
+    """
+    top = next((s for s, r in ranks.items() if r == 1), None)
+    first_empty = next((s for s in SEATS if not seat_info[s]["name"]), None)
+    active = top or first_empty
+    html = '<div class="chips">'
+    for s in SEATS:
+        nm, tp = seat_info[s]["name"], seat_info[s]["type"]
+        if nm:
+            sub = f"{ranks[s]}着" if s in ranks else "---"
+            sub += f"・{TYPE_SHORT.get(tp, '')}" if tp else ""
+            cls = "active" if s == active else "done"
+            check = '<span class="chip-check">✓</span>'
+            name_html = nm
+        else:
+            sub, cls, check, name_html = "---", ("active" if s == active else "empty"), "", "未選択"
+        html += (f'<div class="chip {cls}">{check}<div class="chip-seat">{SEAT_LABELS[s]}</div>'
+                 f'<div class="chip-name">{name_html}</div><div class="chip-sub">{sub}</div></div>')
+    return html + "</div>"
+
+
+def page_input():
     with st.spinner("データ読込中..."):
         df_all = load_score_data()
         member_names, member_type = load_members()
@@ -1123,6 +1166,10 @@ def page_input():
     if flash:
         st.success(flash)
 
+    # 上のカードと選手チップは、下で名前・着順が決まってから中身を入れる
+    sum_slot = st.empty()
+    chips_slot = st.empty()
+
     # --- 卓・セット (スマホでも横に並べる。CSS は .st-key-table_set) ---
     with st.container(key="table_set"):
         col_b, col_c = st.columns(2)
@@ -1132,9 +1179,7 @@ def page_input():
             set_no = st.number_input("セット", min_value=1, step=1, key="input_set_no")
 
     # --- メンバー ---
-    st.markdown("### 🪑 メンバー")
-    st.caption("名前は文字を打つと絞り込めます。名前を選ぶとタイプ（A客・B客・Aスタッフ・Bスタッフ）が自動で選ばれます。違うときはタップで変更できます。")
-
+    _step_label("メンバー", "文字を打つと絞り込めます")
     seat_info = {}
     for seat in SEATS:
         sel_name = st.selectbox(
@@ -1144,52 +1189,51 @@ def page_input():
         sel_type = None
         if sel_name:
             auto_type, source = resolve_player_type(sel_name, member_type, last_types)
-            c1, c2 = st.columns([4, 1.4], vertical_alignment="center")
-            with c1:
-                # 名前ごとに別キーにすることで、名前を変えたらタイプも自動で切り替わる
-                picked = st.segmented_control(
-                    f"{seat}席のタイプ", TYPE_BUTTON_ORDER, default=auto_type,
-                    format_func=lambda t: TYPE_LABELS[t],
-                    key=f"sel_type_{seat}_{sel_name}", label_visibility="collapsed",
-                )
+            # 名前ごとに別キーにすることで、名前を変えたらタイプも自動で切り替わる
+            picked = st.segmented_control(
+                f"{seat}席のタイプ", TYPE_BUTTON_ORDER, default=auto_type,
+                format_func=lambda t: TYPE_LABELS[t],
+                key=f"sel_type_{seat}_{sel_name}", label_visibility="collapsed",
+            )
             sel_type = picked or auto_type
-            with c2:
-                note = source if sel_type == auto_type else "手動で変更"
-                st.caption(f"（{note}）")
+            note = source if sel_type == auto_type else "手動で変更"
+            st.caption(f"タイプ: {TYPE_LABELS[sel_type]}（{note}）")
         seat_info[seat] = {"name": sel_name, "type": sel_type}
 
     names_sel = [seat_info[s]["name"] for s in SEATS]
     members_ready = all(names_sel) and len(set(names_sel)) == 3
 
     # --- 着順 (1着→2着をタップ、3着は自動) ---
-    st.markdown("### 🎯 着順")
     ranks = {}
-    rank_area = st.container(key="rank_area")  # 着順のボタンは大きくする (CSS は .st-key-rank_area)
-    if not all(names_sel):
-        st.info("3人とも名前を選ぶと着順を入力できます。")
-    elif not members_ready:
-        st.error("⚠️ 同じ人が複数の席にいます")
-    else:
-        fmt = lambda s: f"{s} {seat_info[s]['name']}"
-        mkey = f"{ss['input_round']}_{'|'.join(names_sel)}"
-        with rank_area:
-            first = st.segmented_control(
-                "🥇 1着", SEATS, format_func=fmt, key=f"rank1_{mkey}",
-            )
+    rank_area = st.container(key="rank_area")  # 着順のキーは大きくする (CSS は .st-key-rank_area)
+    with rank_area:
+        if not all(names_sel):
+            _step_label("着順", "3人とも名前を選ぶと入力できます")
+        elif not members_ready:
+            _step_label("着順")
+            st.error("同じ人が複数の席にいます")
+        else:
+            fmt = lambda s: seat_info[s]["name"]
+            mkey = f"{ss['input_round']}_{'|'.join(names_sel)}"
+            first_now = ss.get(f"rank1_{mkey}")
+            hint = "1着をタップ" if not first_now else "2着をタップ（3着は自動）"
+            _step_label("着順", hint)
+            first = st.segmented_control("1着", SEATS, format_func=fmt, key=f"rank1_{mkey}")
             remain = [s for s in SEATS if s != first]
             second = st.segmented_control(
-                "🥈 2着", remain if first else SEATS, format_func=fmt,
+                "2着", remain if first else SEATS, format_func=fmt,
                 key=f"rank2_{mkey}_{first}", disabled=first is None,
             )
+            if first:
+                ranks[first] = 1
             if first and second:
                 third = [s for s in SEATS if s not in (first, second)][0]
-                ranks = {first: 1, second: 2, third: 3}
-                st.markdown(f"🥉 3着: **{fmt(third)}**")
+                ranks.update({second: 2, third: 3})
 
     can_save = members_ready and len(ranks) == 3
 
     # --- 日時 (通常は保存した時刻。後から付けるときだけ指定) ---
-    with st.expander("🕒 日時・備考（後から付けるときだけ）"):
+    with st.expander("日時・備考（後から付けるときだけ）"):
         use_custom_dt = st.checkbox("日時を指定する", key="input_use_custom_dt")
         col_dt, col_time = st.columns(2)
         with col_dt:
@@ -1200,18 +1244,20 @@ def page_input():
                                        key="input_time", disabled=not use_custom_dt)
         memo = st.text_input("備考", value="", key="input_memo")
 
-    # --- 保存ボタン ---
-    col_save1, col_save2 = st.columns(2)
-    with col_save1:
-        save_continue = st.button(
-            "💾 保存（同じメンバーで次へ）", type="primary",
-            disabled=not can_save, use_container_width=True,
-        )
-    with col_save2:
-        save_reset = st.button(
-            "✅ 保存して空席に戻す",
-            disabled=not can_save, use_container_width=True,
-        )
+    # --- 操作ボタン (画面の下に固定。CSS は .st-key-action_bar) ---
+    with st.container(key="action_bar"):
+        c_clear, c_next, c_end = st.columns([1, 1.45, 1.45])
+        with c_clear:
+            st.button("クリア", use_container_width=True, on_click=_clear_seats,
+                      disabled=not any(names_sel), help="全員を空席に戻します", key="btn_clear")
+        with c_next:
+            save_continue = st.button("保存して次へ", type="primary", disabled=not can_save,
+                                      use_container_width=True, key="btn_save_next",
+                                      help="同じメンバーのまま次の局へ")
+        with c_end:
+            save_reset = st.button("保存して空席に", disabled=not can_save,
+                                   use_container_width=True, key="btn_save_reset",
+                                   help="保存して、メンバーを空席に戻します")
 
     if (save_continue or save_reset) and can_save:
         if use_custom_dt:
@@ -1239,28 +1285,34 @@ def page_input():
                 ss["input_last_saved"] = (signature, time.time())
                 order = sorted(SEATS, key=lambda s: ranks[s])
                 result = " → ".join(seat_info[s]["name"] for s in order)
-                ss["input_flash"] = f"✅ {int(table_no)}卓に保存しました：{result}"
+                ss["input_flash"] = f"{int(table_no)}卓に保存しました：{result}"
                 ss["input_round"] += 1
                 ss["input_pending_reset"] = "seats" if save_reset else "memo"
                 st.rerun()
             else:
-                st.error(f"❌ 保存に失敗しました（もう一度押してください）: {err}")
-
-    if any(names_sel):
-        st.button("🔄 全員を空席にする", use_container_width=True, on_click=_clear_seats)
+                st.error(f"保存に失敗しました（もう一度押してください）: {err}")
 
     # --- ゲーム代 (集めると着順表に区切りが入る) ---
     today = get_today_logical_date()
     fees = load_fee_collections()
-    render_fee_collect_section(df_all, fees, int(table_no), today)
+    open_fee = render_fee_collect_section(df_all, fees, int(table_no), today)
 
     # --- この卓の今日の記録 (入力の確認用) ---
     df_today = get_games_by_date(df_all, today)
-    if not df_today.empty:
-        df_tbl = df_today[df_today["TableNo"] == int(table_no)]
-        if not df_tbl.empty:
-            st.markdown(f"### 📋 {int(table_no)}卓の今日の記録（{len(df_tbl)}局）")
-            _render_table(df_tbl.reset_index(drop=True), get_fee_cuts(fees, table_no))
+    df_tbl = df_today[df_today["TableNo"] == int(table_no)] if not df_today.empty else df_today
+    if not df_tbl.empty:
+        _step_label(f"{int(table_no)}卓の今日の記録", f"{len(df_tbl)}局")
+        _render_table(df_tbl.reset_index(drop=True), get_fee_cuts(fees, table_no))
+
+    # --- 上のカード・選手チップの中身 (ここまでで分かった内容で描く) ---
+    fee_txt = f"未集金 {open_fee}枚" if open_fee else "未集金なし"
+    sum_slot.markdown(_html(f"""
+        <div class="sum-card">
+          <span class="sum-label">{int(table_no)}卓・セット{int(set_no)}</span>
+          <span class="sum-value">{len(df_tbl) + 1}局目 <small>/ {fee_txt}</small></span>
+        </div>
+    """), unsafe_allow_html=True)
+    chips_slot.markdown(_html(_chips_html(seat_info, ranks)), unsafe_allow_html=True)
 
 
 FEE_RULE_TEXT = "ゲーム代はトップ（1着）を取った人が払います。1回につき " + "・".join(
@@ -1268,15 +1320,17 @@ FEE_RULE_TEXT = "ゲーム代はトップ（1着）を取った人が払いま�
 
 
 def render_fee_collect_section(df_all, fees, table_no, today):
-    """成績入力ページの「ゲーム代を集める」欄"""
+    """成績入力ページの「ゲーム代を集める」欄。まだ集めていない枚数を返す"""
     ss = st.session_state
-    st.markdown(f"### 💰 {table_no}卓のゲーム代")
     df_open = get_open_section_games(df_all, fees, table_no, today)
+    open_total = 0
 
     if df_open.empty:
-        st.caption("前回ゲーム代を集めたあとの対局は、まだありません。")
+        _step_label(f"{table_no}卓のゲーム代", "前回の集金のあとの対局はまだありません")
     else:
         info = calc_game_fee(df_open)
+        open_total = info["total"]
+        _step_label(f"{table_no}卓のゲーム代", "集めると着順表に区切りが入ります")
         lines = "".join(
             f'<div class="fee-line"><span>{TYPE_LABELS[t]}のトップ</span>'
             f'<span><b>{n}回</b> × {unit}枚 = <b>{sub}枚</b></span></div>'
@@ -1295,25 +1349,26 @@ def render_fee_collect_section(df_all, fees, table_no, today):
 
         if ss.get("fee_confirm_table") == table_no:
             st.warning(f"{table_no}卓の {info['games']}局分、ゲーム代 {info['total']}枚 を集めて、着順表に区切りを入れます。よろしいですか？")
-            c1, c2 = st.columns(2)
-            with c1:
-                do_collect = st.button("💰 集める", type="primary", use_container_width=True, key="fee_do")
-            with c2:
-                if st.button("やめる", use_container_width=True, key="fee_cancel"):
-                    ss.pop("fee_confirm_table", None)
-                    st.rerun()
+            with st.container(key="fee_confirm"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    if st.button("やめる", use_container_width=True, key="fee_cancel"):
+                        ss.pop("fee_confirm_table", None)
+                        st.rerun()
+                with c2:
+                    do_collect = st.button("集める", type="primary", use_container_width=True, key="fee_do")
             if do_collect:
                 with st.spinner("保存中..."):
                     ok, err, done = collect_game_fee(table_no)
                 ss.pop("fee_confirm_table", None)
                 if ok:
-                    ss["input_flash"] = (f"💰 {table_no}卓のゲーム代 {done['total']}枚 を集めました"
+                    ss["input_flash"] = (f"{table_no}卓のゲーム代 {done['total']}枚 を集めました"
                                          f"（{done['games']}局分：{fee_breakdown_text(done)}）")
                     st.rerun()
                 else:
-                    st.error(f"❌ 集金を記録できませんでした: {err}")
+                    st.error(f"集金を記録できませんでした: {err}")
         else:
-            if st.button(f"💰 ゲーム代を集める（{info['total']}枚）", use_container_width=True, key="fee_start"):
+            if st.button(f"ゲーム代を集める（{info['total']}枚）", use_container_width=True, key="fee_start"):
                 ss["fee_confirm_table"] = table_no
                 st.rerun()
 
@@ -1322,22 +1377,23 @@ def render_fee_collect_section(df_all, fees, table_no, today):
     day_nos = set(df_today.loc[df_today["TableNo"] == table_no, "GameNo"]) if not df_today.empty else set()
     has_cut_today = any(int(c["LastGameNo"]) in day_nos for c in get_fee_cuts(fees, table_no))
     if has_cut_today:
-        if st.button("↩️ 直前の集金を取り消す（区切りを消す）", key="fee_undo",
+        if st.button("直前の集金を取り消す（区切りを消す）", key="fee_undo", use_container_width=True,
                      help="押し間違えたときに。対局の記録は消えません。"):
             with st.spinner("保存中..."):
                 ok, err = undo_last_fee_collection(table_no, today)
             if ok:
-                ss["input_flash"] = f"↩️ {table_no}卓の直前の集金を取り消しました"
+                ss["input_flash"] = f"{table_no}卓の直前の集金を取り消しました"
                 st.rerun()
             else:
-                st.error(f"❌ 取り消せませんでした: {err}")
+                st.error(f"取り消せませんでした: {err}")
+    return open_total
 
 
 # ==========================================
 # 7. 今日の着順表ページ
 # ==========================================
 def page_today():
-    st.title("📋 今日の着順表")
+    st.title("今日の着順表")
     today = get_today_logical_date()
     st.caption(f"論理日付: **{today.strftime('%Y年%m月%d日')}** (午前9時までは前日扱い)")
 
@@ -1347,7 +1403,7 @@ def page_today():
 
     if df_day.empty:
         st.info("今日の対局データはまだありません。")
-        if st.button("🔄 再読み込み", use_container_width=True):
+        if st.button("再読み込み", use_container_width=True):
             clear_cache()
             st.rerun()
         return
@@ -1355,7 +1411,7 @@ def page_today():
     _render_day_summary(df_day)
     render_paper_sheet(df_day, today, load_fee_collections())
 
-    if st.button("🔄 データを再読み込み", use_container_width=True):
+    if st.button("データを再読み込み", use_container_width=True):
         clear_cache()
         st.rerun()
 
@@ -1364,7 +1420,7 @@ def page_today():
 # 8. 過去の着順表ページ
 # ==========================================
 def page_past():
-    st.title("📆 過去の着順表")
+    st.title("過去の着順表")
     st.caption("過去の日付を選ぶと、その日の着順表が見られます。")
 
     with st.spinner("データ読込中..."):
@@ -1382,7 +1438,7 @@ def page_past():
         date_labels.append(f"{d.strftime('%Y年%m月%d日')} ({weekday})")
 
     sel_idx = st.selectbox(
-        "📅 日付を選択",
+        "日付を選択",
         range(len(dates)),
         format_func=lambda i: date_labels[i],
         key="past_date_select",
@@ -1391,7 +1447,7 @@ def page_past():
 
     df_day = get_games_by_date(df, selected_date)
 
-    st.markdown(f"### 🗓️ {date_labels[sel_idx]} の着順表")
+    _step_label(f"{date_labels[sel_idx]} の着順表")
     _render_day_summary(df_day)
     render_paper_sheet(df_day, selected_date, load_fee_collections())
 
@@ -1408,9 +1464,9 @@ def _render_day_summary(df_day):
                 all_players.add(nm)
     st.markdown(_html(f"""
     <div style="margin-bottom:0.5rem;">
-        <span class="summary-badge">🀄 対局数: <strong>{total_games}</strong></span>
-        <span class="summary-badge">🎲 卓数: <strong>{total_tables}</strong></span>
-        <span class="summary-badge">👥 参加者: <strong>{len(all_players)}</strong>人</span>
+        <span class="summary-badge">対局 <strong>{total_games}</strong></span>
+        <span class="summary-badge">卓 <strong>{total_tables}</strong></span>
+        <span class="summary-badge">参加 <strong>{len(all_players)}</strong>人</span>
     </div>
     """), unsafe_allow_html=True)
 
@@ -1420,16 +1476,12 @@ def _render_day_summary(df_day):
 # ==========================================
 def main():
     st.markdown(
-        f'<div style="margin-bottom:0.5rem;">'
-        f'<span style="color:var(--text-muted);font-size:0.75rem;">🀄 ぱいんりばー</span>'
-        f'<span style="float:right;color:var(--text-muted);font-size:0.75rem;">'
-        f'最終更新: {datetime.now().strftime("%H:%M:%S")}</span></div>',
+        f'<div class="brand-bar"><span>ぱいんりばー 成績入力</span>'
+        f'<span>更新 {now_jst().strftime("%H:%M")}</span></div>',
         unsafe_allow_html=True
     )
 
-    tab_input, tab_today, tab_past = st.tabs([
-        "📝 成績を付ける", "📋 今日の着順表", "📆 過去の着順表"
-    ])
+    tab_input, tab_today, tab_past = st.tabs(["成績を付ける", "今日の着順表", "過去の着順表"])
     with tab_input:
         page_input()
     with tab_today:

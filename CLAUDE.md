@@ -28,7 +28,7 @@ streamlit run ranking_view.py      # 入力アプリ
 
 Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` の `[connections.gsheets]` に書く（`st.connection("gsheets", type=GSheetsConnection)` が参照する）。リポジトリには入っていないので、無いと読み込みに失敗する。
 
-入力アプリの CSS は、config.toml が効かずライトテーマで動いても読めるよう、入力欄・お知らせ枠・折りたたみ等の色をテーマに関係なく固定している。
+入力アプリの CSS は、config.toml のテーマ（ダーク/ライト）に関係なく同じ見た目になるよう、部品の色をすべて固定している（下の「入力アプリ」の「デザイン」を参照）。
 
 `.streamlit/config.toml` はダークテーマの指定。`textColor = "#ffffff"` と `secondaryBackgroundColor = "#2f3550"` は、セレクトボックスの選択済みの文字が背景と同化して読めなくなる問題への対処なので、安易に変えないこと。
 
@@ -119,6 +119,10 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - 名前を選ぶとタイプが自動で選ばれる（`resolve_player_type()`）。優先順は `members` シートのタイプ → その人の前回の対局のタイプ（`get_last_played_types()`）→ 名前から推測（`_guess_type_from_name()`）。画面の表示名は A客 / B客 / Aスタッフ / Bスタッフ だが、保存する値は `A客`/`B客`/`AS`/`BS` のまま。
 - 入力アプリにも `_normalize_play_type()` があり、メインアプリの同名関数と同じルール。片方を直したらもう片方も直すこと。
 - **ゲーム代を集める**（`render_fee_collect_section()` → `collect_game_fee()`）: 押すと `fee_collections` に1行追記し、着順表がそこで区切られる。区切りは**卓ごと**で、「前回の集金の次の局〜今回の `LastGameNo`」が1区切り（`get_fee_cuts()` / `_render_table()` の `_sec`）。区切りごとにトップ回数×`GAME_FEE_TABLE` で枚数と内訳を出す（`calc_game_fee()`）。表示は毎回対局データから計算し直し、シートの「枚数」「内訳」は記録用。`GAME_FEE_TABLE` はメインアプリと同じ値を重複して持っているので、変えるときは両方直すこと。
-- **文字色**: 文字と背景のコントラスト比 4.5 以上を目安にする。Streamlit 既定の st.caption・使えない状態（disabled）のウィジェット・お知らせ枠（st.info など）の文字はダーク背景に溶けるので、`CUSTOM_CSS` で明るい色に上書きしている。`--text-muted` を暗く戻さないこと。タブの背景切り替えアニメーションは、一瞬「白文字×金背景」になるので切ってある。
-- **押しやすさ**: タイプ・着順のボタン (`st.segmented_control`) は CSS で横幅いっぱい・高さ44px以上 (着順は `st.container(key="rank_area")` 内なので54px) にしている。Streamlit はボタン群の内側の div に `max-width: fit-content` を付けるので、`[data-testid="stButtonGroup"] > div` の `max-width: none` を消すと幅いっぱいにならない。ボタンを `flex: 1 1 0` (均等幅) にすると名前が「Bは…」と切れるので `1 1 auto` にしている。卓番・セットは `st.container(key="table_set")` でスマホでも横並び。スマホ向けの調整は `CUSTOM_CSS` 末尾の「UI改善 (2026-11)」。
+- **デザイン (2026-11-20〜)**: 「平らなキー」— 温かいベージュの背景・フラットな白いキー・こげ茶のアクセント（`CUSTOM_CSS` 先頭の `:root` の色）。config.toml はメインアプリと共通のダークなので、**画面に出る部品の色はテーマに関係なくすべて CSS で固定**している（入力欄・プルダウンの候補一覧・カレンダー・お知らせ枠・折りたたみなど）。ライトテーマでもダークテーマでも読めることを確認すること。
+- **文字色**: 文字と背景のコントラスト比 4.5 以上を目安にする。タブの背景切り替えアニメーションは一瞬読めなくなるので切ってある。
+- **成績を付ける画面の構成**: 上のカード（卓・セット・何局目・未集金）と選手チップ（`_chips_html()`、着順が決まるとトップをこげ茶で強調）は、`st.empty()` で場所だけ取っておき、名前・着順が決まったあと最後に中身を描く。
+- **操作ボタンは画面の下に固定**（`st.container(key="action_bar")`、[クリア][保存して次へ][保存して空席に]）。Streamlit は `st.container` を同じ高さの `stLayoutWrapper` で包むので、`position: sticky` はその外側（`[data-testid="stLayoutWrapper"]:has(> .st-key-action_bar)`）に付けている。中の要素に付けても固定されない。
+- **ボタンの CSS は `.stButton button`（子孫）で書く**。`help=` を付けたボタンは間にツールチップ用の要素が入るので、`.stButton > button` だと当たらない。
+- **押しやすさ**: タイプ・着順のボタン (`st.segmented_control`) は、離れた平らなキーとして横幅いっぱいに並べている（着順は `st.container(key="rank_area")` 内で高さ64px）。Streamlit はボタン群の内側の div に `max-width: fit-content` を付けるので、`[data-testid="stButtonGroup"] > div` の `max-width: none` を消すと幅いっぱいにならない。卓番・セット、下の操作ボタン、集金の確認ボタンはスマホでも横並び（`.st-key-table_set` / `.st-key-action_bar` / `.st-key-fee_confirm`）。
 - 入力欄を空に戻すときは、session_state のキーを `del` しないこと（ブラウザ側に古い値が表示されたまま残る）。ウィジェットを描く前に値を `None` / `""` にセットする（`_clear_seats()` と `input_pending_reset` を参照）。
