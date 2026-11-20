@@ -91,6 +91,10 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - Streamlit の multipage 機能は使っていない。`st.session_state["page"]` に文字列を入れて `st.rerun()` し、ファイル末尾の if/elif で `page_*()` を呼び分ける。
 - ページを追加するときは `NAV_ITEMS`、末尾のルーティング、そしてそのページの先頭で呼ぶ `render_top_nav("<key>")` の3か所を揃える。
 - 現在のページ: `home` / `personal` / `history` / `versus2` / `versus3` / `edit` / `ranking` / `monthly` / `sheets` / `profitpt`。
+- `edit`（データ修正・削除 `page_edit`）は、**着順表ページ（`sheets`）の各卓の下の「この局を修正」**から開く（`_open_edit_page()` が `editing_game_id` / `edit_return_page` / `page="edit"` をセット）。更新・削除・キャンセルのあとは `edit_return_page` のページに戻る。修正・削除は仮保存（`pending_buffer`）に入り、「まとめて保存」でシートに反映される。
+- 着順表ページの日付は `sheets_date_value` に控えてあり、編集ページから戻っても同じ日付を表示する。
+- 一時保存などの結果メッセージ（`success_msg`）は `render_pending_bar()` の先頭で表示する。
+- `st.form` の中の部品には `on_change` を付けられない（送信ボタンだけ可）。付けると `StreamlitInvalidFormCallbackError` で画面ごと開かなくなる。編集ページの席入力（`player_input_row_dynamic`）は `type_map=None` で呼んでいるのはこのため。
 - ページをまたいで値を渡すときも session_state を使う（`personal_player` / `jump_to_player` / `editing_game_id` / `success_msg` など）。
 
 ### 計算の速さ

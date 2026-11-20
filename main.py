@@ -308,17 +308,17 @@ hide_style = """
     }
     /* チェック済みオプション */
     label[data-baseweb="radio"]:has(input:checked) {
-        background: var(--accent-soft) !important;
-        border-color: var(--accent) !important;
+        background: #8a6642 !important;
+        border: 2px solid #caa073 !important;
         font-weight: 800 !important;
-        box-shadow: 0 0 0 2px rgba(138,102,66,0.2) !important;
+        box-shadow: none !important;
     }
     label[data-baseweb="radio"]:has(input:checked),
     label[data-baseweb="radio"]:has(input:checked) *,
     label[data-baseweb="radio"]:has(input:checked) div,
     label[data-baseweb="radio"]:has(input:checked) p,
     label[data-baseweb="radio"]:has(input:checked) span {
-        color: var(--accent-bright) !important;
+        color: #ffffff !important;
     }
     /* ネイティブのラジオUI(丸印)のみを非表示にし、テキスト部分は残す */
     [data-baseweb="radio"] input { display: none !important; }
@@ -4765,6 +4765,10 @@ def render_pending_bar(location_key=""):
     未保存変更がある場合に表示する共通ステータスバー。
     全ページの上部 (top_navの直後) に配置する。
     """
+    msg = st.session_state.pop("success_msg", None)
+    if msg:
+        st.success(msg)
+
     cnt = pending_count()
     if cnt == 0:
         return
@@ -4842,7 +4846,7 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
     rank_emoji = {1: "🥇 1着", 2: "🥈 2着", 3: "🥉 3着"}
     rank_labels = [rank_emoji.get(r, f"{r}着") for r in available_ranks]
 
-    st.markdown(f'<div class="seat-card seat-{seat_class}">', unsafe_allow_html=True)
+    # ※ st.markdown('<div ...>') では Streamlit の部品を囲めない (空の枠だけが出る) ので、見出しだけ描く
     st.markdown(
         f'''<div class="seat-header-row">
             <span class="seat-badge {seat_class}">{label[0]}</span>
@@ -4876,7 +4880,6 @@ def player_input_row_dynamic(label, member_list, def_n, def_t, def_r, available_
         chosen_label = st.radio("着順", rank_labels, index=final_idx, horizontal=True, key=f"r_{label}{key_suffix}")
         rank = rank_label_to_val.get(chosen_label, available_ranks[0])
 
-    st.markdown('</div>', unsafe_allow_html=True)
     return name, type_, rank
 
 # ==========================================
@@ -5913,7 +5916,7 @@ def page_edit():
 
     st.markdown(f"""
     <div class="input-status-bar">
-        <span class="isb-main">📝 編集中: No.{row['DailyNo']}</span>
+        <span class="isb-main">📝 編集中: 局{row['GameNo']}（{row['TableNo']}卓 この日の{row['DailyNo']}局目）</span>
         <span class="isb-sub">{status_badge} ／ 卓: {row['TableNo']} ／ セット: {row['SetNo']} ／ 時刻: {pd.to_datetime(row['日時']).strftime('%H:%M') if row['日時'] else '-'}</span>
     </div>
     """, unsafe_allow_html=True)
@@ -5921,9 +5924,11 @@ def page_edit():
     st.info("📌 編集内容は「未保存」状態になります。入力画面の「💾 まとめて保存」ボタンで一括反映してください。")
 
     with st.form("edit_form"):
-        p1_n, p1_t, p1_r = player_input_row_dynamic("A席", member_list, row["Aさん"], row["Aタイプ"], int(float(row["A着順"])), [1, 2, 3], "_edit", type_map)
-        p2_n, p2_t, p2_r = player_input_row_dynamic("B席", member_list, row["Bさん"], row["Bタイプ"], int(float(row["B着順"])), [1, 2, 3], "_edit", type_map)
-        p3_n, p3_t, p3_r = player_input_row_dynamic("C席", member_list, row["Cさん"], row["Cタイプ"], int(float(row["C着順"])), [1, 2, 3], "_edit", type_map)
+        # st.form の中では、送信ボタン以外に on_change (名前を変えたらタイプも切り替える) を付けられない。
+        # 付けると StreamlitInvalidFormCallbackError で画面が開かないので、ここでは type_map を渡さない。
+        p1_n, p1_t, p1_r = player_input_row_dynamic("A席", member_list, row["Aさん"], row["Aタイプ"], int(float(row["A着順"])), [1, 2, 3], "_edit", None)
+        p2_n, p2_t, p2_r = player_input_row_dynamic("B席", member_list, row["Bさん"], row["Bタイプ"], int(float(row["B着順"])), [1, 2, 3], "_edit", None)
+        p3_n, p3_t, p3_r = player_input_row_dynamic("C席", member_list, row["Cさん"], row["Cタイプ"], int(float(row["C着順"])), [1, 2, 3], "_edit", None)
 
         st.markdown("**📋 備考**")
         NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
@@ -5942,7 +5947,7 @@ def page_edit():
             submit_cancel = st.form_submit_button("キャンセル", use_container_width=True)
 
         if submit_cancel:
-            st.session_state["page"] = "home"
+            st.session_state["page"] = st.session_state.get("edit_return_page", "home")
             st.session_state["editing_game_id"] = None
             st.rerun()
 
@@ -5974,7 +5979,7 @@ def page_edit():
 
                 buffer_update(edit_id, new_data, detail=diff_text)
                 st.session_state["success_msg"] = f"🔄 修正を一時保存しました — 未保存: {pending_count()}件"
-                st.session_state["page"] = "home"
+                st.session_state["page"] = st.session_state.get("edit_return_page", "home")
                 st.session_state["editing_game_id"] = None
                 st.rerun()
 
@@ -5982,7 +5987,7 @@ def page_edit():
             del_info = f"{row['日時']} {row['TableNo']}卓 Set{row['SetNo']}"
             buffer_delete(edit_id, info=del_info)
             st.session_state["success_msg"] = f"🗑 削除を一時保存しました — 未保存: {pending_count()}件"
-            st.session_state["page"] = "home"
+            st.session_state["page"] = st.session_state.get("edit_return_page", "home")
             st.session_state["editing_game_id"] = None
             st.rerun()
 
@@ -7374,6 +7379,10 @@ def page_sheets():
         except Exception:
             labels.append(str(d))
 
+    # 別のページ (編集ページなど) から戻ったときも、さっき見ていた日付を出す
+    # (画面に出ていない部品の値は Streamlit が捨てるので、別のキーに控えておく)
+    if "sheets_date_select" not in st.session_state and st.session_state.get("sheets_date_value") in dates:
+        st.session_state["sheets_date_select"] = dates.index(st.session_state["sheets_date_value"])
     idx = st.selectbox(
         "📅 日付を選択",
         range(len(dates)),
@@ -7381,6 +7390,7 @@ def page_sheets():
         key="sheets_date_select",
     )
     target_date = dates[idx]
+    st.session_state["sheets_date_value"] = target_date
 
     df_day = df[df["論理日付"] == target_date].copy()
     sort_keys = [k for k in ["TableNo", "SetNo", "GameNo"] if k in df_day.columns]
@@ -7411,12 +7421,21 @@ def page_sheets():
     render_score_sheet(df_day)
 
 
+def _open_edit_page(game_no, return_page):
+    """「この局を修正」: 編集ページを開く (ボタンの on_click から呼ぶ)"""
+    st.session_state["editing_game_id"] = int(game_no)
+    st.session_state["edit_return_page"] = return_page
+    st.session_state["page"] = "edit"
+
+
 def render_score_sheet(df_day):
     """
     1日分の対局を紙の着順表風に描画する。
     卓ごとに、各局の実際の着席メンバーを表示し、
     メンバーが変わったタイミングで名前行を挿入する。
+    卓ごとの表の下に「この局を修正」(編集ページを開く) を置く。
     """
+    day_key = str(df_day["論理日付"].iloc[0]) if "論理日付" in df_day.columns and not df_day.empty else ""
     tables = sorted(df_day["TableNo"].unique()) if "TableNo" in df_day.columns else [1]
 
     for table_no in tables:
@@ -7510,6 +7529,31 @@ def render_score_sheet(df_day):
         html += '</td></tr>'
         html += '</tbody></table></div>'
         st.markdown(_html(html), unsafe_allow_html=True)
+
+        # --- この局を修正 (表の「局」の番号で選ぶ) ---
+        game_rows = list(_rows(df_tbl))
+        def _game_label(g, _rows_by_no={int(float(r["GameNo"])): r for r in game_rows}):
+            r = _rows_by_no[g]
+            parts = []
+            for seat in ["A", "B", "C"]:
+                try:
+                    rk = int(float(r.get(f"{seat}着順", 0)))
+                except Exception:
+                    rk = 0
+                parts.append(f"{str(r.get(f'{seat}さん', '')).strip() or '-'} {rk}着")
+            return f"局{g}：" + " / ".join(parts)
+        with st.container(key=f"sheet_edit_{day_key}_{tbl_label}"):
+            c_pick, c_btn = st.columns([3, 1.3], vertical_alignment="bottom")
+            with c_pick:
+                pick = st.selectbox(
+                    f"{tbl_label}の修正する局", [int(float(r["GameNo"])) for r in game_rows],
+                    index=None, placeholder="修正する局を選ぶ", format_func=_game_label,
+                    key=f"edit_pick_{day_key}_{tbl_label}",
+                )
+            with c_btn:
+                st.button("✏️ この局を修正", key=f"edit_btn_{day_key}_{tbl_label}",
+                          disabled=pick is None, use_container_width=True,
+                          on_click=_open_edit_page, args=(pick, "sheets"))
 
         # プレイヤー別の内訳 (検算用)
         if player_counts:
