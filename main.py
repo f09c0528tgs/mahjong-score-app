@@ -1537,14 +1537,13 @@ hide_style = """
         color: #555 !important; padding: 3px 4px;
     }
     .paper-table .empty-cell { color: #ccc !important; }
-    /* 着順表の段組み: 10回ずつのブロックを、スマホでは縦1本 (2つ目からの見出しは隠す)、幅のある画面では横に並べる */
+    /* 着順表の段組み: 20回ずつの列を、スマホでは縦1本 (2つ目からの見出しは隠す)、幅のある画面では横に並べる */
         @media (max-width: 699px) {
         .paper-block + .paper-block thead { display: none; }
     }
     .paper-wrap .paper-table { margin: 0 !important; }
     @media (min-width: 700px) {
-        .paper-cols { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; margin-bottom: 10px; max-width: 1200px; }
-        .paper-block { flex: 1 1 250px; max-width: 340px; }
+        .paper-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); align-items: start; gap: 12px; margin-bottom: 10px; max-width: 1200px; }
         .paper-cols .paper-table { max-width: none; }
         .paper-wrap .paper-foot { max-width: 560px; }
     }
@@ -7488,16 +7487,12 @@ def _open_edit_page(game_no, return_page):
     st.session_state["page"] = "edit"
 
 
-PAPER_CHUNK = 10   # 着順表の1ブロックの最大の回数 (入力アプリの同名の定数と同じ)
+PAPER_CHUNK = 20   # 着順表の1列の回数 (入力アプリの同名の定数と同じ)。左の列を上から下まで埋めてから次の列へ
 
 
 def _split_chunks(items, size=PAPER_CHUNK):
-    """items を size 以下のかたまりに、なるべく同じ長さで分ける (例: 23 → 8, 8, 7)"""
-    if not items:
-        return []
-    n = -(-len(items) // size)
-    per = -(-len(items) // n)
-    return [items[i:i + per] for i in range(0, len(items), per)]
+    """items を先頭から size 個ずつの列に分ける (最後の列だけ短くなる)"""
+    return [items[i:i + size] for i in range(0, len(items), size)]
 
 
 def _paper_html(blocks, foot=""):
@@ -7536,7 +7531,7 @@ def render_score_sheet(df_day):
         player_counts = {}        # 名前 -> {タイプ: 打数}
         thead = ('<thead><tr><th class="col-no">回</th><th class="seat-head-A">A席</th>'
                  '<th class="seat-head-B">B席</th><th class="seat-head-C">C席</th></tr></thead>')
-        entries = []   # 1回ごとの (メンバー, 名前行, 着順行)。あとで10回ずつのブロックに分ける
+        entries = []   # 1回ごとの (メンバー, 名前行, 着順行)。あとで20回ずつの列に分ける
         for row in _rows(df_tbl):
             cur_names, cur_types, cur_ranks = {}, {}, {}
             for seat in ["A", "B", "C"]:
@@ -7595,7 +7590,7 @@ def render_score_sheet(df_day):
             row_html += '</tr>'
             entries.append((members, name_html, row_html))
 
-        # 10回ずつのブロックに分ける (iPad・PC では横に並べる)。ブロックの最初とメンバーが変わったところに名前行
+        # 20回ずつの列に分ける (紙と同じく1列目の上→下→2列目…。iPad・PC では横に並べる)。列の最初とメンバーが変わったところに名前行
         blocks = []
         for chunk in _split_chunks(entries):
             body, prev_members = "", None

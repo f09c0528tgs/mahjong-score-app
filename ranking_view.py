@@ -498,8 +498,8 @@ h3 { font-size: 1rem !important; line-height: 1.35 !important; margin-top: 0.6re
 }
 
 /* ---------- 着順表の段組み (iPad・PC) ----------
-   着順表は10回ずつのブロック (.paper-block) に分けてある。
-   スマホでは縦1本につなげて (2つ目からの見出しは隠す)、幅のある画面では左から右へ横に並べる。
+   着順表は紙と同じく20回ずつの列 (.paper-block) に分けてある。1列目の上→下→2列目の上→下…の順。
+   スマホでは縦1本につなげて (2つ目からの見出しは隠す)、幅のある画面では同じ幅の列を左から右へ並べる。
    入力画面 (.st-key-page_input) はスマホ幅のまま真ん中に置く。 */
 .paper-wrap .paper-table { max-width: none; margin: 0 !important; }
 @media (max-width: 699px) {
@@ -509,8 +509,7 @@ h3 { font-size: 1rem !important; line-height: 1.35 !important; margin-top: 0.6re
     [data-testid="stMainBlockContainer"] { max-width: 1240px !important; }
     .st-key-page_input { max-width: 560px; width: 100%; margin: 0 auto; }
     .st-key-close_area_today, .st-key-close_area_past { max-width: 600px; }
-    .paper-cols { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; margin-bottom: 10px; }
-    .paper-block { flex: 1 1 250px; max-width: 340px; }
+    .paper-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); align-items: start; gap: 12px; margin-bottom: 10px; }
     .paper-wrap .paper-foot { max-width: 560px; }
 }
 </style>
@@ -1287,22 +1286,18 @@ def _fee_row_html(info, cut):
     )
 
 
-PAPER_CHUNK = 10   # 着順表の1ブロックの最大の回数 (iPad・PC ではブロックを横に並べる)
+PAPER_CHUNK = 20   # 着順表の1列の回数。紙の着順表と同じく、左の列を上から下まで埋めてから次の列へ進む
 
 
 def _split_chunks(items, size=PAPER_CHUNK):
-    """items を size 以下のかたまりに、なるべく同じ長さで分ける (例: 23 → 8, 8, 7)"""
-    if not items:
-        return []
-    n = -(-len(items) // size)
-    per = -(-len(items) // n)
-    return [items[i:i + per] for i in range(0, len(items), per)]
+    """items を先頭から size 個ずつの列に分ける (最後の列だけ短くなる)。入力が増えても前の列は動かない"""
+    return [items[i:i + size] for i in range(0, len(items), size)]
 
 
 def _paper_html(blocks, foot=""):
     """
-    着順表のブロックを並べる。スマホでは縦に1本につなげて見せ、
-    幅のある画面 (iPad・PC) では左から右へ横に並べる (CSS の .paper-cols)。
+    着順表の列を並べる。幅のある画面 (iPad・PC) では左から右へ同じ幅で並べ (CSS の .paper-cols)、
+    スマホでは縦に1本につなげて見せる。どちらも 1列目の上 → 下 → 2列目の上 → 下 … の順に読む。
     """
     inner = "".join(f'<div class="paper-block">{b}</div>' for b in blocks)
     return f'<div class="paper-wrap"><div class="paper-cols">{inner}</div>{foot}</div>'
@@ -1328,58 +1323,67 @@ def _render_table(df_tbl, cuts=None):
     thead = ('<thead><tr><th class="col-no">回</th><th class="seat-head-A">A席</th>'
              '<th class="seat-head-B">B席</th><th class="seat-head-C">C席</th></tr></thead>')
 
+    # 1回ごとに (区切り番号, メンバー, 名前行, 着順行, この回のあとに入れるゲーム代の行) を作り、20回ずつの列に分ける
     totals = {"done": 0, "open": 0}
-    blocks = []      # 着順表を区切り・回数ごとに分けた小さな表。iPad・PC では横に並べる (_paper_html)
+    entries = []
     game_idx = 0
     for sec, df_sec in df_tbl.groupby("_sec", sort=True):
-        rows = list(df_sec.iterrows())
-        chunks = _split_chunks(rows)
-        for ci, chunk in enumerate(chunks):
-            body = ""
-            prev_members = None  # 区切り・ブロックの最初は名前行を出し直す
-            for _, row in chunk:
-                game_idx += 1
-                cur_names, cur_types, cur_ranks = {}, {}, {}
-                for seat in ["A", "B", "C"]:
-                    cur_names[seat] = str(row.get(f"{seat}さん", "")).strip()
-                    cur_types[seat] = str(row.get(f"{seat}タイプ", "")).strip()
-                    try:
-                        cur_ranks[seat] = int(float(row.get(f"{seat}着順", 0)))
-                    except (TypeError, ValueError):
-                        cur_ranks[seat] = 0
+        n_sec = len(df_sec)
+        for i, (_, row) in enumerate(df_sec.iterrows()):
+            game_idx += 1
+            cur_names, cur_types, cur_ranks = {}, {}, {}
+            for seat in ["A", "B", "C"]:
+                cur_names[seat] = str(row.get(f"{seat}さん", "")).strip()
+                cur_types[seat] = str(row.get(f"{seat}タイプ", "")).strip()
+                try:
+                    cur_ranks[seat] = int(float(row.get(f"{seat}着順", 0)))
+                except (TypeError, ValueError):
+                    cur_ranks[seat] = 0
 
-                # 名前かタイプが前の回と変わったら名前行を出し直す (同じ人でも途中でタイプを変えたら分かるように)
-                members = tuple(cur_names[x] for x in "ABC") + tuple(cur_types[x] for x in "ABC")
-                if members != prev_members:
-                    body += '<tr class="name-row"><td class="col-no"></td>'
-                    for seat in ["A", "B", "C"]:
-                        nm = cur_names[seat] or "-"
-                        tp = cur_types[seat]
-                        type_disp = f'<span class="name-type">{tp}</span>' if tp else ""
-                        body += f'<td>{nm}{type_disp}</td>'
-                    body += '</tr>'
-                    prev_members = members
+            # 名前かタイプが前の回と変わったら名前行を出し直す (同じ人でも途中でタイプを変えたら分かるように)
+            members = tuple(cur_names[x] for x in "ABC") + tuple(cur_types[x] for x in "ABC")
+            name_html = '<tr class="name-row"><td class="col-no"></td>'
+            for seat in ["A", "B", "C"]:
+                nm = cur_names[seat] or "-"
+                tp = cur_types[seat]
+                type_disp = f'<span class="name-type">{tp}</span>' if tp else ""
+                name_html += f'<td>{nm}{type_disp}</td>'
+            name_html += '</tr>'
 
-                # 着順行 (回の番号はその日・その卓での連番。内部用の GameNo は出さない)
-                body += f'<tr><td class="col-no">{game_idx}</td>'
-                for seat in ["A", "B", "C"]:
-                    rk = cur_ranks[seat]
-                    if rk == 1:
-                        tags = note_tags(row.get("備考", ""))
-                        mark = "".join(f'<span class="memo-tag">{NOTE_SHORT[t]}−{NOTE_DISCOUNTS[t]}</span>' for t in tags)
-                        body += f'<td class="rank-cell rank1">1{mark}</td>'
-                    elif rk in [2, 3]:
-                        body += f'<td class="rank-cell">{rk}</td>'
-                    else:
-                        body += '<td class="empty-cell">·</td>'
-                body += '</tr>'
+            # 着順行 (回の番号はその日・その卓での連番。内部用の GameNo は出さない)
+            row_html = f'<tr><td class="col-no">{game_idx}</td>'
+            for seat in ["A", "B", "C"]:
+                rk = cur_ranks[seat]
+                if rk == 1:
+                    tags = note_tags(row.get("備考", ""))
+                    mark = "".join(f'<span class="memo-tag">{NOTE_SHORT[t]}−{NOTE_DISCOUNTS[t]}</span>' for t in tags)
+                    row_html += f'<td class="rank-cell rank1">1{mark}</td>'
+                elif rk in [2, 3]:
+                    row_html += f'<td class="rank-cell">{rk}</td>'
+                else:
+                    row_html += '<td class="empty-cell">·</td>'
+            row_html += '</tr>'
 
-            if ci == len(chunks) - 1:
+            fee_html = ""
+            if i == n_sec - 1:   # 区切りの最後の回のあとにゲーム代の行
                 info = calc_game_fee(df_sec)
                 cut = cuts[sec] if sec < len(cuts) else None
                 totals["done" if cut is not None else "open"] += info["total"]
-                body += _fee_row_html(info, cut)
-            blocks.append(f'<table class="paper-table">{thead}<tbody>{body}</tbody></table>')
+                fee_html = _fee_row_html(info, cut)
+            entries.append((sec, members, name_html, row_html, fee_html))
+
+    blocks = []
+    for col in _split_chunks(entries):
+        body, prev_sec, prev_members = "", None, None   # 列の最初と区切りのあとは名前行を出し直す
+        for sec, members, name_html, row_html, fee_html in col:
+            if sec != prev_sec:
+                prev_members = None
+                prev_sec = sec
+            if members != prev_members:
+                body += name_html
+                prev_members = members
+            body += row_html + fee_html
+        blocks.append(f'<table class="paper-table">{thead}<tbody>{body}</tbody></table>')
 
     # この日の合計
     total = totals["done"] + totals["open"]
