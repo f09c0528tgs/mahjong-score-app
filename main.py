@@ -1537,6 +1537,17 @@ hide_style = """
         color: #555 !important; padding: 3px 4px;
     }
     .paper-table .empty-cell { color: #ccc !important; }
+    /* 着順表の段組み: 10回ずつのブロックを、スマホでは縦1本 (2つ目からの見出しは隠す)、幅のある画面では横に並べる */
+        @media (max-width: 699px) {
+        .paper-block + .paper-block thead { display: none; }
+    }
+    .paper-wrap .paper-table { margin: 0 !important; }
+    @media (min-width: 700px) {
+        .paper-cols { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px 12px; margin-bottom: 10px; max-width: 1200px; }
+        .paper-block { flex: 1 1 250px; max-width: 340px; }
+        .paper-cols .paper-table { max-width: none; }
+        .paper-wrap .paper-foot { max-width: 560px; }
+    }
     .paper-title {
         font-weight: 900; font-size: 0.92rem; color: #2a2a2a !important;
         padding: 0.25rem 0.6rem; background: #e8e2d0;
@@ -7477,6 +7488,24 @@ def _open_edit_page(game_no, return_page):
     st.session_state["page"] = "edit"
 
 
+PAPER_CHUNK = 10   # 着順表の1ブロックの最大の回数 (入力アプリの同名の定数と同じ)
+
+
+def _split_chunks(items, size=PAPER_CHUNK):
+    """items を size 以下のかたまりに、なるべく同じ長さで分ける (例: 23 → 8, 8, 7)"""
+    if not items:
+        return []
+    n = -(-len(items) // size)
+    per = -(-len(items) // n)
+    return [items[i:i + per] for i in range(0, len(items), per)]
+
+
+def _paper_html(blocks, foot=""):
+    """着順表のブロックを並べる。スマホでは縦1本、幅のある画面では横に並べる (CSS の .paper-cols)"""
+    inner = "".join(f'<div class="paper-block">{b}</div>' for b in blocks)
+    return f'<div class="paper-wrap"><div class="paper-cols">{inner}</div>{foot}</div>'
+
+
 def render_score_sheet(df_day):
     """
     1日分の対局を紙の着順表風に描画する。
@@ -7505,15 +7534,9 @@ def render_score_sheet(df_day):
         type_unknown = 0          # タイプ未設定/不明の打数
         disc_counts = {t: 0 for t in NOTE_DISCOUNTS}   # 備考による値引きの回数
         player_counts = {}        # 名前 -> {タイプ: 打数}
-        html = '<div class="paper-wrap"><table class="paper-table">'
-        html += '<thead><tr>'
-        html += '<th class="col-no">回</th>'
-        html += '<th class="seat-head-A">A席</th>'
-        html += '<th class="seat-head-B">B席</th>'
-        html += '<th class="seat-head-C">C席</th>'
-        html += '</tr></thead><tbody>'
-
-        prev_members = None
+        thead = ('<thead><tr><th class="col-no">回</th><th class="seat-head-A">A席</th>'
+                 '<th class="seat-head-B">B席</th><th class="seat-head-C">C席</th></tr></thead>')
+        entries = []   # 1回ごとの (メンバー, 名前行, 着順行)。あとで10回ずつのブロックに分ける
         for row in _rows(df_tbl):
             cur_names, cur_types, cur_ranks = {}, {}, {}
             for seat in ["A", "B", "C"]:
@@ -7544,15 +7567,13 @@ def render_score_sheet(df_day):
 
             # 名前かタイプが前の局と変わったら名前行を出し直す (同じ人でも途中でタイプを変えたら分かるように)
             members = tuple(cur_names[x] for x in "ABC") + tuple(cur_types[x] for x in "ABC")
-            if members != prev_members:
-                html += '<tr class="name-row"><td class="col-no"></td>'
-                for seat in ["A", "B", "C"]:
-                    nm = cur_names[seat] if cur_names[seat] else "-"
-                    tp = cur_types[seat]
-                    tp_disp = f'<span class="name-type">{tp}</span>' if tp else ""
-                    html += f'<td>{nm}{tp_disp}</td>'
-                html += '</tr>'
-                prev_members = members
+            name_html = '<tr class="name-row"><td class="col-no"></td>'
+            for seat in ["A", "B", "C"]:
+                nm = cur_names[seat] if cur_names[seat] else "-"
+                tp = cur_types[seat]
+                tp_disp = f'<span class="name-type">{tp}</span>' if tp else ""
+                name_html += f'<td>{nm}{tp_disp}</td>'
+            name_html += '</tr>'
 
             try:
                 game_no = int(float(row.get("GameNo", 0)))
@@ -7561,22 +7582,34 @@ def render_score_sheet(df_day):
             row_tags = note_tags(row.get("備考", ""))
             for t in row_tags:
                 disc_counts[t] += 1
-            html += f'<tr><td class="col-no">{game_no}</td>'
+            row_html = f'<tr><td class="col-no">{game_no}</td>'
             for seat in ["A", "B", "C"]:
                 rk = cur_ranks[seat]
                 if rk == 1:
                     mark = "".join(f'<span class="memo-tag">{NOTE_SHORT[t]}−{NOTE_DISCOUNTS[t]}</span>' for t in row_tags)
-                    html += f'<td class="rank-cell rank1">1{mark}</td>'
+                    row_html += f'<td class="rank-cell rank1">1{mark}</td>'
                 elif rk in (2, 3):
-                    html += f'<td class="rank-cell">{rk}</td>'
+                    row_html += f'<td class="rank-cell">{rk}</td>'
                 else:
-                    html += '<td class="empty-cell">·</td>'
-            html += '</tr>'
+                    row_html += '<td class="empty-cell">·</td>'
+            row_html += '</tr>'
+            entries.append((members, name_html, row_html))
+
+        # 10回ずつのブロックに分ける (iPad・PC では横に並べる)。ブロックの最初とメンバーが変わったところに名前行
+        blocks = []
+        for chunk in _split_chunks(entries):
+            body, prev_members = "", None
+            for members, name_html, row_html in chunk:
+                if members != prev_members:
+                    body += name_html
+                    prev_members = members
+                body += row_html
+            blocks.append(f'<table class="paper-table">{thead}<tbody>{body}</tbody></table>')
 
         # ゲーム代枚数 (タイプ別打数)
         disc_total = sum(NOTE_DISCOUNTS[t] * n for t, n in disc_counts.items())
         total_pieces = sum(type_counts.values()) + type_unknown - disc_total
-        html += '<tr class="gamecount-row"><td class="col-no">代</td>'
+        html = '<table class="paper-table paper-foot"><tbody><tr class="gamecount-row"><td class="col-no">代</td>'
         html += '<td colspan="3" style="text-align:left;padding-left:8px;">'
         parts = [f'{t} <strong>{type_counts[t]}</strong>' for t in ["A客", "AS", "B客", "BS"] if type_counts[t] > 0]
         if type_unknown > 0:
@@ -7585,9 +7618,8 @@ def render_score_sheet(df_day):
             parts.append('<span style="color:#9a2f2f;">値引き ' + "・".join(
                 f'{t}×{n} <strong>−{NOTE_DISCOUNTS[t] * n}</strong>' for t, n in disc_counts.items() if n) + '</span>')
         html += ("　".join(parts) + f'　/　計 <strong>{total_pieces}</strong>枚') if parts else f'計 {len(df_tbl)} 戦'
-        html += '</td></tr>'
-        html += '</tbody></table></div>'
-        st.markdown(_html(html), unsafe_allow_html=True)
+        html += '</td></tr></tbody></table>'
+        st.markdown(_html(_paper_html(blocks, html)), unsafe_allow_html=True)
 
         # --- この局を修正 (表の「局」の番号で選ぶ) ---
         game_rows = list(_rows(df_tbl))
