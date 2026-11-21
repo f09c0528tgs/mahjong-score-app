@@ -2465,67 +2465,6 @@ def _normalize_ym(s):
     return ""
 
 
-def save_player_profits(df):
-    """個人収支データをシートに保存する"""
-    conn = get_conn()
-    out = df.copy()
-    for c in PLAYER_PROFIT_COLS:
-        if c not in out.columns:
-            out[c] = "" if c != "収支pt" else 0
-    out = out[PLAYER_PROFIT_COLS]
-    out["収支pt"] = pd.to_numeric(out["収支pt"], errors="coerce").fillna(0).astype(int)
-    try:
-        conn.update(worksheet=SHEET_PLAYER_PROFIT, data=out)
-        _fetch_player_profit.clear()
-        return True, None
-    except Exception as e:
-        msg = str(e)
-        if "WorksheetNotFound" in msg:
-            # シートが無ければ作成を試みる
-            try:
-                conn.create(worksheet=SHEET_PLAYER_PROFIT, data=out)
-                _fetch_player_profit.clear()
-                return True, None
-            except Exception as e2:
-                return False, (f"シート '{SHEET_PLAYER_PROFIT}' が見つからず、自動作成にも失敗しました。"
-                               f"スプレッドシートに列 [{', '.join(PLAYER_PROFIT_COLS)}] を持つ "
-                               f"'{SHEET_PLAYER_PROFIT}' シートを作成してください。({e2})")
-        return False, msg
-
-
-def upsert_player_profit(name, ym, pt, memo=""):
-    """
-    1件の収支を登録/更新する (同じ 名前×年月 があれば上書き)。
-    Returns: (成功したか, エラーメッセージ)
-    """
-    ym_norm = _normalize_ym(ym)
-    if not str(name).strip() or not ym_norm:
-        return False, "名前と年月は必須です"
-    df = load_player_profits()
-    mask = (df["名前"] == str(name).strip()) & (df["年月"] == ym_norm)
-    if mask.any():
-        df.loc[mask, "収支pt"] = int(pt)
-        df.loc[mask, "備考"] = str(memo)
-    else:
-        df = pd.concat([df, pd.DataFrame([{
-            "名前": str(name).strip(), "年月": ym_norm,
-            "収支pt": int(pt), "備考": str(memo),
-        }])], ignore_index=True)
-    df = df.sort_values(["名前", "年月"]).reset_index(drop=True)
-    return save_player_profits(df)
-
-
-def delete_player_profit(name, ym):
-    """1件の収支を削除する"""
-    ym_norm = _normalize_ym(ym)
-    df = load_player_profits()
-    before = len(df)
-    df = df[~((df["名前"] == str(name).strip()) & (df["年月"] == ym_norm))].reset_index(drop=True)
-    if len(df) == before:
-        return False, "該当データが見つかりません"
-    return save_player_profits(df)
-
-
 def get_player_profit_summary(name):
     """
     指定プレイヤーの収支サマリを返す。
@@ -7195,92 +7134,86 @@ def _is_staff_name(name):
     return str(name).strip().lower().endswith("s")
 
 
+def _monthly_games_by_name():
+    """対局データから「名前 × 年月(営業日の月) → 打数」を数える。Returns: dict {(名前, "YYYY-MM"): 打数}"""
+    rec = _build_score_records(load_score_data())
+    if rec is None or rec.empty:
+        return {}
+    rec = rec[rec["rank"].isin([1, 2, 3])]
+    dates = pd.to_datetime(rec["date"], errors="coerce")
+    ym = dates.dt.strftime("%Y-%m")
+    names = rec["name"].astype(str).str.strip()
+    cnt = pd.DataFrame({"名前": names, "年月": ym}).dropna().groupby(["名前", "年月"]).size()
+    return {k: int(v) for k, v in cnt.items()}
+
+
+def compute_profit_per_game_stats(d_profit, min_month_games=10):
+    """
+    収支データ (期間で絞ったもの) を名前ごとに集計し、対局データの打数と合わせて1半荘平均などを出す。
+    列: 名前, 表示名, 通算収支, 登録月数, 最高月, 最低月, 月平均, プラス月率, 打数, 1半荘平均,
+        月あたり最高1半荘平均, 最高1半荘平均の月, 月あたり最低1半荘平均, 最低1半荘平均の月
+    月あたり最高・最低は、その月の打数が min_month_games 以上の月だけで比べる (無ければ欠損)。
+    """
+    games = _monthly_games_by_name()
+    d = d_profit.copy()
+    # 同じ 名前×年月 が複数行あれば合計する
+    d = d.groupby(["名前", "年月"], as_index=False)["収支pt"].sum()
+    d["打数"] = [games.get((n, ym), 0) for n, ym in zip(d["名前"], d["年月"])]
+    d["月1半荘"] = d["収支pt"] / d["打数"].where(d["打数"] > 0)
+
+    rows = []
+    for name, g in d.groupby("名前"):
+        total = int(g["収支pt"].sum())
+        n_games = int(g["打数"].sum())
+        months = int(len(g))
+        q = g[(g["打数"] >= min_month_games) & g["月1半荘"].notna()]
+        if q.empty:
+            best_v = best_ym = worst_v = worst_ym = None
+        else:
+            bi = q["月1半荘"].idxmax()
+            wi = q["月1半荘"].idxmin()
+            best_v, best_ym = float(q.at[bi, "月1半荘"]), q.at[bi, "年月"]
+            worst_v, worst_ym = float(q.at[wi, "月1半荘"]), q.at[wi, "年月"]
+        rows.append({
+            "名前": name,
+            "通算収支": total,
+            "登録月数": months,
+            "最高月": int(g["収支pt"].max()),
+            "最低月": int(g["収支pt"].min()),
+            "月平均": int(round(total / months)) if months else 0,
+            "プラス月率": float((g["収支pt"] > 0).mean()) if months else 0.0,
+            "打数": n_games,
+            "1半荘平均": (total / n_games) if n_games > 0 else None,
+            "月あたり最高1半荘平均": best_v,
+            "最高1半荘平均の月": best_ym,
+            "月あたり最低1半荘平均": worst_v,
+            "最低1半荘平均の月": worst_ym,
+        })
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    for c in ("1半荘平均", "月あたり最高1半荘平均", "月あたり最低1半荘平均"):
+        out[c] = pd.to_numeric(out[c], errors="coerce")
+    out["表示名"] = out["名前"].astype(str).str.replace(r'[（\(].*?[）\)]', '', regex=True)
+    return out
+
+
 def page_profit_pt():
     """個人収支 (月別pt) の入力・閲覧ページ"""
     render_top_nav("profitpt")
     st.title("💴 収支管理")
     render_pending_bar(location_key="profitpt")
-    st.caption("プレイヤーごとの月別収支(pt)を登録・閲覧します。プラスは獲得、マイナスは支払いです。")
+    st.caption("プレイヤーごとの月別収支(pt)を閲覧します。プラスは獲得、マイナスは支払いです。"
+               "登録・修正はスプレッドシートの `player_profits` シートに直接書き込んでください。")
 
     df_profit = load_player_profits()
-    members = get_all_member_names()
 
-    tab_input, tab_view, tab_rank = st.tabs(["✏️ 入力・編集", "📋 一覧", "🏆 収支ランキング"])
-
-    # ============ 入力・編集 ============
-    with tab_input:
-        st.markdown("### ✏️ 収支を登録する")
-        st.caption("同じ「名前 × 年月」が既にある場合は上書きされます。")
-
-        c1, c2 = st.columns([2, 1])
-        with c1:
-            if members:
-                name_opts = ["--選択--"] + members
-                sel_name = st.selectbox("名前", name_opts, key="pp_name")
-            else:
-                sel_name = st.text_input("名前", key="pp_name_text")
-        with c2:
-            today = date.today()
-            years = list(range(today.year - 3, today.year + 2))
-            c_y, c_m = st.columns(2)
-            with c_y:
-                sel_y = st.selectbox("年", years, index=years.index(today.year), key="pp_year")
-            with c_m:
-                sel_m = st.selectbox("月", list(range(1, 13)), index=today.month - 1, key="pp_month")
-
-        c3, c4 = st.columns([1, 2])
-        with c3:
-            pt = st.number_input("収支pt", value=0, step=100, key="pp_pt",
-                                 help="プラスは獲得、マイナスは支払い")
-        with c4:
-            memo = st.text_input("備考 (任意)", key="pp_memo")
-
-        ym_str = f"{sel_y:04d}-{sel_m:02d}"
-        # 既存データのプレビュー
-        target_name = sel_name if sel_name and sel_name != "--選択--" else ""
-        if target_name:
-            exist = df_profit[(df_profit["名前"] == target_name) & (df_profit["年月"] == ym_str)]
-            if not exist.empty:
-                cur = int(exist.iloc[0]["収支pt"])
-                st.info(f"📝 既存データあり: **{target_name}** の **{ym_str}** は現在 "
-                        f"**{cur:+,}pt** です。保存すると上書きされます。")
-
-        valid = bool(target_name)
-        bc1, bc2 = st.columns([1, 3])
-        with bc1:
-            if st.button("💾 保存", type="primary", disabled=not valid, use_container_width=True):
-                ok, err = upsert_player_profit(target_name, ym_str, int(pt), memo)
-                if ok:
-                    st.success(f"✅ {target_name} / {ym_str} : {int(pt):+,}pt を保存しました")
-                    st.rerun()
-                else:
-                    st.error(f"❌ 保存に失敗しました: {err}")
-        if not valid:
-            st.warning("⚠️ 名前を選択してください")
-
-        # --- 削除 ---
-        st.divider()
-        with st.expander("🗑 データを削除", expanded=False):
-            if df_profit.empty:
-                st.info("削除できるデータがありません")
-            else:
-                del_opts = [f"{r['名前']} / {r['年月']} / {int(r['収支pt']):+,}pt"
-                            for _, r in df_profit.iterrows()]
-                del_idx = st.selectbox("削除するデータ", range(len(del_opts)),
-                                       format_func=lambda i: del_opts[i], key="pp_del")
-                if st.button("🗑 削除する", use_container_width=True):
-                    row = df_profit.iloc[del_idx]
-                    ok, err = delete_player_profit(row["名前"], row["年月"])
-                    if ok:
-                        st.success("✅ 削除しました")
-                        st.rerun()
-                    else:
-                        st.error(f"❌ {err}")
+    tab_view, tab_rank = st.tabs(["📋 一覧", "🏆 収支ランキング"])
 
     # ============ 一覧 ============
     with tab_view:
         if df_profit.empty:
-            st.info("収支データがまだありません。「✏️ 入力・編集」から登録してください。")
+            st.info(f"収支データがまだありません。スプレッドシートの `{SHEET_PLAYER_PROFIT}` シートに登録してください。")
         else:
             # フィルタ
             fc1, fc2 = st.columns(2)
@@ -7341,8 +7274,8 @@ def page_profit_pt():
         if df_profit.empty:
             st.info("収支データがまだありません。")
         else:
-            st.caption("登録済みの収支を集計したランキングです。")
-            # 期間で絞る
+            st.caption("登録済みの収支を集計したランキングです。「1半荘平均」は、同じ月の対局データから"
+                       "打数を数えて「収支pt ÷ 打数」で出しています（月は朝9時切り替えの営業日で数えます）。")
             all_yms = sorted(df_profit["年月"].unique())
             rc1, rc2 = st.columns(2)
             with rc1:
@@ -7354,40 +7287,102 @@ def page_profit_pt():
             if d.empty:
                 st.warning("該当期間のデータがありません")
             else:
-                agg = d.groupby("名前").agg(
-                    通算収支=("収支pt", "sum"),
-                    登録月数=("年月", "nunique"),
-                    最高月=("収支pt", "max"),
-                    最低月=("収支pt", "min"),
-                ).reset_index()
-                agg["月平均"] = (agg["通算収支"] / agg["登録月数"]).round(0).astype(int)
+                sort_opts = {
+                    "1半荘平均": "1半荘あたりの収支 (期間の収支合計 ÷ 期間の打数)",
+                    "月あたり最高1半荘平均": "1か月の1半荘平均がいちばん良かった月の値",
+                    "月あたり最低1半荘平均": "1か月の1半荘平均がいちばん悪かった月の値",
+                    "通算収支": "期間の収支の合計",
+                    "月平均": "1か月あたりの収支",
+                    "最高月": "いちばん勝った月の収支",
+                    "プラス月率": "収支がプラスだった月の割合",
+                    "打数": "期間の対局数",
+                }
+                sc1, sc2, sc3 = st.columns([2, 1, 1])
+                with sc1:
+                    sort_key = st.selectbox("並び替え", list(sort_opts.keys()), key="pp_r_sort",
+                                            format_func=lambda k: k)
+                with sc2:
+                    min_games = st.number_input("規定打数 (期間)", min_value=0, value=20, step=10,
+                                                key="pp_r_min_games",
+                                                help="1半荘平均で並べるとき、この打数未満の人は出しません")
+                with sc3:
+                    min_month_games = st.number_input("月の規定打数", min_value=1, value=10, step=5,
+                                                      key="pp_r_min_month",
+                                                      help="月あたり最高・最低の1半荘平均は、この打数以上打った月だけで比べます")
+                st.caption(f"💡 {sort_key}: {sort_opts[sort_key]}")
 
-                sort_key = st.selectbox("並び替え", ["通算収支", "月平均"], key="pp_r_sort")
-                ranked = assign_competition_rank(agg, sort_key, ascending=False)
-                ranked = ranked.reset_index(drop=True)
-                disp = pd.DataFrame({
-                    "順位": ranked["順位"],
-                    "名前": ranked["名前"],
-                    "通算収支": ranked["通算収支"].map(lambda v: f"{int(v):+,}"),
-                    "月平均": ranked["月平均"].map(lambda v: f"{int(v):+,}"),
-                    "登録月数": ranked["登録月数"],
-                    "最高月": ranked["最高月"].map(lambda v: f"{int(v):+,}"),
-                    "最低月": ranked["最低月"].map(lambda v: f"{int(v):+,}"),
-                })
-                st.dataframe(disp, hide_index=True, use_container_width=True)
-                st.caption(f"💡 **{sort_key}** の大きい順。単位はすべて pt。")
+                agg = compute_profit_per_game_stats(d, int(min_month_games))
 
-                # 店舗全体のサマリ
+                show = agg.copy()
+                if sort_key == "1半荘平均":
+                    show = show[show["1半荘平均"].notna() & (show["打数"] >= min_games)]
+                elif sort_key in ("月あたり最高1半荘平均", "月あたり最低1半荘平均"):
+                    show = show[show[sort_key].notna()]
+                    if min_games > 0:
+                        show = show[show["打数"] >= min_games]
+
+                if show.empty:
+                    st.warning("条件に合う人がいません。規定打数を下げてみてください。")
+                else:
+                    asc = False
+                    ranked = assign_competition_rank(show, sort_key, ascending=asc).reset_index(drop=True)
+
+                    def _f1(v):
+                        return f"{v:+,.1f}" if pd.notna(v) else "—"
+
+                    def _fi(v):
+                        return f"{int(v):+,}" if pd.notna(v) else "—"
+
+                    def _with_ym(v, ym):
+                        return f"{v:+,.1f} ({ym})" if pd.notna(v) else "—"
+
+                    disp = pd.DataFrame({
+                        "順位": ranked["順位"],
+                        "名前": ranked["表示名"],
+                        "1半荘平均": ranked["1半荘平均"].map(_f1),
+                        "月あたり最高1半荘平均": [
+                            _with_ym(v, ym) for v, ym in
+                            zip(ranked["月あたり最高1半荘平均"], ranked["最高1半荘平均の月"])],
+                        "月あたり最低1半荘平均": [
+                            _with_ym(v, ym) for v, ym in
+                            zip(ranked["月あたり最低1半荘平均"], ranked["最低1半荘平均の月"])],
+                        "通算収支": ranked["通算収支"].map(_fi),
+                        "月平均": ranked["月平均"].map(_fi),
+                        "最高月": ranked["最高月"].map(_fi),
+                        "最低月": ranked["最低月"].map(_fi),
+                        "プラス月率": ranked["プラス月率"].map(lambda v: f"{v:.0%}"),
+                        "打数": ranked["打数"].astype(int),
+                        "月数": ranked["登録月数"].astype(int),
+                    })
+                    # 並び替えに使った項目を名前のすぐ右に出す
+                    if sort_key in disp.columns and sort_key not in ("順位", "名前"):
+                        cols = ["順位", "名前", sort_key] + [c for c in disp.columns
+                                                          if c not in ("順位", "名前", sort_key)]
+                        disp = disp[cols]
+                    st.dataframe(disp, hide_index=True, use_container_width=True)
+                    order_word = "小さい順" if asc else "大きい順"
+                    st.caption(f"**{sort_key}** の{order_word}。単位は pt。"
+                               f"月あたり最高・最低は {int(min_month_games)}打数以上の月だけで比べ、"
+                               "( ) はその月です。")
+
+                no_games = agg[agg["打数"] == 0]
+                if not no_games.empty:
+                    st.caption(
+                        f"⚠️ 収支は登録されているが、この期間の対局データが無い人が "
+                        f"**{len(no_games)}人** います "
+                        f"({'、'.join(no_games['表示名'].head(5).tolist())}"
+                        f"{' ほか' if len(no_games) > 5 else ''})。1半荘平均は出せません。")
+
                 st.divider()
                 grand = int(d["収支pt"].sum())
                 gc = "var(--green)" if grand > 0 else "var(--red)"
-                st.markdown(f"""
+                st.markdown(_html(f"""
                 <div style="margin:0.3rem 0;">
                     <span class="rankpt-pt">📅 期間 <strong>{from_ym} 〜 {to_ym}</strong></span>
                     <span class="rankpt-pt">👥 対象 <strong>{agg['名前'].nunique()}</strong>人</span>
                     <span class="rankpt-pt">合計 <strong style="color:{gc};">{grand:+,}</strong> pt</span>
                 </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
 
     # --- シート未作成時の案内 ---
     with st.expander("ℹ️ スプレッドシートの設定について", expanded=False):
@@ -8740,7 +8735,7 @@ def page_ranking():
                    "「1半荘あたり」は同じ期間の対局データから打数を集計して算出しています。")
         df_pp = load_player_profits()
         if df_pp.empty:
-            st.info("収支データが登録されていません。「💴 収支管理」から登録してください。")
+            st.info(f"収支データが登録されていません。スプレッドシートの `{SHEET_PLAYER_PROFIT}` シートに登録してください。")
         else:
             all_yms = sorted(df_pp["年月"].unique())
             pc1, pc2, pc3 = st.columns([1, 1, 1])

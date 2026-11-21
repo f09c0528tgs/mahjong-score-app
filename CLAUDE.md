@@ -117,6 +117,7 @@ Google スプレッドシートへの接続設定は `.streamlit/secrets.toml` �
 - **`st.markdown('<div class="...">')` で Streamlit の部品を囲むことはできない**（div はその場で閉じられ、部品は外に出る。空の要素ができて余白だけ増える）。部品に CSS を当てたいときは `st.container(key="...")` で囲み、Streamlit が付ける `st-key-<key>` クラスを目印にする（上部ナビ `st-key-topnav`、ホームのメニュー `st-key-home_menu` / `st-key-menu-<色>-<ページ>`）。
 - Streamlit 1.5x では `.main .block-container` が効かない。ページ全体の余白は `[data-testid="stMainBlockContainer"]` に当てる。
 - スマホ (幅640px以下) 向けの調整は CSS 末尾の「UI改善 (2026-11)」にまとめてある: 上部ナビは横1列で横スクロール、ホームのメニューは2列、`st.metric` を並べた列は2列、`.stats-table` は文字単位で折り返さず横スクロール。タッチ端末で押した後もボタンが光ったままになる (hover が残る) のは `@media (hover: none)` で消している。
+- 収支管理ページ（`profitpt` / `page_profit_pt`）は閲覧だけ（2026-11-22 に入力フォームを削除。`player_profits` シートに直接書き込む）。収支ランキングの「1半荘平均」「月あたり最高/最低1半荘平均」は `compute_profit_per_game_stats()` が、月ごとの収支を同じ月（論理日付の月）の打数で割って出す。
 - 利益管理ページの保存パスワード（`"7777"`）がコードに直接書かれている。
 
 ## 入力アプリ `ranking_view.py`
