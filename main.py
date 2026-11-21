@@ -1832,6 +1832,22 @@ hide_style = """
     [data-testid="stMetric"] { background: var(--bg-card2); border-radius: 12px; }
     [data-testid="stMetricValue"], [data-testid="stMetricValue"] * { color: var(--text-primary) !important; }
     [data-testid="stMetricLabel"], [data-testid="stMetricLabel"] * { color: var(--text-muted) !important; }
+    /* 備考の選択 (st.pills): 平らなキー。選んだものはこげ茶 */
+    button[data-testid="stBaseButton-pills"] {
+        background: var(--bg-card2) !important; color: var(--text-primary) !important;
+        border: 1px solid var(--border-strong) !important; border-radius: 999px !important;
+    }
+    button[data-testid="stBaseButton-pills"] * { color: var(--text-primary) !important; }
+    button[data-testid="stBaseButton-pillsActive"] {
+        background: #8a6642 !important; border: 2px solid #caa073 !important; color: #ffffff !important;
+        border-radius: 999px !important; font-weight: 800 !important;
+    }
+    button[data-testid="stBaseButton-pillsActive"] * { color: #ffffff !important; }
+    /* 備考による値引きの印 (着順表のトップのマス) */
+    .paper-table .memo-tag {
+        display: block; font-size: 0.55rem; font-weight: 800; line-height: 1.2; color: #ffffff !important;
+        background: #9a2f2f; border-radius: 3px; padding: 0 2px; margin: 1px auto 0; width: fit-content;
+    }
     /* 上部ナビの「いまのページ」 */
     .nav-current { background: #6e5236 !important; border-color: #6e5236 !important; color: #ffffff !important; }
     .nav-current * { color: #ffffff !important; }
@@ -4416,7 +4432,7 @@ def commit_buffer_to_sheet():
 def calculate_set_summary(subset_df):
     target_types = ["A客", "B客", "AS", "BS"]
     type_stats = {t: 0 for t in target_types}
-    FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
+    FEE_MAP = GAME_FEE_TABLE   # ゲーム代の枚数は GAME_FEE_TABLE に1本化 (以前はここだけ B客 5枚になっていた)
     total_fee = 0
     for row in _rows(subset_df):
         w_type = None
@@ -4432,10 +4448,7 @@ def calculate_set_summary(subset_df):
         if w_type in target_types:
             type_stats[w_type] += 1
             if w_type in FEE_MAP: total_fee += FEE_MAP[w_type]
-        note = str(row["備考"])
-        if note == "東１終了": total_fee -= 1
-        elif note == "２人飛ばし": total_fee -= 2
-        elif note == "５連勝〜": total_fee -= 5
+        total_fee -= note_discount(row["備考"])
     return total_fee, type_stats
 
 def render_paper_sheet(df):
@@ -4486,8 +4499,7 @@ def render_paper_sheet(df):
                 except: rank_val = "0"
 
                 is_1st = (rank_val == "1")
-                SPECIAL_NOTES = ["東１終了", "２人飛ばし", "５連勝〜"]
-                is_special = (row["備考"] in SPECIAL_NOTES) and is_1st
+                is_special = bool(note_tags(row["備考"])) and is_1st
                 td_class = ' class="cell-top"' if is_1st else ""
 
                 if is_special:
@@ -4933,7 +4945,7 @@ def render_today_quick_stats():
     total_games = len(df_today)
     total_fee = 0
     type_counts = {"A客": 0, "B客": 0, "AS": 0, "BS": 0}
-    FEE_MAP = {"A客": 3, "B客": 5, "AS": 1, "BS": 1}
+    FEE_MAP = GAME_FEE_TABLE   # ゲーム代の枚数は GAME_FEE_TABLE に1本化 (以前はここだけ B客 5枚になっていた)
 
     for row in _rows(df_today):
         try:
@@ -4947,10 +4959,7 @@ def render_today_quick_stats():
         if winner_type in type_counts:
             type_counts[winner_type] += 1
             total_fee += FEE_MAP.get(winner_type, 0)
-        note = str(row["備考"])
-        if note == "東１終了": total_fee -= 1
-        elif note == "２人飛ばし": total_fee -= 2
-        elif note == "５連勝〜": total_fee -= 5
+        total_fee -= note_discount(row["備考"])
 
     fee_class = "green" if total_fee >= 0 else "red"
 
@@ -5945,12 +5954,20 @@ def page_edit():
         p2_n, p2_t, p2_r = player_input_row_dynamic("B席", member_list, row["Bさん"], row["Bタイプ"], int(float(row["B着順"])), [1, 2, 3], "_edit", None)
         p3_n, p3_t, p3_r = player_input_row_dynamic("C席", member_list, row["Cさん"], row["Cタイプ"], int(float(row["C着順"])), [1, 2, 3], "_edit", None)
 
-        st.markdown("**📋 備考**")
-        NOTE_OPTS = ["なし", "東１終了", "２人飛ばし", "５連勝〜"]
-        def idx(opts, val): return opts.index(val) if val in opts else 0
-        cur_note = row["備考"] if row["備考"] else "なし"
-        opts = NOTE_OPTS if cur_note in NOTE_OPTS else NOTE_OPTS + [cur_note]
-        note = st.radio("内容", opts, index=idx(opts, cur_note), horizontal=True)
+        st.markdown("**📋 備考**（複数選べます）")
+        cur_note = str(row["備考"] or "")
+        cur_tags = note_tags(cur_note)
+        # 選択肢以外の文字 (昔の手入力など) は消さずに残す
+        other_note = _normalize_note(cur_note)
+        for t in cur_tags:
+            other_note = other_note.replace(t, "")
+        other_note = other_note.strip(" 、,・/　")
+        sel_tags = st.pills("内容", list(NOTE_DISCOUNTS), selection_mode="multi",
+                            format_func=lambda m: f"{m}（−{NOTE_DISCOUNTS[m]}枚）",
+                            default=cur_tags, key=f"edit_note_tags_{edit_id}") or []
+        if other_note:
+            st.caption(f"そのほかの備考（そのまま残します）: {other_note}")
+        note = "、".join([t for t in NOTE_DISCOUNTS if t in sel_tags] + ([other_note] if other_note else []))
 
         st.divider()
         c_up, c_del, c_can = st.columns(3)
@@ -5974,7 +5991,7 @@ def page_edit():
             else:
                 new_data = {
                     "GameNo": row["GameNo"], "TableNo": row["TableNo"], "SetNo": row["SetNo"],
-                    "日時": row["日時"], "備考": ("" if note == "なし" else note),
+                    "日時": row["日時"], "備考": note,
                     "Aさん": p1_n, "Aタイプ": p1_t, "A着順": p1_r,
                     "Bさん": p2_n, "Bタイプ": p2_t, "B着順": p2_r,
                     "Cさん": p3_n, "Cタイプ": p3_t, "C着順": p3_r
@@ -6675,11 +6692,7 @@ def _page_history_overview(df):
         type_data = []
 
         for row in _rows(df_target):
-            note = str(row["備考"])
-            discount = 0
-            if note == "東１終了": discount = 1
-            elif note == "２人飛ばし": discount = 2
-            elif note == "５連勝〜": discount = 5
+            discount = note_discount(row["備考"])
 
             winner_is_a = False
             winner_type = None
@@ -6867,11 +6880,7 @@ def _page_history_overview(df):
     pattern_wins_a = {"A3人": 0, "A2人B1人": 0, "A1人B2人": 0, "B3人": 0}
 
     for row in _rows(df_filtered):
-        note = str(row["備考"])
-        discount = 0
-        if note == "東１終了": discount = 1
-        elif note == "２人飛ばし": discount = 2
-        elif note == "５連勝〜": discount = 5
+        discount = note_discount(row["備考"])
         winner_is_a = False
         winner_type = None
         try:
@@ -7098,6 +7107,30 @@ def _page_history_overview(df):
 
 # --- 月間成績画面 ---
 # ゲーム代枚数: トップを取った人が、自分のタイプに応じた枚数を払う
+# 備考によるゲーム代の値引き (枚)。備考は複数入ることがある (入力アプリは「、」でつなぐ: "東１終了、５連勝〜")。複数なら足し算。
+# ※ 入力アプリ (ranking_view.py) の NOTE_DISCOUNTS / _normalize_note / note_tags / note_discount と同じ。片方を直したらもう片方も直すこと。
+NOTE_DISCOUNTS = {"東１終了": 1, "２人飛ばし": 2, "５連勝〜": 5}
+NOTE_SHORT = {"東１終了": "東１", "２人飛ばし": "２飛", "５連勝〜": "５連"}
+
+
+def _normalize_note(note):
+    """備考の表記ゆれをそろえる (半角数字→全角、「~」「～」→「〜」、「東発終了」「東初終了」→「東１終了」)"""
+    text = str(note or "")
+    text = text.translate(str.maketrans("0123456789~～", "０１２３４５６７８９〜〜"))
+    return text.replace("東発終了", "東１終了").replace("東初終了", "東１終了")
+
+
+def note_tags(note):
+    """備考に含まれている値引きの項目 (NOTE_DISCOUNTS の順)"""
+    text = _normalize_note(note)
+    return [t for t in NOTE_DISCOUNTS if t in text]
+
+
+def note_discount(note):
+    """備考による値引きの合計 (複数入っていれば足す)"""
+    return sum(NOTE_DISCOUNTS[t] for t in note_tags(note))
+
+
 GAME_FEE_TABLE = {
     "A客": 3,
     "B客": 4,
@@ -7470,6 +7503,7 @@ def render_score_sheet(df_day):
 
         type_counts = {"A客": 0, "AS": 0, "B客": 0, "BS": 0}
         type_unknown = 0          # タイプ未設定/不明の打数
+        disc_counts = {t: 0 for t in NOTE_DISCOUNTS}   # 備考による値引きの回数
         player_counts = {}        # 名前 -> {タイプ: 打数}
         html = '<div class="paper-wrap"><table class="paper-table">'
         html += '<thead><tr>'
@@ -7524,11 +7558,15 @@ def render_score_sheet(df_day):
                 game_no = int(float(row.get("GameNo", 0)))
             except Exception:
                 game_no = ""
+            row_tags = note_tags(row.get("備考", ""))
+            for t in row_tags:
+                disc_counts[t] += 1
             html += f'<tr><td class="col-no">{game_no}</td>'
             for seat in ["A", "B", "C"]:
                 rk = cur_ranks[seat]
                 if rk == 1:
-                    html += '<td class="rank-cell rank1">1</td>'
+                    mark = "".join(f'<span class="memo-tag">{NOTE_SHORT[t]}−{NOTE_DISCOUNTS[t]}</span>' for t in row_tags)
+                    html += f'<td class="rank-cell rank1">1{mark}</td>'
                 elif rk in (2, 3):
                     html += f'<td class="rank-cell">{rk}</td>'
                 else:
@@ -7536,12 +7574,16 @@ def render_score_sheet(df_day):
             html += '</tr>'
 
         # ゲーム代枚数 (タイプ別打数)
-        total_pieces = sum(type_counts.values()) + type_unknown
+        disc_total = sum(NOTE_DISCOUNTS[t] * n for t, n in disc_counts.items())
+        total_pieces = sum(type_counts.values()) + type_unknown - disc_total
         html += '<tr class="gamecount-row"><td class="col-no">代</td>'
         html += '<td colspan="3" style="text-align:left;padding-left:8px;">'
         parts = [f'{t} <strong>{type_counts[t]}</strong>' for t in ["A客", "AS", "B客", "BS"] if type_counts[t] > 0]
         if type_unknown > 0:
             parts.append(f'<span style="color:#b04;">タイプ未設定のトップ <strong>{type_unknown}</strong>回</span>')
+        if disc_total:
+            parts.append('<span style="color:#9a2f2f;">値引き ' + "・".join(
+                f'{t}×{n} <strong>−{NOTE_DISCOUNTS[t] * n}</strong>' for t, n in disc_counts.items() if n) + '</span>')
         html += ("　".join(parts) + f'　/　計 <strong>{total_pieces}</strong>枚') if parts else f'計 {len(df_tbl)} 戦'
         html += '</td></tr>'
         html += '</tbody></table></div>'

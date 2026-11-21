@@ -157,6 +157,22 @@ button[data-testid^="stBaseButton-segmented_control"]:disabled {
     background: var(--taupe) !important; border: 1px dashed #a89b93 !important; opacity: 1 !important;
 }
 button[data-testid^="stBaseButton-segmented_control"]:disabled * { color: #4f4540 !important; }
+/* 備考の選択 (st.pills): 平らなキー。選んだものはこげ茶 */
+button[data-testid^="stBaseButton-pills"] {
+    border-radius: 999px !important; min-height: 40px !important; padding: 0 0.9rem !important;
+    transition: none !important;
+}
+button[data-testid="stBaseButton-pills"] {
+    background: var(--key) !important; color: var(--text-primary) !important;
+    border: 1px solid var(--border) !important;
+}
+button[data-testid="stBaseButton-pills"] * { color: var(--text-primary) !important; }
+button[data-testid="stBaseButton-pillsActive"] {
+    background: var(--brown-active) !important; border: 2px solid var(--brown-ring) !important;
+    color: #ffffff !important; font-weight: 800 !important;
+}
+button[data-testid="stBaseButton-pillsActive"] * { color: #ffffff !important; }
+
 /* 着順のキーはさらに大きく (テンキーのような押しやすさ) */
 .st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] { min-height: 64px !important; }
 .st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] p {
@@ -415,6 +431,17 @@ hr { border-color: var(--border) !important; }
 }
 .fee-line b { font-family: var(--mono); }
 .fee-rule { font-size: 0.72rem; color: var(--text-muted); margin-top: 0.4rem; }
+/* 値引き (備考) */
+.fee-line.fee-disc, .fee-line.fee-disc * { color: #9a2f2f !important; }
+.paper-table .fee-disc { color: #9a2f2f; }
+.paper-table .memo-tag {
+    display: block; font-size: 0.55rem; font-weight: 800; line-height: 1.2; color: #ffffff;
+    background: #9a2f2f; border-radius: 3px; padding: 0 2px; margin: 1px auto 0; width: fit-content;
+    font-family: "Zen Kaku Gothic New", sans-serif;
+}
+.memo-total {
+    font-size: 0.8rem; color: #9a2f2f; font-weight: 700; margin-top: -0.2rem;
+}
 
 /* ---------- 余白・見出し ---------- */
 [data-testid="stMainBlockContainer"] { padding-top: 1rem !important; padding-bottom: 2rem !important; max-width: 560px !important; }
@@ -459,6 +486,33 @@ FEE_COLS = ["日時", "TableNo", "LastGameNo", "枚数", "内訳"]
 
 # ゲーム代: トップを取った人が、自分のタイプに応じた枚数を払う (メインアプリの GAME_FEE_TABLE と同じ値)
 GAME_FEE_TABLE = {"A客": 3, "B客": 4, "AS": 1, "BS": 1}
+
+# 備考と、それによるゲーム代の値引き (枚)。備考は複数選べる。保存するときは「、」でつなぐ (例: "東１終了、５連勝〜")。
+# 複数あれば値引きは足し算。文字 (全角数字・「〜」) を変えないこと。
+# ※ メインアプリ (main.py) の NOTE_DISCOUNTS / _normalize_note / note_tags / note_discount と同じ。片方を直したらもう片方も直すこと。
+NOTE_DISCOUNTS = {"東１終了": 1, "２人飛ばし": 2, "５連勝〜": 5}
+MEMO_OPTIONS = list(NOTE_DISCOUNTS)
+MEMO_SEP = "、"
+# 着順表の印に使う短い名前
+NOTE_SHORT = {"東１終了": "東１", "２人飛ばし": "２飛", "５連勝〜": "５連"}
+
+
+def _normalize_note(note):
+    """備考の表記ゆれをそろえる (半角数字→全角、「~」「～」→「〜」、「東発終了」「東初終了」→「東１終了」)"""
+    text = str(note or "")
+    text = text.translate(str.maketrans("0123456789~～", "０１２３４５６７８９〜〜"))
+    return text.replace("東発終了", "東１終了").replace("東初終了", "東１終了")
+
+
+def note_tags(note):
+    """備考に含まれている値引きの項目 (NOTE_DISCOUNTS の順)"""
+    text = _normalize_note(note)
+    return [t for t in NOTE_DISCOUNTS if t in text]
+
+
+def note_discount(note):
+    """備考による値引きの合計 (枚。複数あれば足す)"""
+    return sum(NOTE_DISCOUNTS[t] for t in note_tags(note))
 
 EXPECTED_COLS = [
     "GameNo", "TableNo", "SetNo", "日時", "備考",
@@ -933,11 +987,17 @@ def get_games_by_date(df, target_date):
 def calc_game_fee(df_games):
     """
     対局群のゲーム代を計算する。トップ (1着) を取った人が、自分のタイプの枚数を払う。
-    Returns: {"games": 対局数, "lines": [(タイプ, トップ回数, 1回の枚数, 小計)], "total": 合計枚数, "unknown": タイプ不明のトップ回数}
+    備考 (東１終了・２人飛ばし・５連勝〜) があれば、その局の分を値引きする (メインアプリと同じ)。
+    Returns: {"games": 対局数, "lines": [(タイプ, トップ回数, 1回の枚数, 小計)],
+              "discounts": [(備考, 回数, 1回の値引き, 値引き小計)], "gross": 値引き前, "discount": 値引き合計,
+              "total": 値引き後の合計枚数, "unknown": タイプ不明のトップ回数}
     """
     tops = {t: 0 for t in TYPE_BUTTON_ORDER}
     unknown = 0
+    disc_count = {t: 0 for t in NOTE_DISCOUNTS}
     for _, row in df_games.iterrows():
+        for tag in note_tags(row.get("備考", "")):
+            disc_count[tag] += 1
         for seat in ["A", "B", "C"]:
             try:
                 rk = int(float(row.get(f"{seat}着順", 0)))
@@ -952,13 +1012,18 @@ def calc_game_fee(df_games):
                 unknown += 1
     lines = [(t, tops[t], GAME_FEE_TABLE[t], tops[t] * GAME_FEE_TABLE[t])
              for t in TYPE_BUTTON_ORDER if tops[t] > 0]
-    return {"games": len(df_games), "lines": lines,
-            "total": sum(l[3] for l in lines), "unknown": unknown}
+    discounts = [(t, disc_count[t], NOTE_DISCOUNTS[t], disc_count[t] * NOTE_DISCOUNTS[t])
+                 for t in NOTE_DISCOUNTS if disc_count[t] > 0]
+    gross = sum(l[3] for l in lines)
+    discount = sum(d[3] for d in discounts)
+    return {"games": len(df_games), "lines": lines, "discounts": discounts,
+            "gross": gross, "discount": discount, "total": gross - discount, "unknown": unknown}
 
 
 def fee_breakdown_text(info, sep="、"):
     """例: 'A客トップ 2回×3枚=6枚、Aスタッフトップ 1回×1枚=1枚'"""
     parts = [f"{TYPE_LABELS[t]}トップ {n}回×{unit}枚={sub}枚" for t, n, unit, sub in info["lines"]]
+    parts += [f"値引き {t} {n}回×{unit}枚=−{sub}枚" for t, n, unit, sub in info.get("discounts", [])]
     if info.get("unknown"):
         parts.append(f"タイプ不明のトップ {info['unknown']}回（0枚で計算）")
     return sep.join(parts)
@@ -1035,6 +1100,10 @@ def _fee_row_html(info, cut):
         f'<div>{TYPE_LABELS[t]}のトップ <b>{n}回</b> × {unit}枚 = <b>{sub}枚</b></div>'
         for t, n, unit, sub in info["lines"]
     )
+    detail += "".join(
+        f'<div class="fee-disc">値引き {t} <b>{n}回</b> × {unit}枚 = <b>−{sub}枚</b></div>'
+        for t, n, unit, sub in info.get("discounts", [])
+    )
     if info.get("unknown"):
         detail += f'<div>タイプ不明のトップ {info["unknown"]}回（0枚で計算）</div>'
     return (
@@ -1104,7 +1173,9 @@ def _render_table(df_tbl, cuts=None):
             for seat in ["A", "B", "C"]:
                 rk = cur_ranks[seat]
                 if rk == 1:
-                    html += '<td class="rank-cell rank1">1</td>'
+                    tags = note_tags(row.get("備考", ""))
+                    mark = "".join(f'<span class="memo-tag">{NOTE_SHORT[t]}−{NOTE_DISCOUNTS[t]}</span>' for t in tags)
+                    html += f'<td class="rank-cell rank1">1{mark}</td>'
                 elif rk in [2, 3]:
                     html += f'<td class="rank-cell">{rk}</td>'
                 else:
@@ -1176,6 +1247,31 @@ def _clear_seats(table_no):
         st.session_state[_seat_key(table_no, seat)] = None
     _table_mem(table_no)["names"] = {}
     st.session_state["input_round"] = st.session_state.get("input_round", 0) + 1
+
+
+def _rank_key(mkey, seat):
+    return f"rank_{mkey}_{seat}"
+
+
+def _on_rank_change(mkey, seat):
+    """
+    ある席の着順を選んだとき (on_change):
+    - 同じ着順がほかの席に付いていたら、その席と入れ替える (重複でエラーにしない)
+    - 2人の着順が決まったら、残りの1人に残りの着順を自動で入れる
+    """
+    ss = st.session_state
+    prev = ss.setdefault("rank_prev", {}).get(mkey, {})
+    new = ss.get(_rank_key(mkey, seat))
+    if new is not None:
+        for t in SEATS:
+            if t != seat and ss.get(_rank_key(mkey, t)) == new:
+                ss[_rank_key(mkey, t)] = prev.get(seat)   # この席の元の着順と入れ替え
+    vals = {x: ss.get(_rank_key(mkey, x)) for x in SEATS}
+    filled = [x for x in SEATS if vals[x] is not None]
+    if len(filled) == 2 and len({vals[x] for x in filled}) == 2:
+        empty = next(x for x in SEATS if vals[x] is None)
+        ss[_rank_key(mkey, empty)] = ({1, 2, 3} - {vals[x] for x in filled}).pop()
+    ss["rank_prev"][mkey] = {x: ss.get(_rank_key(mkey, x)) for x in SEATS}
 
 
 def _step_label(left, right=""):
@@ -1253,7 +1349,6 @@ def page_input():
     # 保存後のリセット (ウィジェットを描く前でないと値を書き換えられないので、ここで行う)
     pending = ss.pop("input_pending_reset", None)
     if pending:
-        ss["input_memo"] = ""
         # 「日時を指定する」は1局ごと。付けたままだと次の局も同じ時刻で記録されてしまうので外す
         ss["input_use_custom_dt"] = False
         if pending.get("seats"):
@@ -1355,7 +1450,7 @@ def page_input():
     if elsewhere:
         st.warning("入力する卓が合っているか確認してください。\n\n" + "\n\n".join(dict.fromkeys(elsewhere)))
 
-    # --- 着順 (1着→2着をタップ、3着は自動) ---
+    # --- 着順 (席ごとに何着かをタップ。2人決めると残りは自動) ---
     ranks = {}
     rank_area = st.container(key="rank_area")  # 着順のキーは大きくする (CSS は .st-key-rank_area)
     with rank_area:
@@ -1365,27 +1460,40 @@ def page_input():
             _step_label("着順")
             st.error("同じ人が複数の席にいます")
         else:
-            fmt = lambda s: seat_info[s]["name"]
             mkey = f"{table_no}_{ss['input_round']}_{'|'.join(names_sel)}"
-            first_now = ss.get(f"rank1_{mkey}")
-            hint = "1着をタップ" if not first_now else "2着をタップ（3着は自動）"
+            n_set = sum(ss.get(_rank_key(mkey, x)) is not None for x in SEATS)
+            hint = ("各席の着順をタップ（2人決めると残りは自動）" if n_set < 2
+                    else "変えるときは、その席の着順をタップ（入れ替わります）")
             _step_label("着順", hint)
-            first = st.segmented_control("1着", SEATS, format_func=fmt, key=f"rank1_{mkey}")
-            remain = [s for s in SEATS if s != first]
-            second = st.segmented_control(
-                "2着", remain if first else SEATS, format_func=fmt,
-                key=f"rank2_{mkey}_{first}", disabled=first is None,
-            )
-            if first:
-                ranks[first] = 1
-            if first and second:
-                third = [s for s in SEATS if s not in (first, second)][0]
-                ranks.update({second: 2, third: 3})
+            for seat in SEATS:
+                val = st.segmented_control(
+                    f"{SEAT_LABELS[seat]}　{seat_info[seat]['name']}", [1, 2, 3],
+                    format_func=lambda r: f"{r}着", key=_rank_key(mkey, seat),
+                    on_change=_on_rank_change, args=(mkey, seat),
+                )
+                if val is not None:
+                    ranks[seat] = int(val)
+            if len(ranks) == 3 and sorted(ranks.values()) != [1, 2, 3]:
+                st.error("着順が重複しています")
+                ranks = {}
 
-    can_save = members_ready and len(ranks) == 3
+    can_save = members_ready and len(ranks) == 3 and sorted(ranks.values()) == [1, 2, 3]
+
+    # --- 備考 (タップで選ぶ。複数選べる。保存すると空に戻る) ---
+    memo_sel = st.pills(
+        "備考（あれば）", MEMO_OPTIONS, selection_mode="multi",
+        format_func=lambda m: f"{m}（−{NOTE_DISCOUNTS[m]}枚）",
+        key=f"memo_{table_no}_{ss['input_round']}",
+    ) or []
+    memo = MEMO_SEP.join(m for m in MEMO_OPTIONS if m in memo_sel)
+    if memo_sel:
+        st.markdown(_html(
+            f'<div class="memo-total">この局のゲーム代から <b>−{note_discount(memo)}枚</b> 値引き'
+            f'（{"・".join(f"{m} −{NOTE_DISCOUNTS[m]}" for m in MEMO_OPTIONS if m in memo_sel)}）</div>'),
+            unsafe_allow_html=True)
 
     # --- 日時 (通常は保存した時刻。後から付けるときだけ指定) ---
-    with st.expander("日時・備考（後から付けるときだけ）"):
+    with st.expander("日時（後から付けるときだけ）"):
         use_custom_dt = st.checkbox("日時を指定する", key="input_use_custom_dt")
         col_dt, col_time = st.columns(2)
         with col_dt:
@@ -1394,7 +1502,6 @@ def page_input():
         with col_time:
             input_time = st.time_input("時刻", value=now_jst().time().replace(second=0, microsecond=0),
                                        key="input_time", disabled=not use_custom_dt)
-        memo = st.text_input("備考", value="", key="input_memo")
 
     # --- 操作ボタン (画面の下に固定。CSS は .st-key-action_bar) ---
     games_here = tstat.get(table_no, {}).get("games", 0)
@@ -1476,8 +1583,9 @@ def page_input():
     chips_slot.markdown(_html(_chips_html(seat_info, ranks)), unsafe_allow_html=True)
 
 
-FEE_RULE_TEXT = "ゲーム代はトップ（1着）を取った人が払います。1回につき " + "・".join(
+FEE_RULE_TEXT = ("ゲーム代はトップ（1着）を取った人が払います。1回につき " + "・".join(
     f"{TYPE_LABELS[t]} {GAME_FEE_TABLE[t]}枚" for t in TYPE_BUTTON_ORDER)
+    + "。備考があればその局は値引き（" + "・".join(f"{t} −{n}枚" for t, n in NOTE_DISCOUNTS.items()) + "）")
 
 
 def render_fee_collect_section(df_all, fees, table_no, today):
@@ -1496,6 +1604,11 @@ def render_fee_collect_section(df_all, fees, table_no, today):
             f'<div class="fee-line"><span>{TYPE_LABELS[t]}のトップ</span>'
             f'<span><b>{n}回</b> × {unit}枚 = <b>{sub}枚</b></span></div>'
             for t, n, unit, sub in info["lines"]
+        )
+        lines += "".join(
+            f'<div class="fee-line fee-disc"><span>値引き（{t}）</span>'
+            f'<span><b>{n}回</b> × {unit}枚 = <b>−{sub}枚</b></span></div>'
+            for t, n, unit, sub in info["discounts"]
         )
         if info["unknown"]:
             lines += (f'<div class="fee-line"><span>タイプ不明のトップ</span>'
