@@ -174,7 +174,8 @@ button[data-testid="stBaseButton-pillsActive"] {
 button[data-testid="stBaseButton-pillsActive"] * { color: #ffffff !important; }
 
 /* 着順のキーはさらに大きく (テンキーのような押しやすさ) */
-.st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] { min-height: 64px !important; }
+.st-key-rank_area button[data-testid^="stBaseButton-segmented_control"],
+.st-key-fix_rank_area button[data-testid^="stBaseButton-segmented_control"] { min-height: 64px !important; }
 .st-key-rank_area button[data-testid^="stBaseButton-segmented_control"] p {
     font-size: 1.1rem !important; font-weight: 800 !important;
 }
@@ -443,6 +444,14 @@ hr { border-color: var(--border) !important; }
     font-size: 0.8rem; color: #9a2f2f; font-weight: 700; margin-top: -0.2rem;
 }
 
+/* ---------- まちがいを直す ---------- */
+.st-key-fix_box {
+    background: var(--bg-card); border: 2px solid var(--brown); border-radius: var(--radius);
+    padding: 0.6rem 0.8rem 0.8rem;
+}
+.fix-head { font-weight: 900; font-size: 1rem; color: var(--text-primary); display: flex; justify-content: space-between; }
+.fix-head span { font-size: 0.78rem; color: var(--text-muted); font-weight: 700; }
+
 /* ---------- 中間締め・1日締め (タイプ別のトップ回数) ---------- */
 .close-card {
     background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
@@ -487,11 +496,15 @@ h3 { font-size: 1rem !important; line-height: 1.35 !important; margin-top: 0.6re
     .st-key-table_set [data-testid="stHorizontalBlock"],
     .st-key-action_bar [data-testid="stHorizontalBlock"],
     .st-key-fee_confirm [data-testid="stHorizontalBlock"],
+    .st-key-fix_btns [data-testid="stHorizontalBlock"],
+    .st-key-fix_del_btns [data-testid="stHorizontalBlock"],
     .st-key-close_confirm [data-testid="stHorizontalBlock"],
     .st-key-close_btns [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: 8px !important; }
     .st-key-table_set [data-testid="stColumn"],
     .st-key-action_bar [data-testid="stColumn"],
     .st-key-fee_confirm [data-testid="stColumn"],
+    .st-key-fix_btns [data-testid="stColumn"],
+    .st-key-fix_del_btns [data-testid="stColumn"],
     .st-key-close_confirm [data-testid="stColumn"],
     .st-key-close_btns [data-testid="stColumn"] { flex: 1 1 0 !important; width: auto !important; min-width: 0 !important; }
     button[role="tab"] { padding: 0.4rem 0.75rem !important; }
@@ -529,6 +542,9 @@ FEE_COLS = ["日時", "TableNo", "LastGameNo", "枚数", "内訳"]
 # LastGameNo = 締めた時点でのその日の最後の対局の GameNo (全卓共通)。それ以下の GameNo の対局が締めに入る。
 # トップ回数は画面では毎回対局データから計算し直す。シートの「回数」「A客」… は記録用。
 SHEET_CLOSE = "day_closings"
+# 操作の記録 (メインアプリと共通)。入力アプリでは回の訂正・削除を書く
+SHEET_LOG = "logs"
+LOG_COLS = ["日時", "操作", "GameNo", "詳細"]
 CLOSE_COLS = ["日時", "論理日付", "種類", "LastGameNo", "回数", "A客", "B客", "AS", "BS", "不明"]
 CLOSE_MID = "中間締め"
 CLOSE_DAY = "1日締め"
@@ -906,6 +922,61 @@ def append_score_row(row_dict):
         return True, game_no, None
     except Exception as e:
         return False, None, f"{type(e).__name__}: {e}"
+
+
+def _write_log(action, game_no, detail):
+    """logs シートに1行追記する (メインアプリと同じ形)。失敗しても本体の処理は止めない"""
+    try:
+        _append(SHEET_LOG, {"日時": now_jst().strftime("%Y-%m-%d %H:%M:%S"), "操作": action,
+                            "GameNo": int(game_no), "詳細": detail}, LOG_COLS)
+    except Exception:
+        pass
+
+
+def _find_score_row(game_no):
+    """score シートで GameNo が game_no の行番号 (1始まり) を最新の状態から探す。1行だけ見つかったときだけ返す"""
+    ws = _get_ws(SHEET_SCORE)
+    header = _header(SHEET_SCORE, refresh=True)
+    col = header.index("GameNo") + 1
+    nos = pd.to_numeric(pd.Series(_with_retry(lambda: ws.col_values(col))[1:], dtype=object), errors="coerce")
+    hits = [i + 2 for i, v in enumerate(nos) if v == int(game_no)]
+    if len(hits) != 1:
+        raise RuntimeError(f"GameNo {game_no} の行が{'見つかりません' if not hits else '2つ以上あります'}"
+                           "（ほかの端末やメインアプリで変更された可能性があります。再読み込みしてください）")
+    return ws, header, hits[0]
+
+
+def update_score_row(game_no, changes, detail):
+    """
+    score シートの1回分を、変わった列のセルだけ書き換える (行全体やシート全体は書き直さない)。
+    changes = {列名: 新しい値}。Returns: (ok, err)
+    """
+    try:
+        from gspread.utils import rowcol_to_a1
+        ws, header, r = _find_score_row(game_no)
+        missing = [c for c in changes if c not in header]
+        if missing:
+            raise RuntimeError(f"'{SHEET_SCORE}' シートに列が見つかりません: {missing}")
+        data = [{"range": rowcol_to_a1(r, header.index(c) + 1), "values": [[v]]} for c, v in changes.items()]
+        if data:
+            _with_retry(lambda: ws.batch_update(data, value_input_option="USER_ENTERED"), write=True)
+        _write_log("修正", game_no, detail)
+        clear_cache()
+        return True, None
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
+def delete_score_row(game_no, detail):
+    """score シートから1回分 (1行) を消す。Returns: (ok, err)"""
+    try:
+        ws, _, r = _find_score_row(game_no)
+        _with_retry(lambda: ws.delete_rows(r), write=True)
+        _write_log("削除", game_no, detail)
+        clear_cache()
+        return True, None
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
 
 
 def _clean_fee_df(df):
@@ -1303,6 +1374,20 @@ def _paper_html(blocks, foot=""):
     return f'<div class="paper-wrap"><div class="paper-cols">{inner}</div>{foot}</div>'
 
 
+def _sheet_order(df_tbl, cuts=None):
+    """
+    着順表に出す順に並べる。_sec = 区切り番号 (この回より前にある集金の数)、_no = 表の「回」の番号。
+    同じ区切り・同じセットの中は時刻順 (後から日時を指定して入れた回も正しい位置に)。同じ時刻なら入力順 (GameNo)
+    """
+    cut_nos = [int(c["LastGameNo"]) for c in (cuts or [])]
+    df_tbl = df_tbl.copy()
+    df_tbl["_sec"] = [bisect.bisect_left(cut_nos, int(g)) for g in df_tbl["GameNo"]]
+    sort_keys = ["_sec"] + [k for k in ["SetNo", "日時Obj", "GameNo"] if k in df_tbl.columns]
+    df_tbl = df_tbl.sort_values(sort_keys, kind="stable").reset_index(drop=True)
+    df_tbl["_no"] = range(1, len(df_tbl) + 1)
+    return df_tbl
+
+
 def _render_table(df_tbl, cuts=None):
     """
     1卓分の着順表を描画。
@@ -1313,12 +1398,7 @@ def _render_table(df_tbl, cuts=None):
     cuts = cuts or []
     cut_nos = [int(c["LastGameNo"]) for c in cuts]
 
-    df_tbl = df_tbl.copy()
-    # 区切り番号: この局より前にある区切りの数 (GameNo が区切りの LastGameNo 以下なら、その区切りに入る)
-    df_tbl["_sec"] = [bisect.bisect_left(cut_nos, int(g)) for g in df_tbl["GameNo"]]
-    # 同じ区切り・同じセットの中は時刻順 (後から日時を指定して入れた局も正しい位置に)。同じ時刻なら入力順 (GameNo)
-    sort_keys = ["_sec"] + [k for k in ["SetNo", "日時Obj", "GameNo"] if k in df_tbl.columns]
-    df_tbl = df_tbl.sort_values(sort_keys, kind="stable").reset_index(drop=True)
+    df_tbl = _sheet_order(df_tbl, cuts)
 
     thead = ('<thead><tr><th class="col-no">回</th><th class="seat-head-A">A席</th>'
              '<th class="seat-head-B">B席</th><th class="seat-head-C">C席</th></tr></thead>')
@@ -1761,6 +1841,8 @@ def page_input():
     if not df_tbl.empty:
         _step_label(f"{table_mark(table_no)} {int(table_no)}卓の今日の記録", f"{len(df_tbl)}回")
         _render_table(df_tbl.reset_index(drop=True), get_fee_cuts(fees, table_no))
+        render_fix_section(df_tbl, fees, closings_today=get_day_closings(load_closings(), today),
+                           table_no=int(table_no), member_names=member_names)
 
     # --- 上のカード・選手チップの中身 (ここまでで分かった内容で描く) ---
     fee_txt = f"未集金 {open_fee}枚" if open_fee else "未集金なし"
@@ -1779,6 +1861,180 @@ def page_input():
         </div>
     """), unsafe_allow_html=True)
     chips_slot.markdown(_html(_chips_html(seat_info, ranks)), unsafe_allow_html=True)
+
+
+def _game_text(row, ranks=None, names=None, types=None, memo=None):
+    """1回分を文字にする (ログ用)。例: 'A席 田中(A客) 1着 / B席 … / 備考 東１終了'"""
+    parts = []
+    for s in SEATS:
+        nm = (names or {}).get(s, str(row.get(f"{s}さん", "")).strip())
+        tp = (types or {}).get(s, _normalize_play_type(row.get(f"{s}タイプ", "")) or str(row.get(f"{s}タイプ", "")))
+        rk = (ranks or {}).get(s, _int_rank(row.get(f"{s}着順")))
+        parts.append(f"{SEAT_LABELS[s]} {nm}({tp}) {rk}着")
+    m = memo if memo is not None else str(row.get("備考", "") or "")
+    if m:
+        parts.append(f"備考 {m}")
+    return " / ".join(parts)
+
+
+def _int_rank(v):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError):
+        return None
+
+
+def render_fix_section(df_tbl, fees, closings_today, table_no, member_names):
+    """
+    「まちがいを直す」: この卓の今日の回を選んで、着順 (と名前・タイプ・備考) を直す、または消す。
+    シートは、その回の行の変わったセルだけを書き換える (GameNo で行を探す)。
+    """
+    ss = st.session_state
+    cuts = get_fee_cuts(fees, table_no)
+    df_o = _sheet_order(df_tbl, cuts)
+    rows = {int(r["GameNo"]): r for r in df_o.to_dict("records")}
+
+    def _label(g):
+        r = rows[g]
+        order = sorted(SEATS, key=lambda s: _int_rank(r.get(f"{s}着順")) or 9)
+        tops = " → ".join(str(r.get(f"{s}さん", "")).strip() for s in order)
+        t = r.get("日時Obj")
+        hhmm = t.strftime("%H:%M") if pd.notna(t) else ""
+        return f"{r['_no']}回目（{hhmm}）{tops}"
+
+    _step_label("まちがいを直す", "着順・名前・備考を直せます")
+    pick_key = f"fix_pick_{table_no}"
+
+    def _cleanup(g):
+        """直す欄を閉じる。ウィジェットを描く前でないと値を変えられないので、次の実行の最初に呼ぶ"""
+        for k in [k for k in ss.keys() if str(k).startswith(f"fix_{g}_") or str(k).startswith(f"rank_fix{g}_")]:
+            del ss[k]
+        ss.get("rank_prev", {}).pop(f"fix{g}", None)
+        ss[pick_key] = None
+        ss.pop("fix_del_confirm", None)
+
+    done = ss.pop("fix_pending_close", None)
+    if done is not None:
+        _cleanup(done)
+    if ss.get(pick_key) is not None and ss[pick_key] not in rows:
+        ss[pick_key] = None   # 消した回など
+    gno = st.selectbox("直す回", sorted(rows, key=lambda g: -rows[g]["_no"]), index=None,
+                       placeholder="直す回を選ぶ（新しい順）", format_func=_label, key=pick_key,
+                       label_visibility="collapsed")
+    if gno is None:
+        return
+    row = rows[gno]
+    cur_rank = {s: _int_rank(row.get(f"{s}着順")) for s in SEATS}
+    cur_name = {s: str(row.get(f"{s}さん", "")).strip() for s in SEATS}
+    cur_type = {s: _normalize_play_type(row.get(f"{s}タイプ", "")) or "A客" for s in SEATS}
+    cur_memo = [t for t in note_tags(row.get("備考", ""))]
+
+    # ウィジェットの初めの値は session_state に入れておく (default と同時に使うと警告が出るため)
+    mkey = f"fix{gno}"
+    for s in SEATS:
+        ss.setdefault(_rank_key(mkey, s), cur_rank[s] if cur_rank[s] in (1, 2, 3) else None)
+        ss.setdefault(f"fix_{gno}_name_{s}", cur_name[s])
+        ss.setdefault(f"fix_{gno}_type_{s}", cur_type[s])
+    ss.setdefault(f"fix_{gno}_memo", cur_memo)
+    ss.setdefault("rank_prev", {}).setdefault(mkey, {s: ss[_rank_key(mkey, s)] for s in SEATS})
+
+    with st.container(key="fix_box"):
+        st.markdown(_html(f'<div class="fix-head">{row["_no"]}回目を直す'
+                          f'<span>セット{int(row.get("SetNo", 0) or 0)}</span></div>'), unsafe_allow_html=True)
+        if row["_sec"] < len(cuts):
+            st.caption("⚠️ この回はゲーム代を集金済みの区切りに入っています。直すと、その区切りの枚数も変わります。")
+        if closings_today:
+            st.caption("⚠️ 今日はもう締めをしています。直すと、締めのトップ回数の一覧も変わります。")
+
+        new_name, new_type, new_rank = {}, {}, {}
+        with st.expander("名前・タイプを直す"):
+            for s in SEATS:
+                opts = list(member_names)
+                if cur_name[s] and cur_name[s] not in opts:
+                    opts = [cur_name[s]] + opts
+                new_name[s] = st.selectbox(SEAT_LABELS[s], opts, key=f"fix_{gno}_name_{s}")
+                new_type[s] = st.segmented_control(
+                    f"{s}席のタイプ", TYPE_BUTTON_ORDER, format_func=lambda t: TYPE_LABELS[t],
+                    key=f"fix_{gno}_type_{s}", label_visibility="collapsed") or cur_type[s]
+        with st.container(key="fix_rank_area"):
+            for s in SEATS:
+                v = st.segmented_control(
+                    f"{SEAT_LABELS[s]}　{new_name[s]}", [1, 2, 3], format_func=lambda r: f"{r}着",
+                    key=_rank_key(mkey, s), on_change=_on_rank_change, args=(mkey, s))
+                new_rank[s] = int(v) if v is not None else None
+        memo_sel = st.pills("備考", MEMO_OPTIONS, selection_mode="multi",
+                            format_func=lambda m: f"{m}（−{NOTE_DISCOUNTS[m]}枚）", key=f"fix_{gno}_memo") or []
+        # 備考は選べる項目だけを入れ直す (それ以外の書き込みがあれば残す)
+        other = _normalize_note(row.get("備考", ""))
+        for t in MEMO_OPTIONS:
+            other = other.replace(t, "")
+        other = other.strip(" 、,・")
+        new_memo = MEMO_SEP.join([m for m in MEMO_OPTIONS if m in memo_sel] + ([other] if other else []))
+
+        names_ok = all(new_name.values()) and len(set(new_name.values())) == 3
+        ranks_ok = sorted(r for r in new_rank.values() if r) == [1, 2, 3]
+        if not names_ok:
+            st.error("同じ人が複数の席にいます")
+        elif not ranks_ok:
+            st.error("着順を3人ぶん選んでください")
+
+        changes = {}
+        for s in SEATS:
+            if new_name[s] != cur_name[s]:
+                changes[f"{s}さん"] = new_name[s]
+            if new_type[s] != cur_type[s]:
+                changes[f"{s}タイプ"] = new_type[s]
+            if new_rank[s] != cur_rank[s]:
+                changes[f"{s}着順"] = new_rank[s]
+        if new_memo != str(row.get("備考", "") or ""):
+            changes["備考"] = new_memo
+
+        with st.container(key="fix_btns"):
+            c1, c2 = st.columns([1, 1.6])
+            with c1:
+                st.button("やめる", use_container_width=True, key="fix_cancel", on_click=_cleanup, args=(gno,))
+            with c2:
+                do_fix = st.button("この内容で直す", type="primary", use_container_width=True, key="fix_do",
+                                   disabled=not (names_ok and ranks_ok and changes))
+        if do_fix:
+            detail = (f"入力アプリ {table_no}卓 {row['_no']}回目: {_game_text(row)} → "
+                      f"{_game_text(row, new_rank, new_name, new_type, new_memo)}")
+            with st.spinner("保存中..."):
+                ok, err = update_score_row(gno, changes, detail)
+            if ok:
+                order = sorted(SEATS, key=lambda s: new_rank[s])
+                ss["input_flash"] = (f"{table_no}卓の{row['_no']}回目を直しました："
+                                     + " → ".join(new_name[s] for s in order))
+                ss["fix_pending_close"] = gno
+                st.rerun()
+            else:
+                st.error(f"直せませんでした: {err}")
+
+        # 消す (確認つき)
+        if ss.get("fix_del_confirm") == gno:
+            st.warning(f"{row['_no']}回目（{_game_text(row)}）を消します。元に戻せません。よろしいですか？")
+            with st.container(key="fix_del_btns"):
+                d1, d2 = st.columns(2)
+                with d1:
+                    if st.button("やめる", use_container_width=True, key="fix_del_cancel"):
+                        ss.pop("fix_del_confirm", None)
+                        st.rerun()
+                with d2:
+                    do_del = st.button("消す", type="primary", use_container_width=True, key="fix_del_do")
+            if do_del:
+                with st.spinner("保存中..."):
+                    ok, err = delete_score_row(gno, f"入力アプリ {table_no}卓 {row['_no']}回目: {_game_text(row)}")
+                if ok:
+                    ss["input_flash"] = f"{table_no}卓の{row['_no']}回目を消しました"
+                    ss["fix_pending_close"] = gno
+                    st.rerun()
+                else:
+                    st.error(f"消せませんでした: {err}")
+        else:
+            if st.button("この回を消す", use_container_width=True, key="fix_del_start",
+                         help="入力のしすぎなど、この回そのものが無かったとき"):
+                ss["fix_del_confirm"] = gno
+                st.rerun()
 
 
 FEE_RULE_TEXT = ("ゲーム代はトップ（1着）を取った人が払います。1回につき " + "・".join(
