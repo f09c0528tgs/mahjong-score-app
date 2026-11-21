@@ -5940,7 +5940,7 @@ def page_edit():
 
     st.markdown(f"""
     <div class="input-status-bar">
-        <span class="isb-main">📝 編集中: 局{row['GameNo']}（{row['TableNo']}卓 この日の{row['DailyNo']}局目）</span>
+        <span class="isb-main">📝 編集中: No.{row['GameNo']}（{row['TableNo']}卓 この日の{row['DailyNo']}回目）</span>
         <span class="isb-sub">{status_badge} ／ 卓: {row['TableNo']} ／ セット: {row['SetNo']} ／ 時刻: {pd.to_datetime(row['日時']).strftime('%H:%M') if row['日時'] else '-'}</span>
     </div>
     """, unsafe_allow_html=True)
@@ -7507,7 +7507,7 @@ def render_score_sheet(df_day):
         player_counts = {}        # 名前 -> {タイプ: 打数}
         html = '<div class="paper-wrap"><table class="paper-table">'
         html += '<thead><tr>'
-        html += '<th class="col-no">局</th>'
+        html += '<th class="col-no">回</th>'
         html += '<th class="seat-head-A">A席</th>'
         html += '<th class="seat-head-B">B席</th>'
         html += '<th class="seat-head-C">C席</th>'
@@ -7600,17 +7600,17 @@ def render_score_sheet(df_day):
                 except Exception:
                     rk = 0
                 parts.append(f"{str(r.get(f'{seat}さん', '')).strip() or '-'} {rk}着")
-            return f"局{g}：" + " / ".join(parts)
+            return f"No.{g}：" + " / ".join(parts)
         with st.container(key=f"sheet_edit_{day_key}_{tbl_label}"):
             c_pick, c_btn = st.columns([3, 1.3], vertical_alignment="bottom")
             with c_pick:
                 pick = st.selectbox(
-                    f"{tbl_label}の修正する局", [int(float(r["GameNo"])) for r in game_rows],
-                    index=None, placeholder="修正する局を選ぶ", format_func=_game_label,
+                    f"{tbl_label}の修正する回", [int(float(r["GameNo"])) for r in game_rows],
+                    index=None, placeholder="修正する回を選ぶ", format_func=_game_label,
                     key=f"edit_pick_{day_key}_{tbl_label}",
                 )
             with c_btn:
-                st.button("✏️ この局を修正", key=f"edit_btn_{day_key}_{tbl_label}",
+                st.button("✏️ この回を修正", key=f"edit_btn_{day_key}_{tbl_label}",
                           disabled=pick is None, use_container_width=True,
                           on_click=_open_edit_page, args=(pick, "sheets"))
 
