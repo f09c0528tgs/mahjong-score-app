@@ -609,6 +609,21 @@ def _get_all_or_stop():
         st.stop()
 
 
+def parse_datetime_mixed(s):
+    """
+    「日時」の列を日時に変換する。1件ずつ形を判断する。
+    pd.to_datetime は列の最初の値で形を決めるので、「2026-11-09 22:00」(分まで) と
+    「2026-11-21 18:53:54」(秒まで。入力アプリが保存する形) が混ざると、形の違う方が読めず
+    NaT になる (= その対局がどの日にも入らず、画面から消える)。format="mixed" で避ける。
+    ※ メインアプリ (main.py) と入力アプリ (ranking_view.py) に同じ関数がある。片方を直したらもう片方も直すこと。
+    """
+    try:
+        return pd.to_datetime(s, errors="coerce", format="mixed")
+    except (TypeError, ValueError):
+        # format="mixed" が使えない古い pandas のとき: 1件ずつ変換する
+        return pd.Series([pd.to_datetime(x, errors="coerce") for x in s], index=s.index)
+
+
 def process_score_df(df):
     if df is None or df.empty:
         return pd.DataFrame(columns=EXPECTED_COLS + ["日時Obj", "論理日付"])
@@ -622,7 +637,7 @@ def process_score_df(df):
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
     df = df.fillna("")
     if "日時" in df.columns:
-        df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
+        df["日時Obj"] = parse_datetime_mixed(df["日時"])
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
     return df
@@ -1071,7 +1086,8 @@ def _render_table(df_tbl, cuts=None):
                 except (TypeError, ValueError):
                     cur_ranks[seat] = 0
 
-            members = (cur_names["A"], cur_names["B"], cur_names["C"])
+            # 名前かタイプが前の局と変わったら名前行を出し直す (同じ人でも途中でタイプを変えたら分かるように)
+            members = tuple(cur_names[x] for x in "ABC") + tuple(cur_types[x] for x in "ABC")
             # メンバーが前局と変わった (または区切りの最初) なら名前行を挿入
             if members != prev_members:
                 html += '<tr class="name-row"><td class="col-no"></td>'
@@ -1238,6 +1254,8 @@ def page_input():
     pending = ss.pop("input_pending_reset", None)
     if pending:
         ss["input_memo"] = ""
+        # 「日時を指定する」は1局ごと。付けたままだと次の局も同じ時刻で記録されてしまうので外す
+        ss["input_use_custom_dt"] = False
         if pending.get("seats"):
             _clear_seats(pending["table"])
 
@@ -1306,8 +1324,10 @@ def page_input():
             tkey = f"sel_type_{table_no}_{seat}_{sel_name}"
             if tkey not in ss and (seat, sel_name) in tmem["types"]:
                 ss[tkey] = tmem["types"][(seat, sel_name)]   # 手で変えたタイプも戻す
+            # 控えから値を戻したときに default も渡すと、Streamlit が画面に警告を出すので渡さない
             picked = st.segmented_control(
-                f"{seat}席のタイプ", TYPE_BUTTON_ORDER, default=auto_type,
+                f"{seat}席のタイプ", TYPE_BUTTON_ORDER,
+                default=None if tkey in ss else auto_type,
                 format_func=lambda t: TYPE_LABELS[t],
                 key=tkey, label_visibility="collapsed",
             )

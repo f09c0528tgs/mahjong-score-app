@@ -2176,6 +2176,21 @@ def fetch_data_fresh(conn, sheet_name):
             else:
                 raise
 
+def parse_datetime_mixed(s):
+    """
+    「日時」の列を日時に変換する。1件ずつ形を判断する。
+    pd.to_datetime は列の最初の値で形を決めるので、「2026-11-09 22:00」(分まで) と
+    「2026-11-21 18:53:54」(秒まで。入力アプリが保存する形) が混ざると、形の違う方が読めず
+    NaT になる (= その対局がどの日にも入らず、画面から消える)。format="mixed" で避ける。
+    ※ メインアプリ (main.py) と入力アプリ (ranking_view.py) に同じ関数がある。片方を直したらもう片方も直すこと。
+    """
+    try:
+        return pd.to_datetime(s, errors="coerce", format="mixed")
+    except (TypeError, ValueError):
+        # format="mixed" が使えない古い pandas のとき: 1件ずつ変換する
+        return pd.Series([pd.to_datetime(x, errors="coerce") for x in s], index=s.index)
+
+
 def process_score_df(df):
     if df.empty:
         return pd.DataFrame(columns=EXPECTED_COLS)
@@ -2188,7 +2203,7 @@ def process_score_df(df):
         df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0).astype(int)
     df = df.fillna("")
     if "日時" in df.columns:
-        df["日時Obj"] = pd.to_datetime(df["日時"], errors='coerce')
+        df["日時Obj"] = parse_datetime_mixed(df["日時"])
         df["日時Obj"] = df["日時Obj"].fillna(pd.Timestamp("1900-01-01"))
         df["論理日付"] = (df["日時Obj"] - timedelta(hours=9)).dt.date
         # 同じ日時の局 (セットごとにまとめて同じ時刻で入れた分など) は GameNo (入力順) で並べる
@@ -7393,9 +7408,10 @@ def page_sheets():
     st.session_state["sheets_date_value"] = target_date
 
     df_day = df[df["論理日付"] == target_date].copy()
-    sort_keys = [k for k in ["TableNo", "SetNo", "GameNo"] if k in df_day.columns]
+    # 卓 → セット → 時刻 → 入力順 (後から日時を指定して入れた局も、正しい位置に並ぶように。入力アプリと同じ)
+    sort_keys = [k for k in ["TableNo", "SetNo", "日時Obj", "GameNo"] if k in df_day.columns]
     if sort_keys:
-        df_day = df_day.sort_values(sort_keys).reset_index(drop=True)
+        df_day = df_day.sort_values(sort_keys, kind="stable").reset_index(drop=True)
 
     if df_day.empty:
         st.info("この日の対局データはありません。")
@@ -7442,9 +7458,9 @@ def render_score_sheet(df_day):
         df_tbl = df_day[df_day["TableNo"] == table_no].copy()
         if df_tbl.empty:
             continue
-        sort_keys = [k for k in ["SetNo", "GameNo"] if k in df_tbl.columns]
+        sort_keys = [k for k in ["SetNo", "日時Obj", "GameNo"] if k in df_tbl.columns]
         if sort_keys:
-            df_tbl = df_tbl.sort_values(sort_keys).reset_index(drop=True)
+            df_tbl = df_tbl.sort_values(sort_keys, kind="stable").reset_index(drop=True)
 
         try:
             tbl_label = f"{int(table_no)}卓"
@@ -7492,7 +7508,8 @@ def render_score_sheet(df_day):
                             player_counts[nm] = {}
                         player_counts[nm]["不明"] = player_counts[nm].get("不明", 0) + 1
 
-            members = (cur_names["A"], cur_names["B"], cur_names["C"])
+            # 名前かタイプが前の局と変わったら名前行を出し直す (同じ人でも途中でタイプを変えたら分かるように)
+            members = tuple(cur_names[x] for x in "ABC") + tuple(cur_types[x] for x in "ABC")
             if members != prev_members:
                 html += '<tr class="name-row"><td class="col-no"></td>'
                 for seat in ["A", "B", "C"]:
