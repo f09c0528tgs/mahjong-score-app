@@ -8,6 +8,7 @@
 """
 
 import bisect
+from html import escape as html_escape
 import re
 import time
 import streamlit as st
@@ -444,6 +445,14 @@ hr { border-color: var(--border) !important; }
     font-size: 0.8rem; color: #9a2f2f; font-weight: 700; margin-top: -0.2rem;
 }
 
+/* ---------- 新規登録 ---------- */
+.reg-list { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.2rem 0.8rem; }
+.reg-item { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.35rem 0; border-bottom: 1px dotted var(--border); }
+.reg-item:last-child { border-bottom: none; }
+.reg-name { font-weight: 800; color: var(--text-primary); flex: 1; }
+.reg-type { font-size: 0.78rem; font-weight: 700; color: var(--brown); }
+.reg-date { font-size: 0.75rem; color: var(--text-muted); font-family: var(--mono); }
+
 /* ---------- まちがいを直す ---------- */
 .st-key-fix_box {
     background: var(--bg-card); border: 2px solid var(--brown); border-radius: var(--radius);
@@ -520,7 +529,7 @@ h3 { font-size: 1rem !important; line-height: 1.35 !important; margin-top: 0.6re
 }
 @media (min-width: 700px) {
     [data-testid="stMainBlockContainer"] { max-width: 1240px !important; }
-    .st-key-page_input { max-width: 560px; width: 100%; margin: 0 auto; }
+    .st-key-page_input, .st-key-page_register { max-width: 560px; width: 100%; margin: 0 auto; }
     .st-key-close_area_today, .st-key-close_area_past { max-width: 600px; }
     .paper-cols { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); align-items: start; gap: 12px; margin-bottom: 10px; }
     .paper-wrap .paper-foot { max-width: 560px; }
@@ -2366,6 +2375,104 @@ def _render_day_summary(df_day):
 
 
 # ==========================================
+# 8b. 新規登録ページ (members シートにメンバーを追加)
+# ==========================================
+def _name_key(name):
+    """名前の比べ方: 全角/半角・大文字/小文字・空白の違いは同じとみなす (似た名前の二重登録を防ぐ)"""
+    import unicodedata
+    return re.sub(r"\s+", "", unicodedata.normalize("NFKC", str(name))).lower()
+
+
+def register_member(name, ptype):
+    """
+    members シートの末尾に1人追加する。直前に名前の列を最新で読み直して、同じ名前が無いか確かめる。
+    値は書いたとおりに保存する (RAW。名前が「=」「+」で始まっても式にならない・登録日が日付に変換されない)。
+    Returns: (ok, err)
+    """
+    try:
+        ws = _get_ws(SHEET_MEMBER)
+        header = _header(SHEET_MEMBER, refresh=True)
+        if "名前" not in header:
+            raise RuntimeError(f"'{SHEET_MEMBER}' シートに「名前」の列が見つかりません")
+        names = _with_retry(lambda: ws.col_values(header.index("名前") + 1))[1:]
+        if any(str(n).strip() == name for n in names):
+            return False, f"「{name}」さんはもう登録されています"
+        row = {"名前": name, "タイプ": ptype, "最大飜数": 0, "役満回数": 0,
+               "登録日": now_jst().strftime("%Y-%m-%d")}
+        values = [row.get(h, "") for h in header]
+        _with_retry(lambda: ws.append_row(values, value_input_option="RAW", table_range="A1"), write=True)
+        clear_cache()
+        return True, None
+    except Exception as e:
+        return False, f"{type(e).__name__}: {e}"
+
+
+def page_register():
+    st.title("新規登録")
+    st.caption("初めて来たお客さん・新しいスタッフを登録します。登録すると「成績を付ける」の名前の一覧に出ます。")
+    ss = st.session_state
+
+    # 登録したあとは入力欄を空に戻す (ウィジェットを描く前でないと値を変えられない)
+    if ss.pop("reg_pending_reset", False):
+        ss["reg_name"] = ""
+        ss["reg_type"] = None
+        ss["reg_similar_ok"] = False
+    msg = ss.pop("reg_flash", None)
+    if msg:
+        st.success(msg)
+
+    df_mem = _get_all_or_stop()[SHEET_MEMBER]
+    names, _ = load_members()
+
+    _step_label("名前", "スタッフは名前の最後に S（例: 山田S）")
+    name = st.text_input("名前", key="reg_name", placeholder="例: 田中", label_visibility="collapsed",
+                         max_chars=30).strip()
+
+    _step_label("タイプ")
+    with st.container(key="reg_type_area"):
+        ptype = st.segmented_control("タイプ", TYPE_BUTTON_ORDER, format_func=lambda t: TYPE_LABELS[t],
+                                     key="reg_type", label_visibility="collapsed")
+    if name and ptype is None:
+        st.caption(f"名前から考えると「{TYPE_LABELS[_guess_type_from_name(name)]}」かもしれません")
+
+    # 同じ名前・似た名前のチェック
+    exact = name in names
+    similar = [n for n in names if n != name and _name_key(n) == _name_key(name)] if name else []
+    if exact:
+        st.error(f"「{name}」さんはもう登録されています")
+    elif similar:
+        st.warning("似た名前の人がもう登録されています：" + "、".join(f"「{n}」" for n in similar)
+                   + "　同じ人なら登録しないでください。")
+        st.checkbox("別の人なので登録する", key="reg_similar_ok")
+
+    can = bool(name) and ptype is not None and not exact and (not similar or ss.get("reg_similar_ok"))
+    if st.button(f"「{name}」さんを {TYPE_LABELS[ptype]} で登録する" if name and ptype else "登録する",
+                 type="primary", use_container_width=True, disabled=not can, key="reg_do"):
+        with st.spinner("保存中..."):
+            ok, err = register_member(name, ptype)
+        if ok:
+            ss["reg_flash"] = f"「{name}」さんを {TYPE_LABELS[ptype]} で登録しました"
+            ss["reg_pending_reset"] = True
+            st.rerun()
+        else:
+            st.error(f"登録できませんでした: {err}")
+
+    # 最近登録した人 (シートの下の方 = 新しい順)
+    if not df_mem.empty and "名前" in df_mem.columns:
+        recent = df_mem[df_mem["名前"].astype(str).str.strip() != ""].tail(8).iloc[::-1]
+        if not recent.empty:
+            _step_label("最近登録した人", f"全 {len(names)}人")
+            items = ""
+            for _, r in recent.iterrows():
+                tp = _normalize_play_type(r.get("タイプ", ""))
+                d = str(r.get("登録日", "") or "").strip()
+                items += (f'<div class="reg-item"><span class="reg-name">{html_escape(str(r["名前"]))}</span>'
+                          f'<span class="reg-type">{TYPE_LABELS.get(tp, "タイプ未設定")}</span>'
+                          f'<span class="reg-date">{html_escape(d)}</span></div>')
+            st.markdown(_html(f'<div class="reg-list">{items}</div>'), unsafe_allow_html=True)
+
+
+# ==========================================
 # 9. メイン
 # ==========================================
 def main():
@@ -2375,7 +2482,7 @@ def main():
         unsafe_allow_html=True
     )
 
-    tab_input, tab_today, tab_past = st.tabs(["成績を付ける", "今日の着順表", "過去の着順表"])
+    tab_input, tab_today, tab_past, tab_reg = st.tabs(["成績を付ける", "今日の着順表", "過去の着順表", "新規登録"])
     with tab_input:
         with st.container(key="page_input"):
             page_input()
@@ -2383,6 +2490,9 @@ def main():
         page_today()
     with tab_past:
         page_past()
+    with tab_reg:
+        with st.container(key="page_register"):
+            page_register()
 
 
 if __name__ == '__main__':
